@@ -96,4 +96,6 @@ public @interface ItemViewType {
      * @see Adapter#getItemViewType(int)
      */
     int CAROUSEL = 12;
+
+    int COMMENTS  = 13;
 }

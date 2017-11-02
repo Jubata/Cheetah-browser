@@ -64,6 +64,7 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
     private final AllDismissedItem mAllDismissed;
     private final Footer mFooter;
     private final SpacingItem mBottomSpacer;
+//    private final Comments mComments;
 
     /**
      * Creates the adapter that will manage all the cards to display on the NTP.
@@ -105,19 +106,25 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
             mRoot.addChild(mSuggestionsCarousel);
         }
 
-        if (tileGroupDelegate == null) {
-            mSiteSection = null;
-        } else {
-            mSiteSection = new SiteSection(uiDelegate, mContextMenuManager, tileGroupDelegate,
-                    offlinePageBridge, uiConfig);
-            mRoot.addChild(mSiteSection);
-        }
+        //IK: added
+        mSiteSection = null;
+//        if (tileGroupDelegate == null) {
+//            mSiteSection = null;
+//        } else {
+//            mSiteSection = new SiteSection(uiDelegate, mContextMenuManager, tileGroupDelegate,
+//                    offlinePageBridge, uiConfig);
+//            mRoot.addChild(mSiteSection);
+//        }
+//
+//        if (FeatureUtilities.isChromeHomeEnabled()) {
+//            mRoot.addChildren(mSigninPromo, mAllDismissed, mSections);
+//        } else {
+//            mRoot.addChildren(mSections, mSigninPromo, mAllDismissed);
+//        }
+        mRoot.addChild(mSections);
 
-        if (FeatureUtilities.isChromeHomeEnabled()) {
-            mRoot.addChildren(mSigninPromo, mAllDismissed, mSections);
-        } else {
-            mRoot.addChildren(mSections, mSigninPromo, mAllDismissed);
-        }
+//        mComments = new Comments(mUiDelegate);
+//        mRoot.addChild(mComments);
 
         mFooter = new Footer();
         mRoot.addChild(mFooter);
@@ -188,6 +195,9 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
 
             case ItemViewType.CAROUSEL:
                 return new SuggestionsCarousel.ViewHolder(mRecyclerView);
+
+//            case ItemViewType.COMMENTS:
+//                return new Comments.ViewHolder(mRecyclerView, mUiDelegate.getNavigationDelegate());
         }
 
         assert false : viewType;

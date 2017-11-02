@@ -5,13 +5,19 @@
 package org.chromium.chrome.browser.ntp.snippets;
 
 import android.graphics.Bitmap;
+import android.graphics.Color;
 
 import org.chromium.base.Callback;
 import org.chromium.base.ObserverList;
 import org.chromium.base.annotations.CalledByNative;
+import org.chromium.chrome.browser.cheetah.Comment;
+import org.chromium.chrome.browser.cheetah.CommentsReceiver;
 import org.chromium.chrome.browser.ntp.cards.SuggestionsCategoryInfo;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.suggestions.ContentSuggestionsAdditionalAction;
+import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tabmodel.TabModelUtils;
+import org.chromium.ui.base.WindowAndroid;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -101,26 +107,72 @@ public class SnippetsBridge implements SuggestionsSource {
     @Override
     public int[] getCategories() {
         assert mNativeSnippetsBridge != 0;
-        return nativeGetCategories(mNativeSnippetsBridge);
+        //int[] categories = nativeGetCategories(mNativeSnippetsBridge);
+        int[] categories = new int[0];
+        int[] categories2 = new int[categories.length+1];
+        System.arraycopy( categories, 0, categories2, 0, categories.length );
+        categories2[categories.length] = 10001;
+        return categories2;
     }
 
     @Override
     @CategoryStatus
     public int getCategoryStatus(int category) {
         assert mNativeSnippetsBridge != 0;
-        return nativeGetCategoryStatus(mNativeSnippetsBridge, category);
+        if(category == 10001)
+            return CategoryStatus.AVAILABLE;
+        throw new IllegalArgumentException("ouch");
+        //return nativeGetCategoryStatus(mNativeSnippetsBridge, category);
     }
 
     @Override
     public SuggestionsCategoryInfo getCategoryInfo(int category) {
         assert mNativeSnippetsBridge != 0;
-        return nativeGetCategoryInfo(mNativeSnippetsBridge, category);
+        if(category == 10001) {
+            SuggestionsCategoryInfo info = new SuggestionsCategoryInfo(10001,
+                    "comments",
+                    ContentSuggestionsCardLayout.MINIMAL_CARD,
+                    ContentSuggestionsAdditionalAction.NONE,
+                    false,
+                    "no suggestions"
+                    );
+            return info;
+        }
+        throw new IllegalArgumentException("ouch");
+        //return nativeGetCategoryInfo(mNativeSnippetsBridge, category);
     }
+
+    private List<SnippetArticle> articles = new ArrayList<>();
 
     @Override
     public List<SnippetArticle> getSuggestionsForCategory(int category) {
         assert mNativeSnippetsBridge != 0;
-        return nativeGetSuggestionsForCategory(mNativeSnippetsBridge, category);
+        if(category == 10001) {
+            CommentsReceiver.GetComments(false, "yandex.ru",
+                    new CommentsReceiver.CommentsCallback() {
+                        @Override
+                        public void onResponse(List<Comment> comments) {
+                            articles.clear();
+                            for (Comment comment : comments) {
+                                SnippetArticle article = new SnippetArticle(10001,
+                                        "0",
+                                        comment.text,
+                                        "publisher",
+                                        "http://yandex.ru",
+                                        1,
+                                        0,
+                                        1,
+                                        false,
+                                        0x80ff0000);
+                                articles.add(article);
+                            }
+
+                        }
+                    });
+            return articles;
+        }
+        throw new IllegalArgumentException("ouch");
+        //return nativeGetSuggestionsForCategory(mNativeSnippetsBridge, category);
     }
 
     @Override

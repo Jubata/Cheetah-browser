@@ -1938,3 +1938,10 @@ if (enable_offline_pages_harness) {
   chrome_java_sources += [ "java/src/org/chromium/chrome/browser/offlinepages/evaluation/OfflinePageEvaluationBridge.java" ]
   chrome_test_java_sources += [ "javatests/src/org/chromium/chrome/browser/offlinepages/OfflinePageSavePageLaterEvaluationTest.java" ]
 }
+
+chrome_java_sources += [
+    "java/src/org/chromium/chrome/browser/cheetah/Comment.java",
+    "java/src/org/chromium/chrome/browser/cheetah/CommentsReceiver.java",
+    "java/src/org/chromium/chrome/browser/cheetah/HttpRequest.java",
+    "java/src/org/chromium/chrome/browser/cheetah/JsonObjectHttpRequest.java",
+]
