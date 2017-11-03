@@ -1944,4 +1944,6 @@ chrome_java_sources += [
     "java/src/org/chromium/chrome/browser/cheetah/CommentsReceiver.java",
     "java/src/org/chromium/chrome/browser/cheetah/HttpRequest.java",
     "java/src/org/chromium/chrome/browser/cheetah/JsonObjectHttpRequest.java",
+    "java/src/org/chromium/chrome/browser/cheetah/CommentsBottomSheetContent.java",
+    "java/src/org/chromium/chrome/browser/cheetah/CommentsSource.java",
 ]

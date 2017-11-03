@@ -5,6 +5,7 @@ import android.os.AsyncTask;
 
 import org.chromium.base.Log;
 import org.chromium.base.ThreadUtils;
+import org.chromium.chrome.GoogleAPIKeys;
 import org.chromium.chrome.browser.content.ContentUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.UUID;
 
 
@@ -31,10 +33,11 @@ public class CommentsReceiver {
 
     public static void GetComments(
             boolean useHttps, String url_param, final CommentsCallback callback) {
-        String sHttpCommentsUrl = "http://192.168.43.35";
+        String sHttpCommentsUrl = "http://195.91.243.212:8542/comments/get";
         String sHttpsCommentsUrl = "not implemented";
         String url = useHttps ? sHttpsCommentsUrl : sHttpCommentsUrl;
-        url = url +"/" +Uri.encode(url_param);
+        url = url +"?url=" +Uri.encode(url_param);
+        url = url +"&api_key=" +Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
 
         JsonObjectHttpRequest.RequestCallback requestCallback =
             new JsonObjectHttpRequest.RequestCallback() {
@@ -56,7 +59,8 @@ public class CommentsReceiver {
                             String text = jsonObject.getString("text");
 
                             DateFormat format = new SimpleDateFormat(
-                                    "yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.ENGLISH);
+                                    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
+                            format.setTimeZone(TimeZone.getTimeZone("UTC"));
                             Date timestamp = null;
                             timestamp = format.parse(
                                     jsonObject.getString("timestamp"));

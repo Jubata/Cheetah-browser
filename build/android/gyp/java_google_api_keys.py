@@ -116,6 +116,8 @@ def _DoMain(argv):
       GetClientSecret('REMOTING_HOST'))
   values['GOOGLE_CLIENT_ID_REMOTING_IDENTITY_API'] = (google_api_keys.
       GetClientID('REMOTING_IDENTITY_API'))
+  values['GOOGLE_CLIENT_ID_CHEETAH'] = (google_api_keys.
+      GetClientID('CHEETAH_API'))
 
   if options.out:
     _DoWriteJavaOutput(options.out, values)

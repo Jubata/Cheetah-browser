@@ -35,6 +35,7 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.bookmarks.BookmarkSheetContent;
+import org.chromium.chrome.browser.cheetah.CommentsBottomSheetContent;
 import org.chromium.chrome.browser.download.DownloadSheetContent;
 import org.chromium.chrome.browser.history.HistorySheetContent;
 import org.chromium.chrome.browser.ntp.IncognitoBottomSheetContent;
@@ -490,8 +491,12 @@ public class BottomSheetContentController
     private BottomSheetContent createAndCacheContentForId(int navItemId) {
         BottomSheetContent content = null;
         if (navItemId == R.id.action_home) {
+            content = new CommentsBottomSheetContent(
+                    mActivity, mBottomSheet, mTabModelSelector, mSnackbarManager);
+            /*
             content = new SuggestionsBottomSheetContent(
                     mActivity, mBottomSheet, mTabModelSelector, mSnackbarManager);
+                    */
         } else if (navItemId == R.id.action_downloads) {
             content = new DownloadSheetContent(
                     mActivity, mTabModelSelector.getCurrentModel().isIncognito(), mSnackbarManager);

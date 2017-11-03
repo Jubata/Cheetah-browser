@@ -47,10 +47,8 @@ class JsonObjectHttpRequest extends HttpRequest<JSONObject> {
         urlConnection.setDoOutput(true);
         urlConnection.setRequestProperty("Content-Type", "application/json");
         urlConnection.setRequestProperty("Accept", "application/json");
-        urlConnection.setRequestMethod("POST");
-        OutputStream os = urlConnection.getOutputStream();
-        os.write(mJsonObject.toString().getBytes("UTF-8"));
-        os.close();
+        urlConnection.setRequestMethod("GET");
+        urlConnection.connect();
     }
 
     /**
