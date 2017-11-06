@@ -95,7 +95,7 @@ public class CommentsSource implements SuggestionsSource {
     public List<SnippetArticle> getSuggestionsForCategory(int category) {
         if(category == 10001) {
             if(!fetched) {
-                CommentsReceiver.GetComments(false, "yandex.ru",
+                CommentsReceiver.GetComments(false, activeTab.getUrl(),
                         new CommentsReceiver.CommentsCallback() {
                             @Override
                             public void onResponse(List<Comment> comments) {

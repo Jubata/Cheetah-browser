@@ -36,6 +36,7 @@ public class SnippetArticleViewHolder extends CardViewHolder implements Impressi
 
     private SuggestionsCategoryInfo mCategoryInfo;
     private SnippetArticle mArticle;
+    private boolean mExpanded;
 
     private final DisplayStyleObserverAdapter mDisplayStyleObserver;
 
@@ -58,6 +59,7 @@ public class SnippetArticleViewHolder extends CardViewHolder implements Impressi
                 itemView, uiConfig, newDisplayStyle -> updateLayout());
 
         mOfflinePageBridge = offlinePageBridge;
+        mExpanded = false;
 
         new ImpressionTracker(itemView, this);
     }
@@ -91,10 +93,12 @@ public class SnippetArticleViewHolder extends CardViewHolder implements Impressi
     @Override
     public void onCardTapped() {
         SuggestionsMetrics.recordCardTapped();
-        int windowDisposition = WindowOpenDisposition.CURRENT_TAB;
-        mUiDelegate.getEventReporter().onSuggestionOpened(
-                mArticle, windowDisposition, mUiDelegate.getSuggestionsRanker());
-        mUiDelegate.getNavigationDelegate().openSnippet(windowDisposition, mArticle);
+//        int windowDisposition = WindowOpenDisposition.CURRENT_TAB;
+//        mUiDelegate.getEventReporter().onSuggestionOpened(
+//                mArticle, windowDisposition, mUiDelegate.getSuggestionsRanker());
+//        mUiDelegate.getNavigationDelegate().openSnippet(windowDisposition, mArticle);
+        mExpanded = !mExpanded;
+        updateLayout();
     }
 
     @Override
@@ -166,9 +170,13 @@ public class SnippetArticleViewHolder extends CardViewHolder implements Impressi
         boolean showHeadline = shouldShowHeadline();
         boolean showThumbnail = shouldShowThumbnail(layout);
         boolean showThumbnailVideoBadge = shouldShowThumbnailVideoBadge(showThumbnail);
+        int expandedHeight = 0;
+        if (mExpanded) {
+            expandedHeight = mRecyclerView.getHeight();
+        }
 
         mSuggestionsBinder.updateFieldsVisibility(
-                showHeadline, showThumbnail, showThumbnailVideoBadge);
+                showHeadline, showThumbnail, showThumbnailVideoBadge, expandedHeight);
     }
 
     /** If the title is empty (or contains only whitespace characters), we do not show it. */

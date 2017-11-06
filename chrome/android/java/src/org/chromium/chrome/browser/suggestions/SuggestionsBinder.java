@@ -99,9 +99,14 @@ public class SuggestionsBinder {
     }
 
     public void updateFieldsVisibility(
-            boolean showHeadline, boolean showThumbnail, boolean showThumbnailVideoBadge) {
+            boolean showHeadline, boolean showThumbnail, boolean showThumbnailVideoBadge,
+            int expandedHeight) {
         mHeadlineTextView.setVisibility(showHeadline ? View.VISIBLE : View.GONE);
-        mHeadlineTextView.setMaxLines(MAX_HEADER_LINES);
+        if (expandedHeight!=0) {
+            mHeadlineTextView.setMaxHeight(expandedHeight);
+        } else {
+            mHeadlineTextView.setMaxLines(MAX_HEADER_LINES);
+        }
         mThumbnailView.setVisibility(showThumbnail ? View.VISIBLE : View.GONE);
         mHasVideoBadge = showThumbnailVideoBadge;
         updateVisibilityForBadges();
