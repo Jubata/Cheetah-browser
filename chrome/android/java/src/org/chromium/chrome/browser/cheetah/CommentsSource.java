@@ -94,7 +94,7 @@ public class CommentsSource implements SuggestionsSource {
     @Override
     public List<SnippetArticle> getSuggestionsForCategory(int category) {
         if(category == 10001) {
-            if(!fetched) {
+            if(!fetched && activeTab != null) {
                 CommentsReceiver.GetComments(false, activeTab.getUrl(),
                         new CommentsReceiver.CommentsCallback() {
                             @Override
@@ -104,7 +104,7 @@ public class CommentsSource implements SuggestionsSource {
                                     SnippetArticle article = new SnippetArticle(10001,
                                             "0",
                                             comment.text,
-                                            "publisher",
+                                            comment.user,
                                             "http://yandex.ru",
                                             1,
                                             0,

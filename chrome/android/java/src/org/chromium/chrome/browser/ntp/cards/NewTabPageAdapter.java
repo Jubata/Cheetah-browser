@@ -13,6 +13,7 @@ import android.view.ViewGroup;
 import org.chromium.base.Callback;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.ChromeFeatureList;
+import org.chromium.chrome.browser.cheetah.NewComment;
 import org.chromium.chrome.browser.ntp.ContextMenuManager;
 import org.chromium.chrome.browser.ntp.cards.NewTabPageViewHolder.PartialBindCallback;
 import org.chromium.chrome.browser.ntp.snippets.CategoryInt;
@@ -64,6 +65,7 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
     private final AllDismissedItem mAllDismissed;
     private final Footer mFooter;
     private final SpacingItem mBottomSpacer;
+    private final NewComment mNewComment;
 
     /**
      * Creates the adapter that will manage all the cards to display on the NTP.
@@ -105,8 +107,10 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
             mRoot.addChild(mSuggestionsCarousel);
         }
 
-        mSiteSection = null;
-        /*
+        mNewComment = new NewComment();
+        mRoot.addChild(mNewComment);
+//        mSiteSection = null;
+//        /*
         if (tileGroupDelegate == null) {
             mSiteSection = null;
         } else {
@@ -120,8 +124,8 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
         } else {
             mRoot.addChildren(mSections, mSigninPromo, mAllDismissed);
         }
-        */
-        mRoot.addChild(mSections);
+//        */
+//        mRoot.addChild(mSections);
 
         mFooter = new Footer();
         mRoot.addChild(mFooter);
@@ -192,6 +196,9 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
 
             case ItemViewType.CAROUSEL:
                 return new SuggestionsCarousel.ViewHolder(mRecyclerView);
+
+            case ItemViewType.COMMENT_FORM:
+                return mNewComment.createViewHolder(mRecyclerView, mContextMenuManager, mUiConfig);
         }
 
         assert false : viewType;

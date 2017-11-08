@@ -54,6 +54,8 @@ import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet.StateChangeRea
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheetContentController;
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheetNewTabController;
 import org.chromium.chrome.browser.widget.displaystyle.UiConfig;
+import org.chromium.chrome.browser.cheetah.CommentsSource;
+
 
 import java.util.List;
 

@@ -97,5 +97,5 @@ public @interface ItemViewType {
      */
     int CAROUSEL = 12;
 
-    int COMMENTS  = 13;
+    int COMMENT_FORM  = 13;
 }
