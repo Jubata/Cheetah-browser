@@ -33,8 +33,8 @@ public class CommentsReceiver {
 
     public static void GetComments(
             boolean useHttps, String url_param, final CommentsCallback callback) {
-        String sHttpCommentsUrl = "http://195.91.243.212:8542/comments/get";
-        String sHttpsCommentsUrl = "not implemented";
+        String sHttpCommentsUrl = "http://client.cheetah-browser.com:8542/comments/get";
+        String sHttpsCommentsUrl = "https://client.cheetah-browser.com/comments/get";
         String url = useHttps ? sHttpsCommentsUrl : sHttpCommentsUrl;
         url = url +"?url=" +Uri.encode(url_param);
         url = url +"&api_key=" +Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);

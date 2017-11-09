@@ -109,8 +109,8 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
 
         mNewComment = new NewComment();
         mRoot.addChild(mNewComment);
-//        mSiteSection = null;
-//        /*
+        mSiteSection = null;
+        /*
         if (tileGroupDelegate == null) {
             mSiteSection = null;
         } else {
@@ -124,8 +124,8 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
         } else {
             mRoot.addChildren(mSections, mSigninPromo, mAllDismissed);
         }
-//        */
-//        mRoot.addChild(mSections);
+        */
+        mRoot.addChild(mSections);
 
         mFooter = new Footer();
         mRoot.addChild(mFooter);
