@@ -31,6 +31,7 @@ import org.chromium.chrome.browser.suggestions.SuggestionsConfig;
 import org.chromium.chrome.browser.suggestions.SuggestionsRecyclerView;
 import org.chromium.chrome.browser.suggestions.SuggestionsUiDelegate;
 import org.chromium.chrome.browser.suggestions.TileGroup;
+import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.widget.displaystyle.UiConfig;
 
@@ -83,7 +84,7 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
     public NewTabPageAdapter(SuggestionsUiDelegate uiDelegate, @Nullable View aboveTheFoldView,
             UiConfig uiConfig, OfflinePageBridge offlinePageBridge,
             ContextMenuManager contextMenuManager, @Nullable TileGroup.Delegate tileGroupDelegate,
-            @Nullable SuggestionsCarousel suggestionsCarousel) {
+            @Nullable SuggestionsCarousel suggestionsCarousel, Tab activeTab) {
         mUiDelegate = uiDelegate;
         mContextMenuManager = contextMenuManager;
 
@@ -107,7 +108,7 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
             mRoot.addChild(mSuggestionsCarousel);
         }
 
-        mNewComment = new NewComment();
+        mNewComment = new NewComment(activeTab);
         mRoot.addChild(mNewComment);
         mSiteSection = null;
         /*

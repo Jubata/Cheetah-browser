@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<grit-part>
+    <message name="IDS_ADD_COMMENT" desc="Short caption for 'Add comment' button.">
+        Add comment
+    </message>
+    <message name="IDS_ADD_YOUR_MESSAGE" desc="Hint in add message form.">
+        Please add your message here.
+    </message>
+</grit-part>

@@ -16,6 +16,16 @@ public class Comment {
     public final String text;
     private final Date timestamp;
 
+    public Comment(UUID commentId) {
+        this.commentId = commentId;
+        url=null;
+        userId = null;
+        language="";
+        text="";
+        timestamp=null;
+        user="";
+    }
+
     public Comment(UUID url, UUID commentId, UUID userId, String user, String language,
                    String text, Date timestamp) {
         this.url = url;

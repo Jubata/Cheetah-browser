@@ -121,6 +121,11 @@ public class CommentsSource implements SuggestionsSource {
                                 }
 
                             }
+
+                            @Override
+                            public void onError(int responseCode, Exception e) {
+                                //add handler
+                            }
                         });
                 SnippetArticle article = new SnippetArticle(10001,
                     "0",
@@ -135,29 +140,6 @@ public class CommentsSource implements SuggestionsSource {
                 articles.add(article);
                 return articles;
             }
-//            articles.clear();
-//            SnippetArticle article = new SnippetArticle(10001,
-//                    "0",
-//                    "Some text",
-//                    "publisher",
-//                    "http://yandex.ru",
-//                    1,
-//                    0,
-//                    1,
-//                    false,
-//                    0x80ff0000);
-//            articles.add(article);
-//            SnippetArticle article2 = new SnippetArticle(10001,
-//                    "0",
-//                    "Some text2",
-//                    "publisher",
-//                    "http://yandex.ru",
-//                    1,
-//                    0,
-//                    1,
-//                    false,
-//                    0x80ff0000);
-//            articles.add(article2);
             return articles;
         }
         throw new IllegalArgumentException("ouch");

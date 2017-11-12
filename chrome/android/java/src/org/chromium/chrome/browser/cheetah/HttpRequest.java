@@ -25,6 +25,7 @@ abstract class HttpRequest<T> implements Runnable {
     private final String mUserAgent;
     private final String mAcceptLanguage;
     private final HttpRequest.HttpRequestCallback<T> mCallback;
+    private int connetctionTimeout = 0;
 
     /**
      * Construct a Request object.
@@ -48,6 +49,10 @@ abstract class HttpRequest<T> implements Runnable {
         mCallback = callback;
     }
 
+    public void setConnectionTimeout(int timeout) {
+        connetctionTimeout = timeout;
+
+    }
     /**
      * The callback that gets run after the request is made.
      */
@@ -84,6 +89,9 @@ abstract class HttpRequest<T> implements Runnable {
             urlConnection = (HttpURLConnection) mUrl.openConnection();
             urlConnection.setRequestProperty(USER_AGENT_HEADER_NAME, mUserAgent);
             urlConnection.setRequestProperty(ACCEPT_LANGUAGE_HEADER_NAME, mAcceptLanguage);
+            if(connetctionTimeout!=0) {
+                urlConnection.setConnectTimeout(connetctionTimeout);
+            }
             writeToUrlConnection(urlConnection);
             responseCode = urlConnection.getResponseCode();
             inputStream = new BufferedInputStream(urlConnection.getInputStream());

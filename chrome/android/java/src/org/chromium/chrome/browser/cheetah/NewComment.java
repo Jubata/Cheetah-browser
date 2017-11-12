@@ -17,6 +17,7 @@ import org.chromium.chrome.browser.ntp.cards.NewTabPageViewHolder;
 import org.chromium.chrome.browser.ntp.cards.NodeVisitor;
 import org.chromium.chrome.browser.ntp.cards.OptionalLeaf;
 import org.chromium.chrome.browser.suggestions.SuggestionsRecyclerView;
+import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.widget.displaystyle.UiConfig;
 import org.chromium.ui.widget.ButtonCompat;
@@ -26,11 +27,10 @@ import org.chromium.ui.widget.ButtonCompat;
  * in state changes control its visibility.
  */
 public class NewComment extends OptionalLeaf implements ImpressionTracker.Listener {
+    protected final Tab activeTab;
 
-
-
-
-    public NewComment() {
+    public NewComment(Tab activeTab) {
+        this.activeTab = activeTab;
         updateVisibility();
     }
 
@@ -40,21 +40,19 @@ public class NewComment extends OptionalLeaf implements ImpressionTracker.Listen
         return ItemViewType.COMMENT_FORM;
     }
 
-
-
     /**
-     * @return a {@link NewTabPageViewHolder} which will contain the view for the signin promo.
+     * @return a {@link NewTabPageViewHolder} which will contain the view for the comment.
      */
     public NewTabPageViewHolder createViewHolder(SuggestionsRecyclerView parent,
             ContextMenuManager contextMenuManager, UiConfig config) {
-            return new PersonalizedPromoViewHolder(
-                    parent, config, contextMenuManager);
+            return new NewCommentViewHolder(
+                    parent, config, contextMenuManager, activeTab);
 
     }
 
     @Override
     protected void onBindViewHolder(NewTabPageViewHolder holder) {
-            ((PersonalizedPromoViewHolder) holder).onBindViewHolder();
+            ((NewCommentViewHolder) holder).onBindViewHolder();
             return;
 
     }
@@ -78,12 +76,15 @@ public class NewComment extends OptionalLeaf implements ImpressionTracker.Listen
      * View Holder for {@link NewComment} if the personalized promo is to be shown.
      */
     @VisibleForTesting
-    public static class PersonalizedPromoViewHolder extends CardViewHolder {
+    public static class NewCommentViewHolder extends CardViewHolder {
+        private Tab tab;
 
-        public PersonalizedPromoViewHolder(SuggestionsRecyclerView parent, UiConfig config,
-                ContextMenuManager contextMenuManager) {
+        public NewCommentViewHolder(SuggestionsRecyclerView parent, UiConfig config,
+                                    ContextMenuManager contextMenuManager,
+                                    Tab tab) {
             super(R.layout.edit_comment_view,
                     parent, config, contextMenuManager);
+            this.tab = tab;
             if (!FeatureUtilities.isChromeHomeEnabled()) {
                 getParams().topMargin = parent.getResources().getDimensionPixelSize(
                         R.dimen.ntp_sign_in_promo_margin_top);
@@ -94,7 +95,7 @@ public class NewComment extends OptionalLeaf implements ImpressionTracker.Listen
         @Override
         public void onBindViewHolder() {
             super.onBindViewHolder();
-            updatePersonalizedSigninPromo();
+            updateNewCommentView();
         }
 
         @DrawableRes
@@ -110,16 +111,12 @@ public class NewComment extends OptionalLeaf implements ImpressionTracker.Listen
          * {@link PartialBindCallback}.
          */
         public static void update(NewTabPageViewHolder viewHolder) {
-            ((PersonalizedPromoViewHolder) viewHolder).updatePersonalizedSigninPromo();
+            ((NewCommentViewHolder) viewHolder).updateNewCommentView();
         }
 
-        private void updatePersonalizedSigninPromo() {
-
+        private void updateNewCommentView() {
             EditCommentView view = (EditCommentView) itemView;
-            TextView description = view.findViewById(R.id.signin_promo_description);
-            description.setText(R.string.signin_promo_description_ntp_content_suggestions);
-            ButtonCompat button = view.findViewById(R.id.signin_promo_signin_button);
-            button.setText(R.string.sign_in_to_chrome);
+            view.setTab(tab);
         }
 
     }

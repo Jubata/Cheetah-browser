@@ -17,6 +17,19 @@
     android:paddingStart="16dp"
     android:paddingTop="12dp">
 
+    <org.chromium.ui.widget.ButtonCompat
+        android:id="@+id/add_comment_button"
+        style="@style/SigninButtonCompat"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:layout_marginBottom="6dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="6dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/add_comment"/>
+
     <TextView
         android:id="@+id/signin_promo_description"
         android:layout_width="wrap_content"
@@ -27,20 +40,55 @@
         android:gravity="center"
         android:lineSpacingMultiplier="1.25"
         android:textAppearance="@style/BlackBodyDefault"
-        tools:text="@string/signin_promo_description_settings"/>
+        tools:text="@string/signin_promo_description_settings"
+        android:visibility="gone" />
 
-    <org.chromium.ui.widget.ButtonCompat
-        android:id="@+id/signin_promo_signin_button"
-        style="@style/SigninButtonCompat"
+    <RelativeLayout
+        android:id="@+id/comment_edit_container"
         android:layout_width="match_parent"
-        android:layout_height="36dp"
-        android:layout_marginBottom="6dp"
-        android:layout_marginEnd="24dp"
-        android:layout_marginStart="24dp"
-        android:layout_marginTop="6dp"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:text="@string/signin_promo_continue_as"/>
+        android:layout_height="wrap_content"
+        android:gravity="top"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/comment_edit_text"
+            android:layout_width="100dp"
+            android:layout_height="wrap_content"
+            android:layout_alignParentStart="true"
+            android:layout_toStartOf="@+id/delete_comment_button"
+            android:background="@null"
+            android:gravity="top"
+            android:hint="@string/add_your_message"
+            android:inputType="textAutoCorrect|textCapSentences|textMultiLine|textLongMessage"
+            android:minLines="4"
+            android:maxLines="20"
+            android:textAlignment="textStart"
+            android:textSize="@dimen/location_bar_url_text_size" >
+            <requestFocus/>
+        </EditText>
+
+        <org.chromium.chrome.browser.widget.TintedImageButton
+            android:id="@+id/delete_comment_button"
+            style="@style/LocationBarButton"
+            android:layout_width="@dimen/location_bar_icon_width"
+            android:layout_height="@dimen/location_bar_icon_width"
+            android:layout_alignParentEnd="true"
+            android:contentDescription="@string/accessibility_toolbar_btn_delete_url"
+            android:scaleType="center"
+            android:src="@drawable/btn_delete_url"/>
+
+        <org.chromium.chrome.browser.widget.TintedImageButton
+            android:id="@+id/post_comment_button"
+            style="@style/LocationBarButton"
+            android:layout_width="@dimen/location_bar_icon_width"
+            android:layout_height="@dimen/location_bar_icon_width"
+            android:layout_alignBottom="@id/comment_edit_text"
+            android:layout_alignParentEnd="true"
+            android:scaleType="center"
+            android:src="@drawable/btn_right" />
+
+    </RelativeLayout>
 
 
 </org.chromium.chrome.browser.cheetah.EditCommentView>

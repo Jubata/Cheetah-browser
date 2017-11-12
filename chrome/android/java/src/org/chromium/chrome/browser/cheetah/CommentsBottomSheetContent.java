@@ -150,7 +150,7 @@ public class CommentsBottomSheetContent implements BottomSheet.BottomSheetConten
 
         final NewTabPageAdapter adapter = new NewTabPageAdapter(mSuggestionsUiDelegate,
                 /* aboveTheFoldView = */ null, uiConfig, offlinePageBridge, mContextMenuManager,
-                null, null);
+                null, null, mSheet.getActiveTab());
 
         mBottomSheetObserver = new SuggestionsSheetVisibilityChangeObserver(this, activity) {
             @Override

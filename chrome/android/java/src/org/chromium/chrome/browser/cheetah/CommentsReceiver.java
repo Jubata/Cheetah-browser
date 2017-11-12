@@ -26,18 +26,21 @@ import java.util.UUID;
 public class CommentsReceiver {
     private static final String TAG = "feedback";
     private static String userAgent = "";
+    private static final String httpServer = "http://client.cheetah-browser.com:8542/comments/";
+    //private static final String httpsServer = "http://192.168.43.35:8542/comments/";
+    private static final String httpsServer = "https://client.cheetah-browser.com/comments/";
+    private static final int connectionTimeout=2000;
 
     public interface CommentsCallback {
         void onResponse(List<Comment> comments);
+        void onError(int responseCode, Exception e);
     }
 
     public static void GetComments(
             boolean useHttps, String url_param, final CommentsCallback callback) {
-        String sHttpCommentsUrl = "http://client.cheetah-browser.com:8542/comments/get";
-        String sHttpsCommentsUrl = "https://client.cheetah-browser.com/comments/get";
-        String url = useHttps ? sHttpsCommentsUrl : sHttpCommentsUrl;
-        url = url +"?url=" +Uri.encode(url_param);
-        url = url +"&api_key=" +Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
+        String url = useHttps ? httpsServer : httpServer;
+        url = url +"get?url=" + Uri.encode(url_param) +
+            "&api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
 
         JsonObjectHttpRequest.RequestCallback requestCallback =
             new JsonObjectHttpRequest.RequestCallback() {
@@ -78,12 +81,7 @@ public class CommentsReceiver {
 
                 @Override
                 public void onError(int responseCode, Exception e) {
-                    ThreadUtils.assertOnUiThread();
-                    String httpErr = "";
-                    if (responseCode > 0) {
-                        httpErr = ", HTTP " + responseCode;
-                    }
-                    Log.e(TAG, "Error making request to PWS%s", httpErr);
+                    callback.onError(responseCode, e);
                 }
             };
 
@@ -93,8 +91,59 @@ public class CommentsReceiver {
             JSONObject payload = new JSONObject();
             request = new JsonObjectHttpRequest(
                     url, getUserAgent(), "en", payload, requestCallback);
+            request.setConnectionTimeout(connectionTimeout);
         } catch (MalformedURLException e) {
-            Log.e(TAG, "Error creating PWS HTTP request", e);
+            Log.e(TAG, "Error creating HTTP request", e);
+            return;
+        }
+        // The callback will be called on the main thread.
+        AsyncTask.THREAD_POOL_EXECUTOR.execute(request);
+    }
+
+    public static void PostComment(
+            boolean useHttps, String comment_url, String text, final CommentsCallback callback) {
+        String url = useHttps ? httpsServer : httpServer;
+        url = url +"new?api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
+
+        JsonObjectHttpRequest.RequestCallback requestCallback =
+                new JsonObjectHttpRequest.RequestCallback() {
+                    @Override
+                    public void onResponse(JSONObject result) {
+                        ThreadUtils.assertOnUiThread();
+                        ArrayList<Comment> comments = new ArrayList<>();
+                        JSONArray array = null;
+                        try {
+                            UUID comment_id = UUID.fromString(result.getString("comment_id"));
+                            comments.add(new Comment(comment_id));
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+
+                        callback.onResponse(comments);
+                    }
+
+                    @Override
+                    public void onError(int responseCode, Exception e) {
+                        callback.onError(responseCode, e);
+                    }
+                };
+
+        // Create the request.
+        HttpRequest request = null;
+        try {
+            JSONObject payload = new JSONObject();
+            try {
+                payload.put("text", text);
+                payload.put("url", comment_url);
+                payload.put("user_id", new UUID(0,0).toString());
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            request = new JsonObjectHttpRequest(
+                    url, getUserAgent(), "en", payload, requestCallback);
+            request.setConnectionTimeout(connectionTimeout);
+        } catch (MalformedURLException e) {
+            Log.e(TAG, "Error creating HTTP request", e);
             return;
         }
         // The callback will be called on the main thread.

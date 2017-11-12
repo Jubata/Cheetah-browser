@@ -147,7 +147,7 @@ public class SuggestionsBottomSheetContent implements BottomSheet.BottomSheetCon
 
         final NewTabPageAdapter adapter = new NewTabPageAdapter(mSuggestionsUiDelegate,
                 /* aboveTheFoldView = */ null, uiConfig, offlinePageBridge, mContextMenuManager,
-                mTileGroupDelegate, mSuggestionsCarousel);
+                mTileGroupDelegate, mSuggestionsCarousel, null);
 
         mBottomSheetObserver = new SuggestionsSheetVisibilityChangeObserver(this, activity) {
             @Override

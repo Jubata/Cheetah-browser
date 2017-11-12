@@ -124,6 +124,8 @@ CHAR-LIMIT guidelines:
   </translations>
   <release allow_pseudo="false" seq="1">
     <messages fallback_to_english="true">
+      <part file="cheetah_strings.grdp" />
+
       <!-- Generic strings -->
       <message name="IDS_DELETED" desc='Text that announces to the user that something was deleted.'>
         Deleted
