@@ -6,7 +6,7 @@ package org.chromium.chrome.browser;
 
 import android.graphics.Rect;
 import android.view.Window;
-//
+
 /**
  * This is a delegate that handles communication about a window's current state and properties.
  */
