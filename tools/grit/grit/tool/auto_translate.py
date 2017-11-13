@@ -14,6 +14,22 @@ from grit import util
 from grit.tool import interface
 from grit.node import message
 import requests
+from xml.sax import saxutils
+
+# See XmlEscape below.
+_XML_QUOTE_ESCAPES = {
+    u"'":  u'&apos;',
+    u'"':  u'&quot;',
+}
+
+def _XmlEscape(s):
+  """Returns text escaped for XML in a way compatible with Google's
+  internal Translation Console tool.  May be used for attributes as
+  well as for contents.
+  """
+  if not type(s) == unicode:
+    s = unicode(s)
+  return saxutils.escape(s, _XML_QUOTE_ESCAPES).encode('utf-8')
 
 baseUrl = "https://www.googleapis.com/language/translate/v2?key=%s"
 
@@ -26,7 +42,7 @@ def GoogleTranslate(text, source='en', target='zh-CN'):
   if response.status_code != 200:
     raise Exception(response.content)
   data = response.json()
-  return [el['translatedText'].encode('utf-8') for el in data['data']['translations']]
+  return [saxutils.unescape(el['translatedText']) for el in data['data']['translations']]
 
 
 
@@ -106,7 +122,7 @@ Other options:
       addendum = []
 
       for (clique, text) in zip(cliques, translates):
-        line = "<translation id=\"%s\">%s</translation>\n" % (clique.GetId(), text)
+        line = "<translation id=\"%s\">%s</translation>\n" % (clique.GetId(), _XmlEscape(text))
         addendum.append(line)
 
       xtb = lang2xtb[lang]
