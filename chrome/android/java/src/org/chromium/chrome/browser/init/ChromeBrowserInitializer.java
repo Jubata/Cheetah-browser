@@ -54,6 +54,8 @@ import org.chromium.ui.base.DeviceFormFactor;
 import java.io.File;
 import java.util.Locale;
 
+import static org.chromium.chrome.browser.ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE;
+
 /**
  * Application level delegate that handles start up tasks.
  * {@link AsyncInitializationActivity} classes should override the {@link BrowserParts}
@@ -219,6 +221,7 @@ public class ChromeBrowserInitializer {
         warmUpSharedPrefs();
 
         DeviceUtils.addDeviceSpecificUserAgentSwitch(mApplication);
+        CommandLine.getInstance().appendSwitch(DISABLE_FIRST_RUN_EXPERIENCE);
         ApplicationStatus.registerStateListenerForAllActivities(
                 createActivityStateListener());
 
