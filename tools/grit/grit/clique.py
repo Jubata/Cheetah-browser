@@ -194,6 +194,11 @@ class UberClique(object):
       for c in cliques:
         yield c
 
+  def AllMissingTranslations(self):
+    for (id, langs) in self.missing_translations_.items():
+      for lang in langs.keys():
+        yield (self.cliques_[id][0], lang)
+
   def GenerateXtbParserCallback(self, lang, debug=False):
     '''Creates a callback function as required by grit.xtb_reader.Parse().
     This callback will create Translation objects for each message from

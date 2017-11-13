@@ -68,6 +68,10 @@ def ToolFactoryXmb():
   import grit.tool.xmb
   return grit.tool.xmb.OutputXmb()
 
+def ToolFactoryAutoTranslate():
+  import grit.tool.auto_translate
+  return grit.tool.auto_translate.Translate()
+
 def ToolAndroid2Grd():
   import grit.tool.android2grd
   return grit.tool.android2grd.Android2Grd()
@@ -99,6 +103,7 @@ _TOOLS = [
                   _REQUIRES_INPUT : False }],
   ['unit', { _FACTORY : ToolFactoryUnit, _REQUIRES_INPUT : False }],
   ['xmb', { _FACTORY : ToolFactoryXmb, _REQUIRES_INPUT : True }],
+  ['auto_translate', { _FACTORY : ToolFactoryAutoTranslate, _REQUIRES_INPUT : True }],
   ['android2grd', {
       _FACTORY: ToolAndroid2Grd,
       _REQUIRES_INPUT : False }],
