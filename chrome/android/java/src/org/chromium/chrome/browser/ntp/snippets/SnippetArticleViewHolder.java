@@ -93,12 +93,15 @@ public class SnippetArticleViewHolder extends CardViewHolder implements Impressi
     @Override
     public void onCardTapped() {
         SuggestionsMetrics.recordCardTapped();
-//        int windowDisposition = WindowOpenDisposition.CURRENT_TAB;
-//        mUiDelegate.getEventReporter().onSuggestionOpened(
-//                mArticle, windowDisposition, mUiDelegate.getSuggestionsRanker());
-//        mUiDelegate.getNavigationDelegate().openSnippet(windowDisposition, mArticle);
-        mExpanded = !mExpanded;
-        updateLayout();
+        if(mArticle.mIsComment) {
+            mExpanded = !mExpanded;
+            updateLayout();
+        } else {
+        int windowDisposition = WindowOpenDisposition.CURRENT_TAB;
+        mUiDelegate.getEventReporter().onSuggestionOpened(
+                mArticle, windowDisposition, mUiDelegate.getSuggestionsRanker());
+        mUiDelegate.getNavigationDelegate().openSnippet(windowDisposition, mArticle);
+        }
     }
 
     @Override

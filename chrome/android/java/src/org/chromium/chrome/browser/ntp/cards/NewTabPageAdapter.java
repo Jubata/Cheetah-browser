@@ -15,6 +15,7 @@ import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.cheetah.NewComment;
 import org.chromium.chrome.browser.ntp.ContextMenuManager;
+import org.chromium.chrome.browser.ntp.NewTabPage;
 import org.chromium.chrome.browser.ntp.cards.NewTabPageViewHolder.PartialBindCallback;
 import org.chromium.chrome.browser.ntp.snippets.CategoryInt;
 import org.chromium.chrome.browser.ntp.snippets.CategoryStatus;
@@ -84,7 +85,16 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
     public NewTabPageAdapter(SuggestionsUiDelegate uiDelegate, @Nullable View aboveTheFoldView,
             UiConfig uiConfig, OfflinePageBridge offlinePageBridge,
             ContextMenuManager contextMenuManager, @Nullable TileGroup.Delegate tileGroupDelegate,
-            @Nullable SuggestionsCarousel suggestionsCarousel, Tab activeTab) {
+            @Nullable SuggestionsCarousel suggestionsCarousel) {
+        this(uiDelegate, aboveTheFoldView,uiConfig,offlinePageBridge,
+                contextMenuManager, tileGroupDelegate, suggestionsCarousel, null, false);
+
+    }
+    public NewTabPageAdapter(SuggestionsUiDelegate uiDelegate, @Nullable View aboveTheFoldView,
+                             UiConfig uiConfig, OfflinePageBridge offlinePageBridge,
+                             ContextMenuManager contextMenuManager, @Nullable TileGroup.Delegate tileGroupDelegate,
+                             @Nullable SuggestionsCarousel suggestionsCarousel, Tab activeTab,
+                             boolean showComments) {
         mUiDelegate = uiDelegate;
         mContextMenuManager = contextMenuManager;
 
@@ -108,10 +118,14 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
             mRoot.addChild(mSuggestionsCarousel);
         }
 
-        mNewComment = new NewComment(activeTab);
-        mRoot.addChild(mNewComment);
-        mSiteSection = null;
-        /*
+        if(showComments && activeTab!=null && !NewTabPage.isNTPUrl(activeTab.getUrl())) {
+            mNewComment = new NewComment(activeTab);
+            mRoot.addChild(mNewComment);
+            mSiteSection = null;
+            mRoot.addChild(mSections);
+        } else {
+            mNewComment = null;
+
         if (tileGroupDelegate == null) {
             mSiteSection = null;
         } else {
@@ -125,8 +139,7 @@ public class NewTabPageAdapter extends Adapter<NewTabPageViewHolder> implements 
         } else {
             mRoot.addChildren(mSections, mSigninPromo, mAllDismissed);
         }
-        */
-        mRoot.addChild(mSections);
+        }
 
         mFooter = new Footer();
         mRoot.addChild(mFooter);

@@ -111,6 +111,7 @@ public class CommentsSource implements SuggestionsSource {
                                             1,
                                             false,
                                             0x80ff0000);
+                                    article.mIsComment = true;
                                     articles.add(article);
                                 }
                                 fetched = true;
@@ -137,6 +138,7 @@ public class CommentsSource implements SuggestionsSource {
                     1,
                     false,
                     0x80ff0000);
+                article.mIsComment = true;
                 articles.add(article);
                 return articles;
             }

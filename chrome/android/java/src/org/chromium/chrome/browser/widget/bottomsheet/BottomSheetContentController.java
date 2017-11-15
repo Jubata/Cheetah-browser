@@ -39,8 +39,10 @@ import org.chromium.chrome.browser.cheetah.CommentsBottomSheetContent;
 import org.chromium.chrome.browser.download.DownloadSheetContent;
 import org.chromium.chrome.browser.history.HistorySheetContent;
 import org.chromium.chrome.browser.ntp.IncognitoBottomSheetContent;
+import org.chromium.chrome.browser.ntp.NewTabPage;
 import org.chromium.chrome.browser.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.suggestions.SuggestionsBottomSheetContent;
+import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
@@ -491,12 +493,14 @@ public class BottomSheetContentController
     private BottomSheetContent createAndCacheContentForId(int navItemId) {
         BottomSheetContent content = null;
         if (navItemId == R.id.action_home) {
-            content = new CommentsBottomSheetContent(
-                    mActivity, mBottomSheet, mTabModelSelector, mSnackbarManager);
-            /*
+            Tab tab = mBottomSheet.getActiveTab();
+            if( tab!=null && !NewTabPage.isNTPUrl( tab.getUrl() ) ) {
+                content = new CommentsBottomSheetContent(
+                        mActivity, mBottomSheet, mTabModelSelector, mSnackbarManager);
+            } else {
             content = new SuggestionsBottomSheetContent(
                     mActivity, mBottomSheet, mTabModelSelector, mSnackbarManager);
-                    */
+            }
         } else if (navItemId == R.id.action_downloads) {
             content = new DownloadSheetContent(
                     mActivity, mTabModelSelector.getCurrentModel().isIncognito(), mSnackbarManager);

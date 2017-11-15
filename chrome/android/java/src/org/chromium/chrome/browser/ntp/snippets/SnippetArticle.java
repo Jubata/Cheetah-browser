@@ -82,6 +82,8 @@ public class SnippetArticle implements OfflinableSuggestion {
     /** Whether the corresponding offline page has been automatically prefetched. */
     private boolean mIsPrefetched;
 
+    public boolean mIsComment=false;
+
     /**
      * Creates a SnippetArticleListItem object that will hold the data.
      */
