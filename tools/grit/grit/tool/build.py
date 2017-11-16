@@ -22,6 +22,7 @@ from grit.node import include
 from grit.node import message
 from grit.node import structure
 from grit.tool import interface
+from grit import brand_replacer
 
 
 # It would be cleaner to have each module register itself, but that would
@@ -240,12 +241,21 @@ are exported to translation interchange files (e.g. XMB files), etc.
 
     self.write_only_new = write_only_new
 
+
+    if os.environ.has_key('SUBSTITUTE_BRAND_PRODUCT') :
+      product = os.environ['SUBSTITUTE_BRAND_PRODUCT']
+      company = os.environ['SUBSTITUTE_BRAND_COMPANY']
+      br = brand_replacer.BrandReplacer(product, company).Replace
+    else:
+      br = lambda x:x
+
     self.res = grd_reader.Parse(opts.input,
                                 debug=opts.extra_verbose,
                                 first_ids_file=first_ids_file,
                                 predetermined_ids_file=predetermined_ids_file,
                                 defines=self.defines,
-                                target_platform=target_platform)
+                                target_platform=target_platform,
+                                brand_replacer = br)
 
     # If the output_all_resource_defines option is specified, override the value
     # found in the grd file.

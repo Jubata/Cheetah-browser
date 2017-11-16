@@ -208,7 +208,7 @@ class MessageNode(base.ContentNode):
     msg = self.clique.MessageForLanguage(lang,
                                          self.PseudoIsAllowed(),
                                          self.ShouldFallbackToEnglish()
-                                         ).GetRealContent()
+                                         ).GetRealContent(self.brand_replacer)
     if self._replace_ellipsis:
       msg = _ELLIPSIS_PATTERN.sub(_ELLIPSIS_SYMBOL, msg)
     return msg.replace('[GRITLANGCODE]', lang)

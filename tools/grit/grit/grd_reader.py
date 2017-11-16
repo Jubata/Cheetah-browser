@@ -59,6 +59,7 @@ class GrdContentHandler(xml.sax.handler.ContentHandler):
     typeattr = attrs.get('type')
     node = mapping.ElementToClass(name, typeattr)()
     node.source = self.source
+    node.brand_replacer = self.brand_replacer
 
     if self.stack:
       self.stack[-1].AddChild(node)
@@ -145,7 +146,7 @@ class GrdPartContentHandler(xml.sax.handler.ContentHandler):
 
 def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
           debug=False, defines=None, tags_to_ignore=None, target_platform=None,
-          predetermined_ids_file=None):
+          predetermined_ids_file=None, brand_replacer=None):
   '''Parses a GRD file into a tree of nodes (from grit.node).
 
   If filename_or_stream is a stream, 'dir' should point to the directory
@@ -196,6 +197,7 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
   handler = GrdContentHandler(stop_after=stop_after, debug=debug, dir=dir,
                               defines=defines, tags_to_ignore=tags_to_ignore,
                               target_platform=target_platform, source=source)
+  handler.brand_replacer = brand_replacer
   try:
     xml.sax.parse(filename_or_stream, handler)
   except StopParsingException:
