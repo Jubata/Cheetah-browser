@@ -20,7 +20,7 @@ import("channel.gni")
 import("java_sources.gni")
 import("static_initializers.gni")
 
-manifest_package = "org.chromium.chrome"
+manifest_package = "com.jubata.cheetah"
 
 chrome_public_jinja_variables = default_chrome_public_jinja_variables +
                                 [ "manifest_package=$manifest_package" ]
@@ -89,7 +89,7 @@ jinja_template("chrome_sync_shell_android_manifest") {
 android_resources("chrome_java_resources") {
   resource_dirs = [
     "java/res",
-    "//chrome/android/java/res_chromium",
+    "//chrome/android/java/res_cheetah",
   ]
   deps = [
     ":chrome_strings_grd",
@@ -657,7 +657,7 @@ if (enable_vr) {
 
 # Overrides icon / name defined in chrome_java_resources.
 android_resources("chrome_public_apk_resources") {
-  resource_dirs = [ "java/res_chromium" ]
+  resource_dirs = [ "java/res_cheetah" ]
 
   # Dep needed to ensure override works properly.
   deps = [
@@ -983,7 +983,7 @@ template("chrome_public_apk_tmpl_shared") {
 chrome_public_apk_tmpl_shared("chrome_public_apk") {
   android_manifest = chrome_public_android_manifest
   android_manifest_dep = ":chrome_public_android_manifest"
-  apk_name = "ChromePublic"
+  apk_name = "Cheetah"
   shared_libraries = [ ":libchrome" ]
 }
 
