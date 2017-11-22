@@ -2299,7 +2299,7 @@ void LayoutBlockFlow::SetMustDiscardMarginBefore(bool value) {
     return;
 
   if (!rare_data_)
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
 
   rare_data_->discard_margin_before_ = value;
 }
@@ -2314,7 +2314,7 @@ void LayoutBlockFlow::SetMustDiscardMarginAfter(bool value) {
     return;
 
   if (!rare_data_)
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
 
   rare_data_->discard_margin_after_ = value;
 }
@@ -2377,7 +2377,7 @@ void LayoutBlockFlow::SetMaxMarginBeforeValues(LayoutUnit pos, LayoutUnit neg) {
     if (pos == LayoutBlockFlowRareData::PositiveMarginBeforeDefault(this) &&
         neg == LayoutBlockFlowRareData::NegativeMarginBeforeDefault(this))
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->margins_.SetPositiveMarginBefore(pos);
   rare_data_->margins_.SetNegativeMarginBefore(neg);
@@ -2388,7 +2388,7 @@ void LayoutBlockFlow::SetMaxMarginAfterValues(LayoutUnit pos, LayoutUnit neg) {
     if (pos == LayoutBlockFlowRareData::PositiveMarginAfterDefault(this) &&
         neg == LayoutBlockFlowRareData::NegativeMarginAfterDefault(this))
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->margins_.SetPositiveMarginAfter(pos);
   rare_data_->margins_.SetNegativeMarginAfter(neg);
@@ -3024,29 +3024,22 @@ void LayoutBlockFlow::AddChild(LayoutObject* new_child,
   // children as blocks.
   // So, if our children are currently inline and a block child has to be
   // inserted, we move all our inline children into anonymous block boxes.
-  bool child_is_block_level = !new_child->IsInline();
-
-  // ** LayoutNG **
-  // We want to use the block layout for out of flow positioned
-  // objects when they go in front of inline blocks or if they are just
-  // standalone objects.
-  // Example 1:
-  //   <div id="zero"><div id="oof"></div></div>
-  //   Legacy Layout: #oof is in inline context.
-  //   LayoutNG: #oof is in block context.
-  //
-  // Example 2:
-  //   <div id=container><oof></oof>Hello!</div>
-  //   Legacy Layout: oof is in inline context.
-  //   LayoutNG: oof is in block context.
-  //
-  // Example 3:
-  //   <div id=container>Hello!<oof></oof></div>
-  //   Legacy Layout: oof is in inline context.
-  //   LayoutNG: oof is in inline context.
+  bool child_is_block_level;
   bool layout_ng_enabled = RuntimeEnabledFeatures::LayoutNGEnabled();
-  if (new_child->IsFloatingOrOutOfFlowPositioned())
-    child_is_block_level = layout_ng_enabled && !FirstChild();
+  if (layout_ng_enabled && !FirstChild() &&
+      (new_child->IsFloating() ||
+       (new_child->IsOutOfFlowPositioned() &&
+        !new_child->StyleRef().IsOriginalDisplayInlineType()))) {
+    // TODO(kojii): We once forced all floats and OOF to create a block
+    // container in LayoutNG, which turned out to be not a great way, but
+    // completely turning this off breaks too much. When an OOF is an inline
+    // type, we need to disable this so that we can compute the inline static
+    // position. crbug.com/734554
+    child_is_block_level = true;
+  } else {
+    child_is_block_level =
+        !new_child->IsInline() && !new_child->IsFloatingOrOutOfFlowPositioned();
+  }
 
   if (ChildrenInline()) {
     if (child_is_block_level) {
@@ -4295,7 +4288,7 @@ void LayoutBlockFlow::SetPaginationStrutPropagatedFromChild(LayoutUnit strut) {
   if (!rare_data_) {
     if (!strut)
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->pagination_strut_propagated_from_child_ = strut;
 }
@@ -4304,7 +4297,7 @@ void LayoutBlockFlow::SetFirstForcedBreakOffset(LayoutUnit block_offset) {
   if (!rare_data_) {
     if (!block_offset)
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->first_forced_break_offset_ = block_offset;
 }
@@ -4364,6 +4357,12 @@ bool LayoutBlockFlow::CreatesNewFormattingContext() const {
     // to our ancestors.
     return true;
   }
+
+  // NGBlockNode cannot compute margin collapsing across NG/non-NG boundary.
+  // Create a new formatting context for non-NG node to prevent margin
+  // collapsing.
+  if (RuntimeEnabledFeatures::LayoutNGEnabled())
+    return StyleRef().UserModify() != EUserModify::kReadOnly;
 
   return false;
 }
@@ -4510,7 +4509,7 @@ LayoutBlockFlow::LayoutBlockFlowRareData& LayoutBlockFlow::EnsureRareData() {
   if (rare_data_)
     return *rare_data_;
 
-  rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+  rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   return *rare_data_;
 }
 

@@ -17,8 +17,9 @@ import page_sets
 
 # TODO(rnephew): Revisit the re-enabled benchmarks on Wed, Aug 8 2017.
 
-# See tr.v.Numeric.getSummarizedScalarNumericsWithNames()
-# https://github.com/catapult-project/catapult/blob/master/tracing/tracing/value/numeric.html#L323
+# Regex to filter out a few names of statistics supported by
+# Histogram.getStatisticScalar(), see:
+#   https://github.com/catapult-project/catapult/blob/d4179a05/tracing/tracing/value/histogram.html#L645  pylint: disable=line-too-long
 _IGNORED_STATS_RE = re.compile(
     r'(?<!dump)(?<!process)_(std|count|max|min|sum|pct_\d{4}(_\d+)?)$')
 
@@ -28,7 +29,7 @@ class _MediaBenchmark(perf_benchmark.PerfBenchmark):
   MediaMobile)."""
 
   def CreateStorySet(self, options):
-    return page_sets.ToughVideoCasesPageSet(measure_memory=True)
+    return page_sets.MediaCasesStorySet(measure_memory=True)
 
   def CreateCoreTimelineBasedMeasurementOptions(self):
     category_filter = chrome_trace_category_filter.ChromeTraceCategoryFilter()
@@ -65,7 +66,6 @@ class _MediaBenchmark(perf_benchmark.PerfBenchmark):
     return not _IGNORED_STATS_RE.search(value.name)
 
 
-# android: See media.mobile below
 @benchmark.Owner(emails=['johnchen@chromium.org', 'crouleau@chromium.org'],
                  component='Internals>Media')
 class MediaDesktop(_MediaBenchmark):

@@ -9,6 +9,7 @@
 
 #include "base/macros.h"
 #include "base/optional.h"
+#include "base/run_loop.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
@@ -143,8 +144,8 @@ class InteractiveRenderWidget : public RenderWidget {
     mock_input_handler_host_ = std::make_unique<MockWidgetInputHandlerHost>(
         mojo::MakeRequest(&widget_input_handler));
 
-    widget_input_handler_manager_->SetWidgetInputHandlerHost(
-        std::move(widget_input_handler));
+    widget_input_handler_manager_->AddInterface(
+        nullptr, std::move(widget_input_handler));
   }
 
   void SetTouchRegion(const std::vector<gfx::Rect>& rects) {

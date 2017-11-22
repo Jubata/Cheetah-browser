@@ -21,6 +21,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/path_service.h"
@@ -116,7 +117,7 @@ void ReportUploadsWithUma(const base::string16& upload_results) {
   UMA_HISTOGRAM_BOOLEAN("SoftwareReporter.LastUploadResult", last_result);
 }
 
-void ReportExperimentError(SwReporterExperimentError error) {
+void ReportExperimentError(SoftwareReporterExperimentError error) {
   UMA_HISTOGRAM_ENUMERATION("SoftwareReporter.ExperimentErrors", error,
                             SW_REPORTER_EXPERIMENT_ERROR_MAX);
 }
@@ -185,11 +186,12 @@ void RunExperimentalSwReporter(const base::FilePath& exe_path,
                                std::unique_ptr<base::DictionaryValue> manifest,
                                const SwReporterRunner& reporter_runner) {
   // The experiment requires launch_params so if they aren't present just
-  // return. This isn't an error because the user could get into the experiment
-  // group before they've downloaded the experiment component.
+  // return.
   base::Value* launch_params = nullptr;
-  if (!manifest->Get("launch_params", &launch_params))
+  if (!manifest->Get("launch_params", &launch_params)) {
+    ReportExperimentError(SW_REPORTER_EXPERIMENT_ERROR_MISSING_PARAMS);
     return;
+  }
 
   const base::ListValue* parameter_list = nullptr;
   if (!launch_params->GetAsList(&parameter_list) || parameter_list->empty()) {
@@ -276,7 +278,7 @@ void RunExperimentalSwReporter(const base::FilePath& exe_path,
     auto invocation = SwReporterInvocation::FromCommandLine(command_line);
     invocation.suffix = suffix;
     invocation.supported_behaviours = supported_behaviours;
-    invocations.push_back(invocation);
+    invocations.push(invocation);
   }
 
   DCHECK(!invocations.empty());
@@ -314,6 +316,8 @@ update_client::CrxInstaller::Result SwReporterInstallerPolicy::OnCustomInstall(
   return update_client::CrxInstaller::Result(0);
 }
 
+void SwReporterInstallerPolicy::OnCustomUninstall() {}
+
 void SwReporterInstallerPolicy::ComponentReady(
     const base::Version& version,
     const base::FilePath& install_dir,
@@ -333,9 +337,7 @@ void SwReporterInstallerPolicy::ComponentReady(
         SwReporterInvocation::BEHAVIOUR_TRIGGER_PROMPT |
         SwReporterInvocation::BEHAVIOUR_ALLOW_SEND_REPORTER_LOGS;
 
-    safe_browsing::SwReporterQueue invocations;
-    invocations.push_back(invocation);
-    reporter_runner_.Run(invocations, version);
+    reporter_runner_.Run(safe_browsing::SwReporterQueue({invocation}), version);
   }
 }
 
@@ -475,12 +477,11 @@ void RegisterSwReporterComponent(ComponentUpdateService* cus) {
       is_x86_architecture;
 
   // Install the component.
-  std::unique_ptr<ComponentInstallerPolicy> policy(
-      new SwReporterInstallerPolicy(base::Bind(&RunSwReportersAfterStartup),
-                                    is_experimental_engine_supported));
-  // |cus| will take ownership of |installer| during installer->Register(cus).
-  ComponentInstaller* installer = new ComponentInstaller(std::move(policy));
-  installer->Register(cus, base::Closure());
+  auto installer = base::MakeRefCounted<ComponentInstaller>(
+      std::make_unique<SwReporterInstallerPolicy>(
+          base::Bind(&RunSwReportersAfterStartup),
+          is_experimental_engine_supported));
+  installer->Register(cus, base::OnceClosure());
 }
 
 void RegisterPrefsForSwReporter(PrefRegistrySimple* registry) {

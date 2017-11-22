@@ -19,6 +19,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.ThreadUtils;
@@ -44,13 +45,15 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
-import org.chromium.chrome.test.ChromeActivityTestRule;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.NewTabPageTestUtils;
 import org.chromium.chrome.test.util.OmniboxTestUtils;
 import org.chromium.chrome.test.util.RenderTestRule;
+import org.chromium.chrome.test.util.browser.Features;
+import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
+import org.chromium.chrome.test.util.browser.RecyclerViewTestUtils;
 import org.chromium.chrome.test.util.browser.suggestions.FakeMostVisitedSites;
 import org.chromium.chrome.test.util.browser.suggestions.SuggestionsDependenciesRule;
 import org.chromium.content.browser.test.util.Criteria;
@@ -77,10 +80,8 @@ import java.util.concurrent.TimeoutException;
  * Tests for the native android New Tab Page.
  */
 @RunWith(ChromeJUnit4ClassRunner.class)
-@CommandLineFlags.Add({
-        ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE,
-        ChromeActivityTestRule.DISABLE_NETWORK_PREDICTION_FLAG,
-})
+@CommandLineFlags.Add(ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE)
+@DisableFeatures("NetworkPrediction")
 @RetryOnFailure
 public class NewTabPageTest {
     @Rule
@@ -91,6 +92,9 @@ public class NewTabPageTest {
     @Rule
     public RenderTestRule mRenderTestRule =
             new RenderTestRule("chrome/test/data/android/render_tests");
+
+    @Rule
+    public TestRule mFeatureRule = new Features.InstrumentationProcessor();
 
     private static final String TEST_PAGE = "/chrome/test/data/android/navigate/simple.html";
 
@@ -110,15 +114,33 @@ public class NewTabPageTest {
         mTestServer = EmbeddedTestServer.createAndStartServer(InstrumentationRegistry.getContext());
 
         mSiteSuggestions = new ArrayList<>();
-        mSiteSuggestions.add(new SiteSuggestion("TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#1",
+        mSiteSuggestions.add(new SiteSuggestion("0 TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#0",
                 "", TileTitleSource.TITLE_TAG, TileSource.TOP_SITES, TileSectionType.PERSONALIZED,
                 new Date()));
-        mSiteSuggestions.add(new SiteSuggestion("WHITELIST", mTestServer.getURL(TEST_PAGE) + "#2",
+        mSiteSuggestions.add(new SiteSuggestion("1 WHITELIST", mTestServer.getURL(TEST_PAGE) + "#1",
                 "/test.png", TileTitleSource.UNKNOWN, TileSource.WHITELIST,
                 TileSectionType.PERSONALIZED, new Date()));
+        mSiteSuggestions.add(new SiteSuggestion("2 TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#2",
+                "", TileTitleSource.TITLE_TAG, TileSource.TOP_SITES, TileSectionType.PERSONALIZED,
+                new Date()));
+        mSiteSuggestions.add(new SiteSuggestion("3 TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#3",
+                "", TileTitleSource.TITLE_TAG, TileSource.TOP_SITES, TileSectionType.PERSONALIZED,
+                new Date()));
+        mSiteSuggestions.add(new SiteSuggestion("4 TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#4",
+                "", TileTitleSource.TITLE_TAG, TileSource.TOP_SITES, TileSectionType.PERSONALIZED,
+                new Date()));
+        mSiteSuggestions.add(new SiteSuggestion("5 TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#5",
+                "", TileTitleSource.TITLE_TAG, TileSource.TOP_SITES, TileSectionType.PERSONALIZED,
+                new Date()));
+        mSiteSuggestions.add(new SiteSuggestion("6 TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#6",
+                "", TileTitleSource.TITLE_TAG, TileSource.TOP_SITES, TileSectionType.PERSONALIZED,
+                new Date()));
+        mSiteSuggestions.add(new SiteSuggestion("7 TOP_SITES", mTestServer.getURL(TEST_PAGE) + "#7",
+                "", TileTitleSource.TITLE_TAG, TileSource.TOP_SITES, TileSectionType.PERSONALIZED,
+                new Date()));
 
         mMostVisitedSites = new FakeMostVisitedSites();
-        mMostVisitedSites.setTileSuggestions(mSiteSuggestions.get(0), mSiteSuggestions.get(1));
+        mMostVisitedSites.setTileSuggestions(mSiteSuggestions);
         mSuggestionsDeps.getFactory().mostVisitedSites = mMostVisitedSites;
 
         mActivityTestRule.startMainActivityWithURL(UrlConstants.NTP_URL);
@@ -140,30 +162,14 @@ public class NewTabPageTest {
     @Test
     @MediumTest
     @Feature({"NewTabPage", "RenderTest"})
-    @CommandLineFlags.Add("disable-features=NTPCondensedLayout")
     public void testRender() throws IOException {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+        RenderTestRule.sanitize(mNtp.getView());
         mRenderTestRule.render(mTileGridLayout, "most_visited");
         mRenderTestRule.render(mFakebox, "fakebox");
         mRenderTestRule.render(mNtp.getView().getRootView(), "new_tab_page");
 
-        // Scroll to search bar
-        final NewTabPageRecyclerView recyclerView = mNtp.getNewTabPageView().getRecyclerView();
-
-        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
-            @Override
-            public void run() {
-                recyclerView.smoothScrollBy(0, mFakebox.getTop());
-            }
-        });
-
-        CriteriaHelper.pollUiThread(new Criteria(){
-            @Override
-            public boolean isSatisfied() {
-                return recyclerView.computeVerticalScrollOffset() == mFakebox.getTop();
-            }
-        });
-
+        RecyclerViewTestUtils.scrollToBottom(mNtp.getNewTabPageView().getRecyclerView());
         mRenderTestRule.render(mNtp.getView().getRootView(), "new_tab_page_scrolled");
     }
 
@@ -433,18 +439,17 @@ public class NewTabPageTest {
     @Test
     @SmallTest
     @Feature({"NewTabPage"})
-    @CommandLineFlags.Add("enable-features=NTPCondensedLayout")
     public void testSetSearchProviderInfoCondensedUi() throws Throwable {
         mActivityTestRule.runOnUiThread(new Runnable() {
             @Override
             public void run() {
                 NewTabPageView ntpView = mNtp.getNewTabPageView();
                 View logoView = ntpView.findViewById(R.id.search_provider_logo);
-                Assert.assertEquals(View.GONE, logoView.getVisibility());
+                Assert.assertEquals(View.VISIBLE, logoView.getVisibility());
                 ntpView.setSearchProviderInfo(/* hasLogo = */ false, /* isGoogle */ true);
                 Assert.assertEquals(View.GONE, logoView.getVisibility());
                 ntpView.setSearchProviderInfo(/* hasLogo = */ true, /* isGoogle */ true);
-                Assert.assertEquals(View.GONE, logoView.getVisibility());
+                Assert.assertEquals(View.VISIBLE, logoView.getVisibility());
             }
         });
     }
@@ -465,7 +470,7 @@ public class NewTabPageTest {
         // and the placeholder has not been inflated yet.
         Assert.assertEquals(View.VISIBLE, logoView.getVisibility());
         Assert.assertEquals(View.VISIBLE, searchBoxView.getVisibility());
-        Assert.assertEquals(2, mTileGridLayout.getChildCount());
+        Assert.assertEquals(8, mTileGridLayout.getChildCount());
         Assert.assertNull(ntpView.getPlaceholder());
 
         // When the search provider has no logo and there are no tile suggestions, the placeholder

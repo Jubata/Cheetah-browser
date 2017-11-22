@@ -29,6 +29,7 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/loader/ThreadableLoadingContext.h"
@@ -43,7 +44,6 @@
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/Optional.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/WebThread.h"
 #include "v8/include/v8.h"
 
@@ -166,13 +166,14 @@ class CORE_EXPORT WorkerThread : public WebThread::TaskObserver {
     return parent_frame_task_runners_.Get();
   }
 
-  scheduler::WorkerGlobalScopeScheduler* GetGlobalScopeScheduler() const {
-    return global_scope_scheduler_.get();
-  }
-
   // For ServiceWorkerScriptStreaming. Returns nullptr otherwise.
   virtual InstalledScriptsManager* GetInstalledScriptsManager() {
     return nullptr;
+  }
+
+  // Can be called on both the main thread and the worker thread.
+  scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType type) {
+    return global_scope_scheduler_->GetTaskRunner(type);
   }
 
  protected:

@@ -27,7 +27,8 @@ class AccessibilityObjectModelTest
  protected:
   AXObjectCacheImpl* AXObjectCache() {
     GetDocument().GetSettings()->SetAccessibilityEnabled(true);
-    return static_cast<AXObjectCacheImpl*>(GetDocument().AxObjectCache());
+    return static_cast<AXObjectCacheImpl*>(
+        GetDocument().GetOrCreateAXObjectCache());
   }
 };
 
@@ -79,7 +80,7 @@ TEST_F(AccessibilityObjectModelTest, AOMDoesNotReflectARIA) {
   auto* cache = AXObjectCache();
   ASSERT_NE(nullptr, cache);
   auto* axTextBox = cache->GetOrCreate(textbox);
-  EXPECT_EQ(kComboBoxRole, axTextBox->RoleValue());
+  EXPECT_EQ(kTextFieldWithComboBoxRole, axTextBox->RoleValue());
   AXNameFrom name_from;
   AXObject::AXObjectVector name_objects;
   EXPECT_EQ("Combo", axTextBox->GetName(name_from, &name_objects));

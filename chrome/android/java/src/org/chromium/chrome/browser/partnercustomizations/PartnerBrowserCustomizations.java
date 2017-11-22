@@ -23,6 +23,7 @@ import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.ChromeVersionInfo;
 import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.partnerbookmarks.PartnerBookmarksReader;
+import org.chromium.chrome.browser.util.UrlUtilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,8 +37,11 @@ public class PartnerBrowserCustomizations {
     private static final String TAG = "PartnerCustomize";
     private static final String PROVIDER_AUTHORITY = "com.android.partnerbrowsercustomizations";
 
+    private static final int HOMEPAGE_URL_MAX_LENGTH = 1000;
     // Private homepage structure.
+    @VisibleForTesting
     static final String PARTNER_HOMEPAGE_PATH = "homepage";
+    @VisibleForTesting
     static final String PARTNER_DISABLE_BOOKMARKS_EDITING_PATH = "disablebookmarksediting";
     @VisibleForTesting
     static final String PARTNER_DISABLE_INCOGNITO_MODE_PATH = "disableincognitomode";
@@ -61,8 +65,34 @@ public class PartnerBrowserCustomizations {
 
     /** Partner customizations provided by ContentProvider package. */
     public static class ProviderPackage implements Provider {
+        private static Boolean sValid;
+
+        private boolean isValidInternal() {
+            ProviderInfo providerInfo =
+                    ContextUtils.getApplicationContext().getPackageManager().resolveContentProvider(
+                            sProviderAuthority, 0);
+            if (providerInfo == null) return false;
+
+            if ((providerInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0
+                    && !sIgnoreBrowserProviderSystemPackageCheck) {
+                Log.w(TAG,
+                        "Browser Customizations content provider package, "
+                                + providerInfo.packageName + ", is not a system package. "
+                                + "This could be a malicious attempt from a third party "
+                                + "app, so skip reading the browser content provider.");
+                return false;
+            }
+            return true;
+        }
+
+        private boolean isValid() {
+            if (sValid == null) sValid = isValidInternal();
+            return sValid;
+        }
+
         @Override
         public String getHomepage() {
+            if (!isValid()) return null;
             String homepage = null;
             Cursor cursor = ContextUtils.getApplicationContext().getContentResolver().query(
                     buildQueryUri(PARTNER_HOMEPAGE_PATH), null, null, null, null);
@@ -75,6 +105,7 @@ public class PartnerBrowserCustomizations {
 
         @Override
         public boolean isIncognitoModeDisabled() {
+            if (!isValid()) return false;
             boolean disabled = false;
             Cursor cursor = ContextUtils.getApplicationContext().getContentResolver().query(
                     buildQueryUri(PARTNER_DISABLE_INCOGNITO_MODE_PATH), null, null, null, null);
@@ -87,6 +118,7 @@ public class PartnerBrowserCustomizations {
 
         @Override
         public boolean isBookmarksEditingDisabled() {
+            if (!isValid()) return false;
             boolean disabled = false;
             Cursor cursor = ContextUtils.getApplicationContext().getContentResolver().query(
                     buildQueryUri(PARTNER_DISABLE_BOOKMARKS_EDITING_PATH), null, null, null, null);
@@ -176,7 +208,8 @@ public class PartnerBrowserCustomizations {
             private void refreshHomepage() {
                 try {
                     String homepage = provider.getHomepage();
-                    if (TextUtils.isEmpty(sHomepage) || !sHomepage.equals(homepage)) {
+                    if (!isValidHomepage(homepage)) homepage = null;
+                    if (!TextUtils.equals(sHomepage, homepage)) {
                         mHomepageUriChanged = true;
                     }
                     sHomepage = homepage;
@@ -219,20 +252,6 @@ public class PartnerBrowserCustomizations {
                         return null;
                     }
 
-                    ProviderInfo providerInfo = context.getPackageManager()
-                            .resolveContentProvider(sProviderAuthority, 0);
-                    if (providerInfo == null) return null;
-
-                    if ((providerInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0
-                            && !sIgnoreBrowserProviderSystemPackageCheck) {
-                        Log.w(TAG,
-                                "Browser Customizations content provider package, "
-                                        + providerInfo.packageName + ", is not a system package. "
-                                        + "This could be a malicious attempt from a third party "
-                                        + "app, so skip reading the browser content provider.");
-                        return null;
-                    }
-
                     if (isCancelled()) return null;
                     refreshIncognitoModeDisabled();
 
@@ -266,7 +285,7 @@ public class PartnerBrowserCustomizations {
                 sInitializeAsyncCallbacks.clear();
 
                 if (mHomepageUriChanged) {
-                    HomepageManager.getInstance(context).notifyHomepageUpdated();
+                    HomepageManager.getInstance().notifyHomepageUpdated();
                 }
 
                 // Disable partner bookmarks editing if necessary.
@@ -326,5 +345,20 @@ public class PartnerBrowserCustomizations {
             return commandLine.getSwitchValue(ChromeSwitches.PARTNER_HOMEPAGE_FOR_TESTING);
         }
         return sHomepage;
+    }
+
+    @VisibleForTesting
+    static boolean isValidHomepage(String url) {
+        if (url == null) return false;
+        if (!UrlUtilities.isHttpOrHttps(url)
+                && !UrlConstants.CHROME_SCHEME.equals(Uri.parse(url).getScheme())) {
+            Log.w(TAG, "The scheme in homepage URL \"%s\" is not allowed.", url);
+            return false;
+        }
+        if (url.length() > HOMEPAGE_URL_MAX_LENGTH) {
+            Log.w(TAG, "The homepage URL \"%s\" is too long.", url);
+            return false;
+        }
+        return true;
     }
 }

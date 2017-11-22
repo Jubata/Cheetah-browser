@@ -45,7 +45,7 @@ class LayerTreeFrameSinkHolder : public cc::LayerTreeFrameSinkClient,
 
   bool HasReleaseCallbackForResource(viz::ResourceId id);
   void SetResourceReleaseCallback(viz::ResourceId id,
-                                  const viz::ReleaseCallback& callback);
+                                  viz::ReleaseCallback callback);
   int AllocateResourceId();
   base::WeakPtr<LayerTreeFrameSinkHolder> GetWeakPtr();
 
@@ -89,6 +89,7 @@ class LayerTreeFrameSinkHolder : public cc::LayerTreeFrameSinkClient,
 
   gfx::Size last_frame_size_in_pixels_;
   float last_frame_device_scale_factor_ = 1.0f;
+  std::vector<viz::ResourceId> last_frame_resources_;
 
   bool delete_pending_ = false;
 

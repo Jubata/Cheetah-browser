@@ -92,7 +92,7 @@ class Tab : public gfx::AnimationDelegate,
 
   // Sets the data this tabs displays. Invokes DataChanged. Should only be
   // called after Tab is added to widget hierarchy.
-  void SetData(const TabRendererData& data);
+  void SetData(TabRendererData data);
   const TabRendererData& data() const { return data_; }
 
   // Redraws the loading animation if one is visible. Otherwise, no-op.
@@ -168,6 +168,7 @@ class Tab : public gfx::AnimationDelegate,
   friend class AlertIndicatorButtonTest;
   friend class TabTest;
   friend class TabStripTest;
+  friend class ThrobberView;
   FRIEND_TEST_ALL_PREFIXES(TabStripTest, TabCloseButtonVisibilityWhenStacked);
 
   // The animation object used to swap the favicon with the sad tab icon.
@@ -271,6 +272,9 @@ class Tab : public gfx::AnimationDelegate,
   // Returns the number of favicon-size elements that can fit in the tab's
   // current size.
   int IconCapacity() const;
+
+  // Returns whether the Tab should display a throbber.
+  bool ShouldShowThrobber() const;
 
   // Returns whether the Tab should display a favicon.
   bool ShouldShowIcon() const;

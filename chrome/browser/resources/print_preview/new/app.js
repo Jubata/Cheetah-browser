@@ -4,4 +4,32 @@
 
 Polymer({
   is: 'print-preview-app',
+
+  properties: {
+    /** @private {!print_preview_new.Model} */
+    model_: {
+      type: Object,
+      notify: true,
+      value: {
+        previewLoading: false,
+        previewFailed: false,
+        cloudPrintError: '',
+        privetExtensionError: '',
+        invalidSettings: false,
+        destinationId: 'Foo Printer',
+        destinationLocation: 'ABC-123',
+        destinationOfflineStatus: '',
+        destinationIcon: '../images/1x/printer.png',
+        copies: 1,
+        pageRange: [1, 2, 3, 4, 5],
+        duplex: false,
+        copiesInvalid: false,
+        scalingInvalid: false,
+        pagesInvalid: false,
+        isPdfDocument: true,
+        fitToPageScaling: '94',
+        documentNumPages: 5,
+      },
+    },
+  }
 });

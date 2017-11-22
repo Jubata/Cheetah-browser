@@ -5,9 +5,9 @@
 #ifndef WebFrameScheduler_h
 #define WebFrameScheduler_h
 
-#include "platform/ScopedVirtualTimePauser.h"
-#include "platform/wtf/RefPtr.h"
+#include "base/memory/scoped_refptr.h"
 #include "public/platform/TaskType.h"
+#include "public/platform/WebScopedVirtualTimePauser.h"
 
 #include <memory>
 
@@ -120,14 +120,15 @@ class WebFrameScheduler {
   virtual scoped_refptr<WebTaskRunner> GetTaskRunner(TaskType) = 0;
 
   // Returns the parent WebViewScheduler.
-  virtual WebViewScheduler* GetWebViewScheduler() = 0;
+  virtual WebViewScheduler* GetWebViewScheduler() const = 0;
 
-  // Returns a ScopedVirtualTimePauser which can be used to vote for pausing
-  // virtual time. Virtual time will be paused if any ScopedVirtualTimePauser
-  // votes to pause it, and only unpaused only if all ScopedVirtualTimePausers
-  // are either destroyed or vote to unpause.  Note the ScopedVirtualTimePauser
-  // returned by this method is initially unpaused.
-  virtual ScopedVirtualTimePauser CreateScopedVirtualTimePauser() = 0;
+  // Returns a WebScopedVirtualTimePauser which can be used to vote for pausing
+  // virtual time. Virtual time will be paused if any WebScopedVirtualTimePauser
+  // votes to pause it, and only unpaused only if all
+  // WebScopedVirtualTimePausers are either destroyed or vote to unpause.  Note
+  // the WebScopedVirtualTimePauser returned by this method is initially
+  // unpaused.
+  virtual WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser() = 0;
 
   // Tells the scheduler that a provisional load has started, the scheduler may
   // reset the task cost estimators and the UserModel. Must be called from the
@@ -151,9 +152,12 @@ class WebFrameScheduler {
   virtual std::unique_ptr<ActiveConnectionHandle>
   OnActiveConnectionCreated() = 0;
 
-  // Returns true if this frame is should not throttled (e.g. because of audio
-  // or an active connection).
-  virtual bool IsExemptFromThrottling() const = 0;
+  // Returns true if this frame is should not throttled (e.g. due to an active
+  // connection).
+  // Note that this only applies to the current frame,
+  // use GetWebViewScheduler()->IsExemptFromBudgetBasedThrottling for
+  // the status of the page.
+  virtual bool IsExemptFromBudgetBasedThrottling() const = 0;
 };
 
 }  // namespace blink

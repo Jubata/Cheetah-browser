@@ -37,6 +37,7 @@ static_library("utility") {
     "//chrome/common/printing:interfaces",
     "//chrome/common/profiling",
     "//chrome/profiling",
+    "//components/patch_service:lib",
     "//components/search_engines",
     "//components/strings",
     "//components/url_formatter",
@@ -44,7 +45,6 @@ static_library("utility") {
     "//content/public/common",
     "//content/public/network",
     "//content/public/utility",
-    "//courgette:courgette_lib",
     "//extensions/features",
     "//ipc",
     "//media",
@@ -55,6 +55,7 @@ static_library("utility") {
     "//sql",
     "//third_party/libxml",
     "//third_party/zlib/google:zip",
+    "//ui/base:ui_features",
   ]
 
   if (!is_android) {
@@ -114,13 +115,10 @@ static_library("utility") {
       "image_writer/image_writer_handler.h",
       "image_writer/image_writer_mac.cc",
       "image_writer/image_writer_win.cc",
-      "media_galleries/ipc_data_source.cc",
-      "media_galleries/ipc_data_source.h",
-      "media_galleries/media_metadata_parser.cc",
-      "media_galleries/media_metadata_parser.h",
     ]
     deps += [
       "//chrome/common/extensions/api",
+      "//chrome/services/media_gallery_util:lib",
       "//extensions/utility",
     ]
 
@@ -134,7 +132,10 @@ static_library("utility") {
       libs = [ "esent.lib" ]
       ldflags += [ "/DELAYLOAD:esent.dll" ]
 
-      deps += [ "//chrome/services/util_win:lib" ]
+      deps += [
+        "//chrome/services/util_win:lib",
+        "//chrome/services/wifi_util_win:lib",
+      ]
     }
 
     if (is_win || is_mac) {
@@ -144,7 +145,7 @@ static_library("utility") {
     }
   }
 
-  if (enable_package_mash_services) {
+  if (enable_mus) {
     sources += [
       "mash_service_factory.cc",
       "mash_service_factory.h",
@@ -166,8 +167,8 @@ static_library("utility") {
 
   if (is_chromeos) {
     deps += [
+      "//ash",
       "//ash/autoclick/mus:lib",
-      "//ash/mus:lib",
       "//ash/touch_hud/mus:lib",
       "//chrome/services/file_util:lib",
     ]
@@ -208,8 +209,11 @@ static_library("utility") {
     ]
   }
 
-  if (is_mac && safe_browsing_mode == 1) {
-    deps += [ "//chrome/utility/safe_browsing/mac" ]
+  if (safe_browsing_mode == 1) {
+    deps += [ "//chrome/services/file_util:lib" ]
+    if (is_mac) {
+      deps += [ "//chrome/utility/safe_browsing/mac" ]
+    }
   }
 
   if (!is_android) {

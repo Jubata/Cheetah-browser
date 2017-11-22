@@ -5,12 +5,11 @@
 #ifndef FetchRequestData_h
 #define FetchRequestData_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/heap/Handle.h"
-#include "platform/network/EncodedFormData.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
 #include "platform/weborigin/ReferrerPolicy.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebURLRequest.h"
@@ -62,7 +61,9 @@ class FetchRequestData final
   void SetReferrerPolicy(ReferrerPolicy p) { referrer_.referrer_policy = p; }
   void SetMode(network::mojom::FetchRequestMode mode) { mode_ = mode; }
   network::mojom::FetchRequestMode Mode() const { return mode_; }
-  void SetCredentials(network::mojom::FetchCredentialsMode);
+  void SetCredentials(network::mojom::FetchCredentialsMode credentials) {
+    credentials_ = credentials;
+  }
   network::mojom::FetchCredentialsMode Credentials() const {
     return credentials_;
   }
@@ -89,13 +90,6 @@ class FetchRequestData final
   void SetIntegrity(const String& integrity) { integrity_ = integrity; }
   bool Keepalive() const { return keepalive_; }
   void SetKeepalive(bool b) { keepalive_ = b; }
-  scoped_refptr<EncodedFormData> AttachedCredential() const {
-    return attached_credential_;
-  }
-  void SetAttachedCredential(
-      scoped_refptr<EncodedFormData> attached_credential) {
-    attached_credential_ = std::move(attached_credential);
-  }
 
   // We use these strings instead of "no-referrer" and "client" in the spec.
   static AtomicString NoReferrerString() { return AtomicString(); }
@@ -138,7 +132,6 @@ class FetchRequestData final
   String mime_type_;
   String integrity_;
   bool keepalive_;
-  scoped_refptr<EncodedFormData> attached_credential_;
 };
 
 }  // namespace blink

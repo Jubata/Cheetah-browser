@@ -6,6 +6,7 @@
 #define COMPONENTS_ARC_INTENT_HELPER_ARC_INTENT_HELPER_BRIDGE_H_
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -13,11 +14,12 @@
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
 #include "components/arc/common/intent_helper.mojom.h"
-#include "components/arc/instance_holder.h"
+#include "components/arc/connection_observer.h"
 #include "components/arc/intent_helper/activity_icon_loader.h"
 #include "components/arc/intent_helper/arc_intent_helper_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "url/gurl.h"
 
 class KeyedServiceBaseFactory;
 
@@ -33,7 +35,7 @@ class IntentFilter;
 // Receives intents from ARC.
 class ArcIntentHelperBridge
     : public KeyedService,
-      public InstanceHolder<mojom::IntentHelperInstance>::Observer,
+      public ConnectionObserver<mojom::IntentHelperInstance>,
       public mojom::IntentHelperHost {
  public:
   // Returns singleton instance for the given BrowserContext,
@@ -44,6 +46,10 @@ class ArcIntentHelperBridge
   // Returns factory for the ArcIntentHelperBridge.
   static KeyedServiceBaseFactory* GetFactory();
 
+  // Appends '.' + |to_append| to the intent helper package name.
+  static std::string AppendStringToIntentHelperPackageName(
+      const std::string& to_append);
+
   ArcIntentHelperBridge(content::BrowserContext* context,
                         ArcBridgeService* bridge_service);
   ~ArcIntentHelperBridge() override;
@@ -52,9 +58,9 @@ class ArcIntentHelperBridge
   void RemoveObserver(ArcIntentHelperObserver* observer);
   bool HasObserver(ArcIntentHelperObserver* observer) const;
 
-  // InstanceHolder<mojom::IntentHelperInstance>::Observer
-  void OnInstanceReady() override;
-  void OnInstanceClosed() override;
+  // ConnectionObserver<mojom::IntentHelperInstance>
+  void OnConnectionReady() override;
+  void OnConnectionClosed() override;
 
   // mojom::IntentHelperHost
   void OnIconInvalidated(const std::string& package_name) override;
@@ -62,7 +68,7 @@ class ArcIntentHelperBridge
       std::vector<IntentFilter> intent_filters) override;
   void OnOpenDownloads() override;
   void OnOpenUrl(const std::string& url) override;
-  void OnOpenChromeSettingsMultideviceUrl() override;
+  void OnOpenChromeSettings(mojom::SettingsPage page) override;
   void OpenWallpaperPicker() override;
   void SetWallpaperDeprecated(const std::vector<uint8_t>& jpeg_data) override;
   void OpenVolumeControl() override;
@@ -106,10 +112,14 @@ class ArcIntentHelperBridge
       std::unique_ptr<OpenUrlDelegate> open_url_delegate);
 
   static const char kArcIntentHelperPackageName[];
-  static const char kMultideviceSettingsUrl[];
 
  private:
   THREAD_CHECKER(thread_checker_);
+
+  // Returns true if |url| is whitelisted. This function also returns true when
+  // |url| is neither chrome:// nor about:.
+  // TODO(yusukes): Properly fix b/68953603 and remove the function.
+  bool IsWhitelistedChromeUrl(const GURL& url);
 
   content::BrowserContext* const context_;
   ArcBridgeService* const arc_bridge_service_;  // Owned by ArcServiceManager.
@@ -123,6 +133,9 @@ class ArcIntentHelperBridge
   std::vector<IntentFilter> intent_filters_;
 
   base::ObserverList<ArcIntentHelperObserver> observer_list_;
+
+  // TODO(yusukes): Properly fix b/68953603 and remove the variable.
+  std::set<GURL> whitelisted_urls_;
 
   DISALLOW_COPY_AND_ASSIGN(ArcIntentHelperBridge);
 };

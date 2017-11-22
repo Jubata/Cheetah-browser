@@ -24,7 +24,7 @@ namespace arc {
 namespace {
 
 std::unique_ptr<message_center::MessageView> CreateCustomMessageView(
-    message_center::MessageCenterController* controller,
+    message_center::MessageViewDelegate* controller,
     const message_center::Notification& notification) {
   DCHECK_EQ(notification.notifier_id().type,
             message_center::NotifierId::ARC_APPLICATION);
@@ -100,7 +100,7 @@ ArcNotificationManager::~ArcNotificationManager() {
   arc_bridge_service_->notifications()->RemoveObserver(this);
 }
 
-void ArcNotificationManager::OnInstanceReady() {
+void ArcNotificationManager::OnConnectionReady() {
   DCHECK(!ready_);
 
   auto* notifications_instance =
@@ -113,7 +113,7 @@ void ArcNotificationManager::OnInstanceReady() {
   ready_ = true;
 }
 
-void ArcNotificationManager::OnInstanceClosed() {
+void ArcNotificationManager::OnConnectionClosed() {
   DCHECK(ready_);
   while (!items_.empty()) {
     auto it = items_.begin();
@@ -138,6 +138,16 @@ void ArcNotificationManager::OnNotificationPosted(
     DCHECK(result.second);
     it = result.first;
   }
+  it->second->OnUpdatedFromAndroid(std::move(data));
+}
+
+void ArcNotificationManager::OnNotificationUpdated(
+    mojom::ArcNotificationDataPtr data) {
+  const std::string& key = data->key;
+  auto it = items_.find(key);
+  if (it == items_.end())
+    return;
+
   it->second->OnUpdatedFromAndroid(std::move(data));
 }
 

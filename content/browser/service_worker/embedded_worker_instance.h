@@ -29,12 +29,8 @@
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker.mojom.h"
 #include "url/gurl.h"
-
-// Windows headers will redefine SendMessage.
-#ifdef SendMessage
-#undef SendMessage
-#endif
 
 namespace IPC {
 class Message;
@@ -46,6 +42,7 @@ class EmbeddedWorkerRegistry;
 struct EmbeddedWorkerStartParams;
 class ServiceWorkerContentSettingsProxyImpl;
 class ServiceWorkerContextCore;
+class ServiceWorkerVersion;
 
 // This gives an interface to control one EmbeddedWorker instance, which
 // may be 'in-waiting' or running in one of the child processes added by
@@ -140,6 +137,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
              mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
              mojom::ControllerServiceWorkerRequest controller_request,
              mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info,
+             blink::mojom::ServiceWorkerHostAssociatedPtrInfo
+                 service_worker_host_ptr_info,
              StatusCallback callback);
 
   // Stops the worker. It is invalid to call this when the worker is not in
@@ -155,12 +154,12 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // Stops the worker if the worker is not being debugged (i.e. devtools is
   // not attached). This method is called by a stop-worker timer to kill
   // idle workers.
-  void StopIfIdle();
+  void StopIfNotAttachedToDevTools();
 
   // Sends |message| to the embedded worker running in the child process.
   // It is invalid to call this while the worker is not in STARTING or RUNNING
   // status.
-  ServiceWorkerStatusCode SendMessage(const IPC::Message& message);
+  ServiceWorkerStatusCode SendIpcMessage(const IPC::Message& message);
 
   // Resumes the worker if it paused after download.
   void ResumeAfterDownload();
@@ -239,6 +238,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // Constructor is called via EmbeddedWorkerRegistry::CreateWorker().
   // This instance holds a ref of |registry|.
   EmbeddedWorkerInstance(base::WeakPtr<ServiceWorkerContextCore> context,
+                         ServiceWorkerVersion* owner_version,
                          int embedded_worker_id);
 
   // Called back from StartTask after a process is allocated on the UI thread.
@@ -260,6 +260,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
 
   // Implements mojom::EmbeddedWorkerInstanceHost.
   // These functions all run on the IO thread.
+  void RequestTermination() override;
   void OnReadyForInspection() override;
   void OnScriptLoaded() override;
   // Notifies the corresponding provider host that the thread has started and is
@@ -302,6 +303,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<EmbeddedWorkerRegistry> registry_;
+  ServiceWorkerVersion* owner_version_;
 
   // Unique within an EmbeddedWorkerRegistry.
   const int embedded_worker_id_;
@@ -320,16 +322,18 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // Binding for EmbeddedWorkerInstanceHost, runs on IO thread.
   mojo::AssociatedBinding<EmbeddedWorkerInstanceHost> instance_host_binding_;
 
-  // |pending_dispatcher_request_|, |pending_controller_request_| and
-  // |pending_installed_scripts_info_| are parameters of the StartWorker
-  // message. These are called "pending" because they are not used directly
-  // by this class and are just transferred to the renderer in
-  // SendStartWorker().
+  // |pending_dispatcher_request_|, |pending_controller_request_|,
+  // |pending_installed_scripts_info_|, and
+  // |pending_service_worker_host_ptr_info_| are parameters of the StartWorker
+  // message. These are called "pending" because they are not used directly by
+  // this class and are just transferred to the renderer in SendStartWorker().
   // TODO(shimazu): Remove these when EmbeddedWorkerStartParams is
   // changed to a mojo struct and we put them in EmbeddedWorkerStartParams.
   mojom::ServiceWorkerEventDispatcherRequest pending_dispatcher_request_;
   mojom::ControllerServiceWorkerRequest pending_controller_request_;
   mojom::ServiceWorkerInstalledScriptsInfoPtr pending_installed_scripts_info_;
+  blink::mojom::ServiceWorkerHostAssociatedPtrInfo
+      pending_service_worker_host_ptr_info_;
 
   // This is set at Start and used on SendStartWorker.
   ProviderInfoGetter provider_info_getter_;

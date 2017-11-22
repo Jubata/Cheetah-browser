@@ -120,7 +120,7 @@ void RunTaskAfterStartWorker(base::WeakPtr<ServiceWorkerVersion> version,
   std::move(task).Run();
 }
 
-void KillEmbeddedWorkerProcess(int process_id, ResultCode code) {
+void KillEmbeddedWorkerProcess(int process_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   RenderProcessHost* render_process_host =
       RenderProcessHost::FromID(process_id);
@@ -287,19 +287,19 @@ ServiceWorkerVersion::ServiceWorkerVersion(
       scope_(registration->pattern()),
       fetch_handler_existence_(FetchHandlerExistence::UNKNOWN),
       site_for_uma_(ServiceWorkerMetrics::SiteFromURL(scope_)),
+      binding_(this),
       context_(context),
       script_cache_map_(this, context),
       tick_clock_(std::make_unique<base::DefaultTickClock>()),
       clock_(std::make_unique<base::DefaultClock>()),
       ping_controller_(new PingController(this)),
-      validator_(std::make_unique<blink::TrialTokenValidator>(
-          std::make_unique<TrialPolicyImpl>())),
+      validator_(TrialPolicyImpl::CreateValidatorForPolicy()),
       weak_factory_(this) {
   DCHECK_NE(blink::mojom::kInvalidServiceWorkerVersionId, version_id);
   DCHECK(context_);
   DCHECK(registration);
   DCHECK(script_url_.is_valid());
-  embedded_worker_ = context_->embedded_worker_registry()->CreateWorker();
+  embedded_worker_ = context_->embedded_worker_registry()->CreateWorker(this);
   embedded_worker_->AddListener(this);
   context_->AddLiveVersion(this);
 }
@@ -365,7 +365,7 @@ void ServiceWorkerVersion::SetStatus(Status status) {
         // Resolve skip waiting promises.
         ClearTick(&skip_waiting_time_);
         for (int request_id : pending_skip_waiting_requests_) {
-          embedded_worker_->SendMessage(
+          embedded_worker_->SendIpcMessage(
               ServiceWorkerMsg_DidSkipWaiting(request_id));
         }
         pending_skip_waiting_requests_.clear();
@@ -672,9 +672,9 @@ void ServiceWorkerVersion::RunAfterStartWorker(
     std::move(task).Run();
     return;
   }
-  StartWorker(purpose, base::AdaptCallbackForRepeating(base::BindOnce(
+  StartWorker(purpose, base::BindOnce(
                            &RunTaskAfterStartWorker, weak_factory_.GetWeakPtr(),
-                           std::move(error_callback), std::move(task))));
+                           std::move(error_callback), std::move(task)));
 }
 
 void ServiceWorkerVersion::AddControllee(
@@ -990,10 +990,6 @@ bool ServiceWorkerVersion::OnMessageReceived(const IPC::Message& message) {
                         OnGetClients)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_OpenNewTab, OnOpenNewTab)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_OpenNewPopup, OnOpenNewPopup)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_SetCachedMetadata,
-                        OnSetCachedMetadata)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ClearCachedMetadata,
-                        OnClearCachedMetadata)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PostMessageToClient,
                         OnPostMessageToClient)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_FocusClient,
@@ -1014,6 +1010,46 @@ void ServiceWorkerVersion::OnStartSentAndScriptEvaluated(
     scoped_refptr<ServiceWorkerVersion> protect(this);
     FinishStartWorker(DeduceStartWorkerFailureReason(status));
   }
+}
+
+void ServiceWorkerVersion::SetCachedMetadata(const GURL& url,
+                                             const std::vector<uint8_t>& data) {
+  int64_t callback_id = tick_clock_->NowTicks().ToInternalValue();
+  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
+                           "ServiceWorkerVersion::SetCachedMetadata",
+                           callback_id, "URL", url.spec());
+  script_cache_map_.WriteMetadata(
+      url, data,
+      base::Bind(&ServiceWorkerVersion::OnSetCachedMetadataFinished,
+                 weak_factory_.GetWeakPtr(), callback_id));
+}
+
+void ServiceWorkerVersion::ClearCachedMetadata(const GURL& url) {
+  int64_t callback_id = tick_clock_->NowTicks().ToInternalValue();
+  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
+                           "ServiceWorkerVersion::ClearCachedMetadata",
+                           callback_id, "URL", url.spec());
+  script_cache_map_.ClearMetadata(
+      url, base::Bind(&ServiceWorkerVersion::OnClearCachedMetadataFinished,
+                      weak_factory_.GetWeakPtr(), callback_id));
+}
+
+void ServiceWorkerVersion::OnSetCachedMetadataFinished(int64_t callback_id,
+                                                       int result) {
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "ServiceWorkerVersion::SetCachedMetadata", callback_id,
+                         "result", result);
+  for (auto& listener : listeners_)
+    listener.OnCachedMetadataUpdated(this);
+}
+
+void ServiceWorkerVersion::OnClearCachedMetadataFinished(int64_t callback_id,
+                                                         int result) {
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "ServiceWorkerVersion::ClearCachedMetadata",
+                         callback_id, "result", result);
+  for (auto& listener : listeners_)
+    listener.OnCachedMetadataUpdated(this);
 }
 
 void ServiceWorkerVersion::OnGetClient(int request_id,
@@ -1049,7 +1085,7 @@ void ServiceWorkerVersion::OnGetClientFinished(
     return;
   }
 
-  embedded_worker_->SendMessage(
+  embedded_worker_->SendIpcMessage(
       ServiceWorkerMsg_DidGetClient(request_id, client_info));
 }
 
@@ -1080,7 +1116,7 @@ void ServiceWorkerVersion::OnGetClientsFinished(
     return;
   }
 
-  embedded_worker_->SendMessage(
+  embedded_worker_->SendIpcMessage(
       ServiceWorkerMsg_DidGetClients(request_id, *clients));
 }
 
@@ -1143,8 +1179,7 @@ void ServiceWorkerVersion::OnOpenWindow(int request_id,
     DVLOG(1) << "Received unexpected invalid URL from renderer process.";
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                             base::BindOnce(&KillEmbeddedWorkerProcess,
-                                           embedded_worker_->process_id(),
-                                           RESULT_CODE_KILLED_BAD_MESSAGE));
+                                           embedded_worker_->process_id()));
     return;
   }
 
@@ -1159,7 +1194,7 @@ void ServiceWorkerVersion::OnOpenWindow(int request_id,
   // filtered out by Blink.
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
           embedded_worker_->process_id(), url)) {
-    embedded_worker_->SendMessage(ServiceWorkerMsg_OpenWindowError(
+    embedded_worker_->SendIpcMessage(ServiceWorkerMsg_OpenWindowError(
         request_id, url.spec() + " cannot be opened."));
     return;
   }
@@ -1180,52 +1215,13 @@ void ServiceWorkerVersion::OnOpenWindowFinished(
     return;
 
   if (status != SERVICE_WORKER_OK) {
-    embedded_worker_->SendMessage(ServiceWorkerMsg_OpenWindowError(
+    embedded_worker_->SendIpcMessage(ServiceWorkerMsg_OpenWindowError(
         request_id, "Something went wrong while trying to open the window."));
     return;
   }
 
-  embedded_worker_->SendMessage(
+  embedded_worker_->SendIpcMessage(
       ServiceWorkerMsg_OpenWindowResponse(request_id, client_info));
-}
-
-void ServiceWorkerVersion::OnSetCachedMetadata(const GURL& url,
-                                               const std::vector<char>& data) {
-  int64_t callback_id = tick_clock_->NowTicks().ToInternalValue();
-  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
-                           "ServiceWorkerVersion::OnSetCachedMetadata",
-                           callback_id, "URL", url.spec());
-  script_cache_map_.WriteMetadata(
-      url, data, base::Bind(&ServiceWorkerVersion::OnSetCachedMetadataFinished,
-                            weak_factory_.GetWeakPtr(), callback_id));
-}
-
-void ServiceWorkerVersion::OnSetCachedMetadataFinished(int64_t callback_id,
-                                                       int result) {
-  TRACE_EVENT_ASYNC_END1("ServiceWorker",
-                         "ServiceWorkerVersion::OnSetCachedMetadata",
-                         callback_id, "result", result);
-  for (auto& observer : listeners_)
-    observer.OnCachedMetadataUpdated(this);
-}
-
-void ServiceWorkerVersion::OnClearCachedMetadata(const GURL& url) {
-  int64_t callback_id = tick_clock_->NowTicks().ToInternalValue();
-  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
-                           "ServiceWorkerVersion::OnClearCachedMetadata",
-                           callback_id, "URL", url.spec());
-  script_cache_map_.ClearMetadata(
-      url, base::Bind(&ServiceWorkerVersion::OnClearCachedMetadataFinished,
-                      weak_factory_.GetWeakPtr(), callback_id));
-}
-
-void ServiceWorkerVersion::OnClearCachedMetadataFinished(int64_t callback_id,
-                                                         int result) {
-  TRACE_EVENT_ASYNC_END1("ServiceWorker",
-                         "ServiceWorkerVersion::OnClearCachedMetadata",
-                         callback_id, "result", result);
-  for (auto& observer : listeners_)
-    observer.OnCachedMetadataUpdated(this);
 }
 
 void ServiceWorkerVersion::OnPostMessageToClient(
@@ -1290,7 +1286,7 @@ void ServiceWorkerVersion::OnFocusClientFinished(
   if (running_status() != EmbeddedWorkerStatus::RUNNING)
     return;
 
-  embedded_worker_->SendMessage(
+  embedded_worker_->SendIpcMessage(
       ServiceWorkerMsg_FocusClientResponse(request_id, client_info));
 }
 
@@ -1307,8 +1303,7 @@ void ServiceWorkerVersion::OnNavigateClient(int request_id,
     DVLOG(1) << "Received unexpected invalid URL/UUID from renderer process.";
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                             base::BindOnce(&KillEmbeddedWorkerProcess,
-                                           embedded_worker_->process_id(),
-                                           RESULT_CODE_KILLED_BAD_MESSAGE));
+                                           embedded_worker_->process_id()));
     return;
   }
 
@@ -1318,7 +1313,7 @@ void ServiceWorkerVersion::OnNavigateClient(int request_id,
   // filtered out by Blink.
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
           embedded_worker_->process_id(), url)) {
-    embedded_worker_->SendMessage(
+    embedded_worker_->SendIpcMessage(
         ServiceWorkerMsg_NavigateClientError(request_id, url));
     return;
   }
@@ -1326,7 +1321,7 @@ void ServiceWorkerVersion::OnNavigateClient(int request_id,
   ServiceWorkerProviderHost* provider_host =
       context_->GetProviderHostByClientID(client_uuid);
   if (!provider_host || provider_host->active_version() != this) {
-    embedded_worker_->SendMessage(
+    embedded_worker_->SendIpcMessage(
         ServiceWorkerMsg_NavigateClientError(request_id, url));
     return;
   }
@@ -1347,12 +1342,12 @@ void ServiceWorkerVersion::OnNavigateClientFinished(
     return;
 
   if (status != SERVICE_WORKER_OK) {
-    embedded_worker_->SendMessage(
+    embedded_worker_->SendIpcMessage(
         ServiceWorkerMsg_NavigateClientError(request_id, GURL()));
     return;
   }
 
-  embedded_worker_->SendMessage(
+  embedded_worker_->SendIpcMessage(
       ServiceWorkerMsg_NavigateClientResponse(request_id, client_info));
 }
 
@@ -1367,7 +1362,8 @@ void ServiceWorkerVersion::OnSkipWaiting(int request_id) {
   // activation. In that case, it's a slight spec violation to not resolve now,
   // but we'll eventually resolve the promise in SetStatus().
   if (status_ != INSTALLED) {
-    embedded_worker_->SendMessage(ServiceWorkerMsg_DidSkipWaiting(request_id));
+    embedded_worker_->SendIpcMessage(
+        ServiceWorkerMsg_DidSkipWaiting(request_id));
     return;
   }
 
@@ -1386,7 +1382,7 @@ void ServiceWorkerVersion::OnSkipWaiting(int request_id) {
 
 void ServiceWorkerVersion::OnClaimClients(int request_id) {
   if (status_ != ACTIVATING && status_ != ACTIVATED) {
-    embedded_worker_->SendMessage(ServiceWorkerMsg_ClaimClientsError(
+    embedded_worker_->SendIpcMessage(ServiceWorkerMsg_ClaimClientsError(
         request_id, blink::mojom::ServiceWorkerErrorType::kState,
         base::ASCIIToUTF16(kClaimClientsStateErrorMesage)));
     return;
@@ -1395,13 +1391,13 @@ void ServiceWorkerVersion::OnClaimClients(int request_id) {
     if (ServiceWorkerRegistration* registration =
             context_->GetLiveRegistration(registration_id_)) {
       registration->ClaimClients();
-      embedded_worker_->SendMessage(
+      embedded_worker_->SendIpcMessage(
           ServiceWorkerMsg_DidClaimClients(request_id));
       return;
     }
   }
 
-  embedded_worker_->SendMessage(ServiceWorkerMsg_ClaimClientsError(
+  embedded_worker_->SendIpcMessage(ServiceWorkerMsg_ClaimClientsError(
       request_id, blink::mojom::ServiceWorkerErrorType::kAbort,
       base::ASCIIToUTF16(kClaimClientsShutdownErrorMesage)));
 }
@@ -1425,8 +1421,7 @@ void ServiceWorkerVersion::RegisterForeignFetchScopes(
       DVLOG(1) << "Received unexpected invalid URL from renderer process.";
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                               base::BindOnce(&KillEmbeddedWorkerProcess,
-                                             embedded_worker_->process_id(),
-                                             RESULT_CODE_KILLED_BAD_MESSAGE));
+                                             embedded_worker_->process_id()));
       return;
     }
   }
@@ -1435,8 +1430,7 @@ void ServiceWorkerVersion::RegisterForeignFetchScopes(
       DVLOG(1) << "Received unexpected unique origin from renderer process.";
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
                               base::BindOnce(&KillEmbeddedWorkerProcess,
-                                             embedded_worker_->process_id(),
-                                             RESULT_CODE_KILLED_BAD_MESSAGE));
+                                             embedded_worker_->process_id()));
       return;
     }
   }
@@ -1560,6 +1554,10 @@ void ServiceWorkerVersion::StartWorkerInternal() {
   CHECK(event_dispatcher_.is_bound());
   CHECK(event_dispatcher_request.is_pending());
 
+  blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host_ptr_info;
+  binding_.Close();
+  binding_.Bind(mojo::MakeRequest(&service_worker_host_ptr_info));
+
   embedded_worker_->Start(
       std::move(params),
       // Unretained is used here because the callback will be owned by
@@ -1568,6 +1566,7 @@ void ServiceWorkerVersion::StartWorkerInternal() {
                      std::move(pending_provider_host), context()),
       mojo::MakeRequest(&event_dispatcher_),
       mojo::MakeRequest(&controller_ptr_), std::move(installed_scripts_info),
+      std::move(service_worker_host_ptr_info),
       base::BindOnce(&ServiceWorkerVersion::OnStartSentAndScriptEvaluated,
                      weak_factory_.GetWeakPtr()));
   event_dispatcher_.set_connection_error_handler(base::BindOnce(
@@ -1646,7 +1645,7 @@ void ServiceWorkerVersion::OnTimeoutTimer() {
     scoped_refptr<ServiceWorkerVersion> protect_this(this);
     embedded_worker_->RemoveListener(this);
     embedded_worker_->Detach();
-    embedded_worker_ = context_->embedded_worker_registry()->CreateWorker();
+    embedded_worker_ = context_->embedded_worker_registry()->CreateWorker(this);
     embedded_worker_->AddListener(this);
 
     // Call OnStoppedInternal to fail callbacks and possibly restart.
@@ -1699,7 +1698,10 @@ void ServiceWorkerVersion::OnTimeoutTimer() {
     return;
 
   // The worker has been idle for longer than a certain period.
-  if (GetTickDuration(idle_time_) > kIdleWorkerTimeout) {
+  // S13nServiceWorker: The idle timer is implemented on the renderer, so we can
+  // skip this check.
+  if (!ServiceWorkerUtils::IsServicificationEnabled() &&
+      GetTickDuration(idle_time_) > kIdleWorkerTimeout) {
     StopWorkerIfIdle();
     return;
   }
@@ -1734,17 +1736,11 @@ void ServiceWorkerVersion::StopWorkerIfIdle() {
   }
 
   // StopWorkerIfIdle() may be called for two reasons: "idle-timeout" or
-  // "ping-timeout". For idle-timeout (i.e. ping hasn't timed out), first check
-  // if the worker really is idle.
-  if (!ping_controller_->IsTimedOut()) {
-    // S13nServiceWorker: We don't stop the service worker for idle-timeout
-    // in the browser process when Servicification is enabled, as events
-    // might be dispatched directly without going through the browser-process.
-    // TODO(kinuko): Re-implement timers. (crbug.com/774374)
-    if (HasWork() || ServiceWorkerUtils::IsServicificationEnabled())
-      return;
-  }
-  embedded_worker_->StopIfIdle();
+  // "ping-timeout". For idle-timeout (i.e. ping hasn't timed out), check if the
+  // worker really is idle.
+  if (!ping_controller_->IsTimedOut() && HasWork())
+    return;
+  embedded_worker_->StopIfNotAttachedToDevTools();
 }
 
 bool ServiceWorkerVersion::HasWork() const {
@@ -1951,6 +1947,7 @@ void ServiceWorkerVersion::OnStoppedInternal(EmbeddedWorkerStatus old_status) {
   event_dispatcher_.reset();
   controller_ptr_.reset();
   installed_scripts_sender_.reset();
+  binding_.Close();
 
   for (auto& observer : listeners_)
     observer.OnRunningStateChanged(this);

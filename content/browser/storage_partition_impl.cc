@@ -706,6 +706,20 @@ void StoragePartitionImpl::OpenLocalStorage(
   dom_storage_context_->OpenLocalStorage(origin, std::move(request));
 }
 
+void StoragePartitionImpl::OpenSessionStorage(
+    int64_t namespace_id,
+    const url::Origin& origin,
+    mojo::InterfaceRequest<mojom::LevelDBWrapper> request) {
+  int process_id = bindings_.dispatch_context();
+  if (!ChildProcessSecurityPolicy::GetInstance()->CanAccessDataForOrigin(
+          process_id, origin.GetURL())) {
+    bindings_.ReportBadMessage("Access denied for sessionStorage request");
+    return;
+  }
+  dom_storage_context_->OpenSessionStorage(namespace_id, origin,
+                                           std::move(request));
+}
+
 void StoragePartitionImpl::ClearDataImpl(
     uint32_t remove_mask,
     uint32_t quota_storage_remove_mask,
@@ -1002,6 +1016,12 @@ void StoragePartitionImpl::Flush() {
 
 void StoragePartitionImpl::ClearBluetoothAllowedDevicesMapForTesting() {
   bluetooth_allowed_devices_map_->Clear();
+}
+
+void StoragePartitionImpl::SetNetworkFactoryForTesting(
+    mojom::URLLoaderFactoryPtr test_factory) {
+  url_loader_factory_getter_->SetNetworkFactoryForTesting(
+      std::move(test_factory));
 }
 
 BrowserContext* StoragePartitionImpl::browser_context() const {

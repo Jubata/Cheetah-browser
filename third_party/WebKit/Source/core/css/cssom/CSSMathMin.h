@@ -5,28 +5,22 @@
 #ifndef CSSMathMin_h
 #define CSSMathMin_h
 
-#include "core/css/cssom/CSSMathValue.h"
+#include "base/macros.h"
+#include "core/css/cssom/CSSMathVariadic.h"
 
 namespace blink {
 
 // Represents the minimum of one or more CSSNumericValues.
 // See CSSMathMin.idl for more information about this class.
-class CORE_EXPORT CSSMathMin : public CSSMathValue {
-  WTF_MAKE_NONCOPYABLE(CSSMathMin);
+class CORE_EXPORT CSSMathMin final : public CSSMathVariadic {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
   // The constructor defined in the IDL.
   static CSSMathMin* Create(const HeapVector<CSSNumberish>& args,
-                            ExceptionState& exception_state) {
-    if (args.IsEmpty()) {
-      exception_state.ThrowDOMException(kSyntaxError,
-                                        "Arguments can't be empty");
-      return nullptr;
-    }
-
-    return new CSSMathMin(args);
-  }
+                            ExceptionState&);
+  // Blink-internal constructor.
+  static CSSMathMin* Create(CSSNumericValueVector);
 
   String getOperator() const final { return "min"; }
 
@@ -34,7 +28,9 @@ class CORE_EXPORT CSSMathMin : public CSSMathValue {
   StyleValueType GetType() const final { return CSSStyleValue::kMinType; }
 
  private:
-  explicit CSSMathMin(const HeapVector<CSSNumberish>&) : CSSMathValue() {}
+  CSSMathMin(CSSNumericArray* values, const CSSNumericValueType& type)
+      : CSSMathVariadic(values, type) {}
+  DISALLOW_COPY_AND_ASSIGN(CSSMathMin);
 };
 
 }  // namespace blink

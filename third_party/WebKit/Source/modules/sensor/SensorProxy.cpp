@@ -11,6 +11,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
 #include "services/device/public/cpp/generic_sensor/sensor_traits.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 
@@ -65,8 +66,7 @@ void SensorProxy::Initialize() {
   state_ = kInitializing;
   auto callback = ConvertToBaseCallback(
       WTF::Bind(&SensorProxy::OnSensorCreated, WrapWeakPersistent(this)));
-  provider_->GetSensorProvider()->GetSensor(type_, mojo::MakeRequest(&sensor_),
-                                            callback);
+  provider_->GetSensorProvider()->GetSensor(type_, std::move(callback));
 }
 
 void SensorProxy::AddConfiguration(SensorConfigurationPtr configuration,
@@ -165,8 +165,7 @@ void SensorProxy::HandleSensorError() {
   }
 }
 
-void SensorProxy::OnSensorCreated(SensorInitParamsPtr params,
-                                  SensorClientRequest client_request) {
+void SensorProxy::OnSensorCreated(SensorInitParamsPtr params) {
   DCHECK_EQ(kInitializing, state_);
   if (!params) {
     HandleSensorError();
@@ -183,8 +182,8 @@ void SensorProxy::OnSensorCreated(SensorInitParamsPtr params,
     return;
   }
 
-  DCHECK(sensor_.is_bound());
-  client_binding_.Bind(std::move(client_request));
+  sensor_.Bind(std::move(params->sensor));
+  client_binding_.Bind(std::move(params->client_request));
 
   shared_buffer_handle_ = std::move(params->memory);
   DCHECK(!shared_buffer_);
@@ -248,7 +247,7 @@ void SensorProxy::UpdateSuspendedStatus() {
     return;
 
   bool page_visible =
-      GetPage()->VisibilityState() == kPageVisibilityStateVisible;
+      GetPage()->VisibilityState() == mojom::PageVisibilityState::kVisible;
 
   LocalFrame* focused_frame = GetPage()->GetFocusController().FocusedFrame();
   bool main_frame_focused =

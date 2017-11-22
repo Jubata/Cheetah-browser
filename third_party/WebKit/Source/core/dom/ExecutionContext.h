@@ -30,6 +30,7 @@
 
 #include <memory>
 
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ContextLifecycleObserver.h"
@@ -39,7 +40,6 @@
 #include "platform/loader/fetch/AccessControlStatus.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/ReferrerPolicy.h"
-#include "platform/wtf/Noncopyable.h"
 #include "public/platform/WebTraceLocation.h"
 #include "v8/include/v8.h"
 
@@ -62,8 +62,6 @@ class ResourceFetcher;
 class SecurityOrigin;
 class ScriptState;
 
-using SuspendableObject = PausableObject;
-
 enum class TaskType : unsigned;
 
 enum ReasonForCallingCanExecuteScripts {
@@ -71,9 +69,10 @@ enum ReasonForCallingCanExecuteScripts {
   kNotAboutToExecuteScript
 };
 
+enum class SecureContextMode { kInsecureContext, kSecureContext };
+
 class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
                                      public Supplementable<ExecutionContext> {
-  WTF_MAKE_NONCOPYABLE(ExecutionContext);
   MERGE_GARBAGE_COLLECTED_MIXINS();
 
  public:
@@ -148,10 +147,9 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   // TODO(haraken): Remove these methods by making the customers inherit from
   // PausableObject. PausableObject is a standard way to observe context
   // suspension/resumption.
-  // TODO(hajimehoshi): Rename them to use the terms Pause/Unpause
-  virtual bool TasksNeedSuspension() { return false; }
-  virtual void TasksWereSuspended() {}
-  virtual void TasksWereResumed() {}
+  virtual bool TasksNeedPause() { return false; }
+  virtual void TasksWerePaused() {}
+  virtual void TasksWereUnpaused() {}
 
   bool IsContextPaused() const { return is_context_paused_; }
   bool IsContextDestroyed() const { return is_context_destroyed_; }
@@ -176,6 +174,11 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   // https://w3c.github.io/webappsec/specs/powerfulfeatures/#settings-privileged.
   virtual bool IsSecureContext(String& error_message) const = 0;
   virtual bool IsSecureContext() const;
+
+  SecureContextMode SecureContextMode() const {
+    return IsSecureContext() ? SecureContextMode::kSecureContext
+                             : SecureContextMode::kInsecureContext;
+  }
 
   virtual String OutgoingReferrer() const;
   // Parses a comma-separated list of referrer policy tokens, and sets
@@ -223,6 +226,7 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   int window_interaction_tokens_;
 
   ReferrerPolicy referrer_policy_;
+  DISALLOW_COPY_AND_ASSIGN(ExecutionContext);
 };
 
 }  // namespace blink

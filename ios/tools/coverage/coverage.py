@@ -219,11 +219,11 @@ class _FileLineCoverageReport(object):
     files_to_delete = []
     for path in self._coverage:
       should_include = (any(os.path.abspath(path).startswith(
-          os.path.abspath(path))
-                            for path in include_paths))
+          os.path.abspath(include_path))
+                            for include_path in include_paths))
       should_exclude = (any(os.path.abspath(path).startswith(
-          os.path.abspath(path))
-                            for path in exclude_paths))
+          os.path.abspath(exclude_path))
+                            for exclude_path in exclude_paths))
 
       if not should_include or should_exclude:
         files_to_delete.append(path)
@@ -672,13 +672,14 @@ def _RunTestTargetsWithCoverageConfiguration(targets, gtest_filter=None):
   logs = []
   iossim_path = _GetIOSSimPath()
   for target in targets:
-    application_path = _GetApplicationBundlePath(target)
     cmd = [iossim_path]
-    cmd.append(application_path)
 
     # For iossim arguments, please refer to src/testing/iossim/iossim.mm.
     if gtest_filter and not _TargetIsEarlGreyTest(target):
       cmd.append('-c --gtest_filter=' + gtest_filter)
+
+    application_path = _GetApplicationBundlePath(target)
+    cmd.append(application_path)
 
     if _TargetIsEarlGreyTest(target):
       cmd.append(_GetXCTestBundlePath(target))

@@ -23,7 +23,7 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "public/web/WebElement.h"
 #include "public/web/WebFrameOwnerProperties.h"
-#include "public/web/WebSandboxFlags.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 
 namespace blink {
 
@@ -142,7 +142,7 @@ WebSecurityOrigin WebFrame::GetSecurityOrigin() const {
 
 void WebFrame::SetFrameOwnerPolicy(
     WebSandboxFlags flags,
-    const blink::WebParsedFeaturePolicy& container_policy) {
+    const blink::ParsedFeaturePolicy& container_policy) {
   // At the moment, this is only used to replicate sandbox flags and container
   // policy for frames with a remote owner.
   RemoteFrameOwner* owner = ToRemoteFrameOwner(ToCoreFrame(*this)->Owner());

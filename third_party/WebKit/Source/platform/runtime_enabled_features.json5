@@ -214,10 +214,6 @@
       status: "experimental",
     },
     {
-      name: "CSSApplyAtRules",
-      status: "experimental",
-    },
-    {
       name: "CSSBackdropFilter",
       status: "experimental",
     },
@@ -289,7 +285,7 @@
     },
     {
       name: "CSSTransformBox",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "CSSTypedOM",
@@ -401,8 +397,12 @@
       status: "stable"
     },
     {
+      name: "FeaturePolicyJavaScriptInterface",
+      status: "experimental"
+    },
+    {
       name: "FetchRequestCache",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "FetchRequestKeepalive",
@@ -410,6 +410,10 @@
     },
     {
       name: "FileSystem",
+      status: "stable",
+    },
+    {
+      name: "FocusOptions",
       status: "stable",
     },
     {
@@ -436,7 +440,7 @@
     },
     {
       name: "FractionalMouseTypePointerEvent",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "FractionalScrollOffsets",
@@ -564,7 +568,8 @@
     },
     {
       name: "MediaCapabilities",
-      status: "test",
+      origin_trial_feature_name: "MediaCapabilities",
+      status: "experimental",
     },
     {
       name: "MediaCapture",
@@ -597,10 +602,6 @@
       name: "MediaEngagementBypassAutoplayPolicies",
     },
     {
-      name: "MediaPlaybackRateOutOfRange",
-      status: "experimental",
-    },
-    {
       name: "MediaQueryShape",
       status: "experimental",
     },
@@ -616,10 +617,6 @@
     },
     {
       name: "MediaSourceNewAbortAndDuration",
-      status: "experimental",
-    },
-    {
-      name: "MediaStreamSpeech",
       status: "experimental",
     },
     {
@@ -643,8 +640,8 @@
       name: "ModernMediaControls",
     },
     {
-      name: "ModuleScripts",
-      status: "stable",
+      name: "ModulePreload",
+      status: "experimental",
     },
     {
       name: "ModuleScriptsDynamicImport",
@@ -691,6 +688,10 @@
     {
       name: "NetInfoRtt",
       status: "stable",
+    },
+    {
+      name: "NetInfoSaveData",
+      status: "experimental",
     },
     {
       name: "NetworkService",
@@ -837,6 +838,9 @@
       status: "stable",
     },
     {
+      name: "PWAFullCodeCache"
+    },
+    {
       name: "ReducedReferrerGranularity",
     },
     {
@@ -868,7 +872,7 @@
     },
     {
       name: "ResizeObserver",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "ResourceLoadScheduler",
@@ -896,6 +900,10 @@
       name: "ScrollAnchoring",
       settable_from_internals: true,
       status: "experimental",
+    },
+    // Serialize and restore scroll anchors.
+    {
+      name: "ScrollAnchorSerialization",
     },
     {
       name: "ScrollCustomization",
@@ -930,6 +938,10 @@
     },
     {
       name: "ServiceWorkerScriptStreaming",
+    },
+    {
+      name: "ServiceWorkerUpdateViaCache",
+      status: "experimental",
     },
     {
       name: "SetRootScroller",

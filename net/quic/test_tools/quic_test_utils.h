@@ -233,7 +233,7 @@ class MockFramerVisitor : public QuicFramerVisitorInterface {
   MOCK_METHOD1(OnUnauthenticatedHeader, bool(const QuicPacketHeader& header));
   // The constructor sets this up to return true by default.
   MOCK_METHOD1(OnUnauthenticatedPublicHeader,
-               bool(const QuicPacketPublicHeader& header));
+               bool(const QuicPacketHeader& header));
   MOCK_METHOD1(OnDecryptedPacket, void(EncryptionLevel level));
   MOCK_METHOD1(OnPacketHeader, bool(const QuicPacketHeader& header));
   MOCK_METHOD1(OnStreamFrame, bool(const QuicStreamFrame& frame));
@@ -264,8 +264,7 @@ class NoOpFramerVisitor : public QuicFramerVisitorInterface {
       const QuicVersionNegotiationPacket& packet) override {}
   bool OnProtocolVersionMismatch(QuicTransportVersion version) override;
   bool OnUnauthenticatedHeader(const QuicPacketHeader& header) override;
-  bool OnUnauthenticatedPublicHeader(
-      const QuicPacketPublicHeader& header) override;
+  bool OnUnauthenticatedPublicHeader(const QuicPacketHeader& header) override;
   void OnDecryptedPacket(EncryptionLevel level) override {}
   bool OnPacketHeader(const QuicPacketHeader& header) override;
   bool OnStreamFrame(const QuicStreamFrame& frame) override;
@@ -308,6 +307,9 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_CONST_METHOD0(HasOpenDynamicStreams, bool());
   MOCK_METHOD1(OnSuccessfulVersionNegotiation,
                void(const QuicTransportVersion& version));
+  MOCK_METHOD2(OnConnectivityProbeReceived,
+               void(const QuicSocketAddress& self_address,
+                    const QuicSocketAddress& peer_address));
   MOCK_METHOD0(OnConfigNegotiated, void());
   MOCK_METHOD0(PostProcessAfterData, void());
   MOCK_METHOD0(OnAckNeedsRetransmittableFrame, void());
@@ -422,6 +424,9 @@ class MockQuicConnection : public QuicConnection {
   MOCK_METHOD2(SendWindowUpdate,
                void(QuicStreamId id, QuicStreamOffset byte_offset));
   MOCK_METHOD0(OnCanWrite, void());
+  MOCK_METHOD2(SendConnectivityProbingPacket,
+               bool(QuicPacketWriter* probing_writer,
+                    const QuicSocketAddress& peer_address));
 
   MOCK_METHOD1(OnSendConnectionState, void(const CachedNetworkParameters&));
   MOCK_METHOD2(ResumeConnectionState,
@@ -445,6 +450,13 @@ class MockQuicConnection : public QuicConnection {
                         QuicStreamId last_good_stream_id,
                         const std::string& reason) {
     QuicConnection::SendGoAway(error, last_good_stream_id, reason);
+  }
+
+  bool ReallySendConnectivityProbingPacket(
+      QuicPacketWriter* probing_writer,
+      const QuicSocketAddress& peer_address) {
+    return QuicConnection::SendConnectivityProbingPacket(probing_writer,
+                                                         peer_address);
   }
 
  private:

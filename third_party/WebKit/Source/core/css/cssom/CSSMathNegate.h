@@ -5,6 +5,7 @@
 #ifndef CSSMathNegate_h
 #define CSSMathNegate_h
 
+#include "base/macros.h"
 #include "core/css/cssom/CSSMathValue.h"
 
 namespace blink {
@@ -12,13 +13,16 @@ namespace blink {
 // Represents the negation of a CSSNumericValue.
 // See CSSMathNegate.idl for more information about this class.
 class CORE_EXPORT CSSMathNegate : public CSSMathValue {
-  WTF_MAKE_NONCOPYABLE(CSSMathNegate);
   DEFINE_WRAPPERTYPEINFO();
 
  public:
   // The constructor defined in the IDL.
   static CSSMathNegate* Create(const CSSNumberish& arg) {
-    return new CSSMathNegate(CSSNumericValue::FromNumberish(arg));
+    return Create(CSSNumericValue::FromNumberish(arg));
+  }
+  // Blink-internal constructor
+  static CSSMathNegate* Create(CSSNumericValue* value) {
+    return new CSSMathNegate(value, value->Type());
   }
 
   String getOperator() const final { return "negate"; }
@@ -36,11 +40,24 @@ class CORE_EXPORT CSSMathNegate : public CSSMathValue {
     CSSMathValue::Trace(visitor);
   }
 
+  bool Equals(const CSSNumericValue& other) const final {
+    if (other.GetType() != kNegateType)
+      return false;
+
+    // We can safely cast here as we know 'other' has the same type as us.
+    const auto& other_negate = static_cast<const CSSMathNegate&>(other);
+    return value_->Equals(*other_negate.value_);
+  }
+
  private:
-  explicit CSSMathNegate(CSSNumericValue* value)
-      : CSSMathValue(), value_(value) {}
+  CSSMathNegate(CSSNumericValue* value, const CSSNumericValueType& type)
+      : CSSMathValue(type), value_(value) {}
+
+  // From CSSNumericValue
+  CSSNumericValue* Negate() final { return value_.Get(); }
 
   Member<CSSNumericValue> value_;
+  DISALLOW_COPY_AND_ASSIGN(CSSMathNegate);
 };
 
 }  // namespace blink

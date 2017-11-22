@@ -112,12 +112,12 @@
 #import "ios/chrome/browser/ui/commands/open_url_command.h"
 #import "ios/chrome/browser/ui/commands/show_signin_command.h"
 #import "ios/chrome/browser/ui/commands/start_voice_search_command.h"
-#import "ios/chrome/browser/ui/downloads/download_manager_controller.h"
+#import "ios/chrome/browser/ui/download/download_manager_controller.h"
 #import "ios/chrome/browser/ui/external_file_remover_factory.h"
 #import "ios/chrome/browser/ui/external_file_remover_impl.h"
 #import "ios/chrome/browser/ui/first_run/first_run_util.h"
 #import "ios/chrome/browser/ui/first_run/welcome_to_chrome_view_controller.h"
-#import "ios/chrome/browser/ui/fullscreen/fullscreen_controller.h"
+#import "ios/chrome/browser/ui/fullscreen/legacy_fullscreen_controller.h"
 #import "ios/chrome/browser/ui/history/history_panel_view_controller.h"
 #import "ios/chrome/browser/ui/main/browser_view_wrangler.h"
 #import "ios/chrome/browser/ui/main/main_coordinator.h"
@@ -368,13 +368,6 @@ const int kExternalFilesCleanupDelaySeconds = 60;
 - (void)activateBVCAndMakeCurrentBVCPrimary;
 // Sets |currentBVC| as the root view controller for the window.
 - (void)displayCurrentBVC;
-// Invokes the sign in flow with the specified authentication operation and
-// invokes |callback| when finished.
-- (void)showSigninWithOperation:(AuthenticationOperation)operation
-                       identity:(ChromeIdentity*)identity
-                    accessPoint:(signin_metrics::AccessPoint)accessPoint
-                    promoAction:(signin_metrics::PromoAction)promoAction
-                       callback:(ShowSigninCommandCompletionCallback)callback;
 // Shows the tab switcher UI.
 - (void)showTabSwitcher;
 // Starts a voice search on the current BVC.
@@ -1414,29 +1407,17 @@ const int kExternalFilesCleanupDelaySeconds = 60;
                                  completion:nil];
 }
 
-- (void)showAutofillSettings {
+// TODO(crbug.com/779791) : Remove showing settings from MainController.
+- (void)showAutofillSettingsFromViewController:
+    (UIViewController*)baseViewController {
   if (_settingsNavigationController)
     return;
   _settingsNavigationController =
       [SettingsNavigationController newAutofillController:_mainBrowserState
                                                  delegate:self];
-  [[self topPresentedViewController]
-      presentViewController:_settingsNavigationController
-                   animated:YES
-                 completion:nil];
-}
-
-- (void)showSavePasswordsSettings {
-  // Do not display password settings if settings screen is already displayed.
-  if (_settingsNavigationController)
-    return;
-  _settingsNavigationController =
-      [SettingsNavigationController newSavePasswordsController:_mainBrowserState
-                                                      delegate:self];
-  [[self topPresentedViewController]
-      presentViewController:_settingsNavigationController
-                   animated:YES
-                 completion:nil];
+  [baseViewController presentViewController:_settingsNavigationController
+                                   animated:YES
+                                 completion:nil];
 }
 
 - (void)showReportAnIssueFromViewController:
@@ -1477,19 +1458,44 @@ const int kExternalFilesCleanupDelaySeconds = 60;
   }
 }
 
-- (void)showSignin:(ShowSigninCommand*)command {
+// TODO(crbug.com/779791) : Do not pass |baseViewController| through dispatcher.
+- (void)showSignin:(ShowSigninCommand*)command
+    baseViewController:(UIViewController*)baseViewController {
   if (command.operation == AUTHENTICATION_OPERATION_DISMISS) {
     [self dismissSigninInteractionCoordinator];
-  } else {
-    [self showSigninWithOperation:command.operation
-                         identity:command.identity
-                      accessPoint:command.accessPoint
-                      promoAction:command.promoAction
-                         callback:command.callback];
+    return;
+  }
+
+  if (!self.signinInteractionCoordinator) {
+    self.signinInteractionCoordinator = [[SigninInteractionCoordinator alloc]
+        initWithBrowserState:_mainBrowserState
+                  dispatcher:self.mainBVC.dispatcher];
+  }
+
+  switch (command.operation) {
+    case AUTHENTICATION_OPERATION_DISMISS:
+      // Special case handled above.
+      NOTREACHED();
+      break;
+    case AUTHENTICATION_OPERATION_REAUTHENTICATE:
+      [self.signinInteractionCoordinator
+          reAuthenticateWithAccessPoint:command.accessPoint
+                            promoAction:command.promoAction
+               presentingViewController:baseViewController
+                             completion:command.callback];
+      break;
+    case AUTHENTICATION_OPERATION_SIGNIN:
+      [self.signinInteractionCoordinator signInWithIdentity:command.identity
+                                                accessPoint:command.accessPoint
+                                                promoAction:command.promoAction
+                                   presentingViewController:baseViewController
+                                                 completion:command.callback];
+      break;
   }
 }
 
-- (void)showAddAccount {
+// TODO(crbug.com/779791) : Remove settings commands from MainController.
+- (void)showAddAccountFromViewController:(UIViewController*)baseViewController {
   if (!self.signinInteractionCoordinator) {
     self.signinInteractionCoordinator = [[SigninInteractionCoordinator alloc]
         initWithBrowserState:_mainBrowserState
@@ -1501,7 +1507,7 @@ const int kExternalFilesCleanupDelaySeconds = 60;
                                     ACCESS_POINT_UNKNOWN
                     promoAction:signin_metrics::PromoAction::
                                     PROMO_ACTION_NO_SIGNIN_PROMO
-       presentingViewController:[self topPresentedViewController]
+       presentingViewController:baseViewController
                      completion:nil];
 }
 
@@ -1520,7 +1526,8 @@ const int kExternalFilesCleanupDelaySeconds = 60;
     return;
   }
   if (_settingsNavigationController) {
-    [_settingsNavigationController showAccountsSettingsFromViewController:nil];
+    [_settingsNavigationController
+        showAccountsSettingsFromViewController:baseViewController];
     return;
   }
   _settingsNavigationController = [SettingsNavigationController
@@ -1531,33 +1538,37 @@ const int kExternalFilesCleanupDelaySeconds = 60;
                                  completion:nil];
 }
 
-- (void)showSyncSettings {
+// TODO(crbug.com/779791) : Remove show settings commands from MainController.
+- (void)showSyncSettingsFromViewController:
+    (UIViewController*)baseViewController {
   if (_settingsNavigationController) {
-    [_settingsNavigationController showSyncSettings];
+    [_settingsNavigationController
+        showSyncSettingsFromViewController:baseViewController];
     return;
   }
   _settingsNavigationController =
       [SettingsNavigationController newSyncController:_mainBrowserState
                                allowSwitchSyncAccount:YES
                                              delegate:self];
-  [[self topPresentedViewController]
-      presentViewController:_settingsNavigationController
-                   animated:YES
-                 completion:nil];
+  [baseViewController presentViewController:_settingsNavigationController
+                                   animated:YES
+                                 completion:nil];
 }
 
-- (void)showSyncPassphraseSettings {
+// TODO(crbug.com/779791) : Remove show settings commands from MainController.
+- (void)showSyncPassphraseSettingsFromViewController:
+    (UIViewController*)baseViewController {
   if (_settingsNavigationController) {
-    [_settingsNavigationController showSyncPassphraseSettings];
+    [_settingsNavigationController
+        showSyncPassphraseSettingsFromViewController:baseViewController];
     return;
   }
   _settingsNavigationController = [SettingsNavigationController
       newSyncEncryptionPassphraseController:_mainBrowserState
                                    delegate:self];
-  [[self topPresentedViewController]
-      presentViewController:_settingsNavigationController
-                   animated:YES
-                 completion:nil];
+  [baseViewController presentViewController:_settingsNavigationController
+                                   animated:YES
+                                 completion:nil];
 }
 
 #pragma mark - chromeExecuteCommand
@@ -2033,42 +2044,6 @@ const int kExternalFilesCleanupDelaySeconds = 60;
                                  completion:nil];
 }
 
-- (void)showSigninWithOperation:(AuthenticationOperation)operation
-                       identity:(ChromeIdentity*)identity
-                    accessPoint:(signin_metrics::AccessPoint)accessPoint
-                    promoAction:(signin_metrics::PromoAction)promoAction
-                       callback:(ShowSigninCommandCompletionCallback)callback {
-  DCHECK_NE(AUTHENTICATION_OPERATION_DISMISS, operation);
-
-  if (!self.signinInteractionCoordinator) {
-    self.signinInteractionCoordinator = [[SigninInteractionCoordinator alloc]
-        initWithBrowserState:_mainBrowserState
-                  dispatcher:self.mainBVC.dispatcher];
-  }
-
-  switch (operation) {
-    case AUTHENTICATION_OPERATION_DISMISS:
-      // Special case handled above.
-      NOTREACHED();
-      break;
-    case AUTHENTICATION_OPERATION_REAUTHENTICATE:
-      [self.signinInteractionCoordinator
-          reAuthenticateWithAccessPoint:accessPoint
-                            promoAction:promoAction
-               presentingViewController:[self topPresentedViewController]
-                             completion:callback];
-      break;
-    case AUTHENTICATION_OPERATION_SIGNIN:
-      [self.signinInteractionCoordinator
-                signInWithIdentity:identity
-                       accessPoint:accessPoint
-                       promoAction:promoAction
-          presentingViewController:[self topPresentedViewController]
-                        completion:callback];
-      break;
-  }
-}
-
 - (void)dismissSigninInteractionCoordinator {
   // The SigninInteractionCoordinator must not be destroyed at this point, as
   // it may dismiss the sign in UI in a future callback.
@@ -2431,14 +2406,6 @@ const int kExternalFilesCleanupDelaySeconds = 60;
 
 - (void)closeSettings {
   [self closeSettingsUI];
-}
-
-- (void)closeSettingsAndOpenNewIncognitoTab {
-  [self closeSettingsAnimated:NO
-                   completion:^{
-                     [self switchModesAndOpenNewTab:[OpenNewTabCommand
-                                                        incognitoTabCommand]];
-                   }];
 }
 
 - (id<ApplicationCommands, BrowserCommands>)dispatcherForSettings {

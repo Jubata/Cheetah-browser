@@ -17,6 +17,9 @@
 #include "chrome/browser/vr/test/mock_content_input_delegate.h"
 #include "chrome/browser/vr/test/ui_scene_manager_test.h"
 #include "chrome/browser/vr/ui_scene.h"
+#include "chrome/browser/vr/ui_scene_constants.h"
+#include "chrome/browser/vr/ui_scene_manager.h"
+#include "chrome/browser/vr/ui_unsupported_mode.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/WebKit/public/platform/WebGestureEvent.h"
 
@@ -72,7 +75,7 @@ class UiInputManagerTest : public testing::Test {
     controller_model.touchpad_button_state = button_state;
     ReticleModel reticle_model;
     GestureList gesture_list;
-    input_manager_->HandleInput(controller_model, &reticle_model,
+    input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
                                 &gesture_list);
   }
 
@@ -110,11 +113,13 @@ TEST_F(UiInputManagerTest, ReticleRenderTarget) {
   ReticleModel reticle_model;
   GestureList gesture_list;
 
-  input_manager_->HandleInput(controller_model, &reticle_model, &gesture_list);
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
   EXPECT_EQ(0, reticle_model.target_element_id);
 
   controller_model.laser_direction = kForwardVector;
-  input_manager_->HandleInput(controller_model, &reticle_model, &gesture_list);
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
   EXPECT_EQ(p_element->id(), reticle_model.target_element_id);
   EXPECT_NEAR(-1.0, reticle_model.target_point.z(), kEpsilon);
 }
@@ -228,6 +233,7 @@ TEST_F(UiInputManagerTest, ElementDeletion) {
 }
 
 TEST_F(UiInputManagerContentTest, NoMouseMovesDuringClick) {
+  EXPECT_TRUE(AnimateBy(MsToDelta(500)));
   // It would be nice if the controller weren't platform specific and we could
   // mock out the underlying sensor data. For now, we will hallucinate
   // parameters to HandleInput.
@@ -243,7 +249,8 @@ TEST_F(UiInputManagerContentTest, NoMouseMovesDuringClick) {
   controller_model.touchpad_button_state = UiInputManager::ButtonState::DOWN;
   ReticleModel reticle_model;
   GestureList gesture_list;
-  input_manager_->HandleInput(controller_model, &reticle_model, &gesture_list);
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
 
   // We should have hit the content quad if our math was correct.
   ASSERT_NE(0, reticle_model.target_element_id);
@@ -254,7 +261,92 @@ TEST_F(UiInputManagerContentTest, NoMouseMovesDuringClick) {
   // set the expected number of calls to zero.
   EXPECT_CALL(*content_input_delegate_, OnContentMove(testing::_)).Times(0);
 
-  input_manager_->HandleInput(controller_model, &reticle_model, &gesture_list);
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
+}
+
+TEST_F(UiInputManagerContentTest, ExitPromptHitTesting) {
+  model_->active_modal_prompt_type = kModalPromptTypeExitVRForSiteInfo;
+  EXPECT_TRUE(AnimateBy(MsToDelta(500)));
+
+  UiElement* exit_prompt =
+      scene_->GetUiElementByName(UiElementName::kExitPrompt);
+  gfx::Point3F exit_prompt_center;
+  exit_prompt->world_space_transform().TransformPoint(&exit_prompt_center);
+  gfx::Point3F origin;
+
+  ControllerModel controller_model;
+  controller_model.laser_direction = exit_prompt_center - origin;
+  controller_model.laser_origin = origin;
+  controller_model.touchpad_button_state = UiInputManager::ButtonState::DOWN;
+  ReticleModel reticle_model;
+  GestureList gesture_list;
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
+
+  // We should have hit the exit prompt if our math was correct.
+  ASSERT_NE(0, reticle_model.target_element_id);
+  EXPECT_EQ(exit_prompt->id(), reticle_model.target_element_id);
+}
+
+TEST_F(UiInputManagerContentTest, AudioPermissionPromptHitTesting) {
+  model_->active_modal_prompt_type = kModalPromptTypeExitVRForAudioPermission;
+  EXPECT_TRUE(AnimateBy(MsToDelta(500)));
+
+  UiElement* url_bar = scene_->GetUiElementByName(UiElementName::kUrlBar);
+  gfx::Point3F url_bar_center;
+  url_bar->world_space_transform().TransformPoint(&url_bar_center);
+  gfx::Point3F origin;
+
+  ControllerModel controller_model;
+  controller_model.laser_direction = url_bar_center - origin;
+  controller_model.laser_origin = origin;
+  controller_model.touchpad_button_state = UiInputManager::ButtonState::DOWN;
+  ReticleModel reticle_model;
+  GestureList gesture_list;
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
+
+  // Even if the reticle is over the URL bar, the backplane should be in front
+  // and should be hit.
+  ASSERT_NE(0, reticle_model.target_element_id);
+  EXPECT_EQ(scene_->GetUiElementByName(kAudioPermissionPromptBackplane)->id(),
+            reticle_model.target_element_id);
+}
+
+TEST_F(UiInputManagerContentTest, TreeVsZOrder) {
+  // It would be nice if the controller weren't platform specific and we could
+  // mock out the underlying sensor data. For now, we will hallucinate
+  // parameters to HandleInput.
+  UiElement* content_quad =
+      scene_->GetUiElementByName(UiElementName::kContentQuad);
+  gfx::Point3F content_quad_center;
+  content_quad->world_space_transform().TransformPoint(&content_quad_center);
+  gfx::Point3F origin;
+
+  ControllerModel controller_model;
+  controller_model.laser_direction = content_quad_center - origin;
+  controller_model.laser_origin = origin;
+  controller_model.touchpad_button_state = UiInputManager::ButtonState::DOWN;
+  ReticleModel reticle_model;
+  GestureList gesture_list;
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
+
+  // We should have hit the content quad if our math was correct.
+  ASSERT_NE(0, reticle_model.target_element_id);
+  EXPECT_EQ(content_quad->id(), reticle_model.target_element_id);
+
+  // We will now move the content quad behind the backplane.
+  content_quad->SetTranslate(0, 0, -2.0 * kTextureOffset);
+  EXPECT_TRUE(AnimateBy(MsToDelta(500)));
+  input_manager_->HandleInput(MsToTicks(1), controller_model, &reticle_model,
+                              &gesture_list);
+
+  // We should have hit the content quad even though, geometrically, it stacks
+  // behind the backplane.
+  ASSERT_NE(0, reticle_model.target_element_id);
+  EXPECT_EQ(content_quad->id(), reticle_model.target_element_id);
 }
 
 }  // namespace vr

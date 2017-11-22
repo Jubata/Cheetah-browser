@@ -9,13 +9,11 @@
 the src/testing/buildbot directory and benchmark.csv in the src/tools/perf
 directory. Maintaining these files by hand is too unwieldy.
 """
-import argparse
 import collections
 import csv
 import json
 import os
 import re
-import sys
 import sets
 
 
@@ -32,8 +30,8 @@ from core.sharding_map_generator import load_benchmark_sharding_map
 
 
 _UNSCHEDULED_TELEMETRY_BENCHMARKS = set([
-  'speedometer-future',
-  'speedometer2-future'
+  'experimental.startup.android.coldish',
+  'wasm'
   ])
 
 
@@ -133,9 +131,19 @@ def get_fyi_waterfall_config():
 
 
 # Additional compile targets to add to builders.
+# On desktop builders, chromedriver is added as an additional compile target.
+# The perf waterfall builds this target for each commit, and the resulting
+# ChromeDriver is archived together with Chrome for use in bisecting.
+# This can be used by Chrome test team, as well as by google3 teams for
+# bisecting Chrome builds with their web tests. For questions or to report
+# issues, please contact johnchen@chromium.org and stgao@chromium.org.
 BUILDER_ADDITIONAL_COMPILE_TARGETS = {
-    'Android Compile': ['microdump_stackwalk'],
-    'Android arm64 Compile': ['microdump_stackwalk'],
+    'Android Compile': ['microdump_stackwalk', 'angle_perftests'],
+    'Android arm64 Compile': ['microdump_stackwalk', 'angle_perftests'],
+    'Linux Builder': ['chromedriver'],
+    'Mac Builder': ['chromedriver'],
+    'Win Builder': ['chromedriver'],
+    'Win x64 Builder': ['chromedriver'],
 }
 
 
@@ -169,6 +177,7 @@ def get_waterfall_config():
        'perf_tests': [
          ('tracing_perftests', 'build73-b1--device2'),
          ('gpu_perftests', 'build73-b1--device2'),
+         ('angle_perftests', 'build73-b1--device4'),
          #  ('cc_perftests', 'build73-b1--device2'),  # crbug.com/721757
         ]
       }
@@ -267,7 +276,7 @@ def get_waterfall_config():
           ],
        'perf_tests': [
          ('tracing_perftests', 'build17-b1--device2'),
-         ('gpu_perftests', 'build18-b1--device2'),
+         # ('gpu_perftests', 'build18-b1--device2'), https://crbug.com/775219
          # ('cc_perftests', 'build47-b1--device2'), https://crbug.com/736150
         ]
       }
@@ -414,7 +423,8 @@ def get_waterfall_config():
            'build103-m1', 'build104-m1', 'build105-m1'
           ],
        'perf_tests': [
-         ('angle_perftests', 'build103-m1'),
+         # crbug.com/785291
+         # ('angle_perftests', 'build103-m1'),
          ('load_library_perf_tests', 'build103-m1'),
          ('performance_browser_tests', 'build103-m1'),
          ('media_perftests', 'build104-m1')]
@@ -616,7 +626,10 @@ def generate_isolate_script_entry(swarming_dimensions, test_args,
   return result
 
 
-BENCHMARKS_TO_OUTPUT_HISTOGRAMS = []
+BENCHMARKS_TO_OUTPUT_HISTOGRAMS = [
+    'dummy_benchmark.noisy_benchmark_1',
+    'dummy_benchmark.stable_benchmark_1',
+]
 
 
 def generate_telemetry_test(swarming_dimensions, benchmark_name, browser):
@@ -800,7 +813,7 @@ def generate_telemetry_tests(name, tester_config, benchmarks,
                          'add the benchmark to '
                          '_UNSCHEDULED_TELEMETRY_BENCHMARKS list, '
                          'then file a bug with Speed>Benchmarks>Waterfall '
-                         'component and assign to eyaich@ or martiniss@ to '
+                         'component and assign to eyaich@ or ashleymarie@ to '
                          'schedule the benchmark on the perf waterfall.' % (
                              benchmark.Name()))
       swarming_dimensions.append(get_swarming_dimension(
@@ -965,26 +978,6 @@ def append_extra_tests(waterfall, tests):
           continue
         assert key not in tests
         tests[key] = value
-
-
-def tests_are_up_to_date(waterfalls):
-  up_to_date = True
-  all_tests = {}
-  for w in waterfalls:
-    tests = generate_all_tests(w)
-    # Note: |all_tests| don't cover those manually-specified tests added by
-    # append_extra_tests().
-    all_tests.update(tests)
-    append_extra_tests(w, tests)
-    tests_data = json.dumps(tests, indent=2, separators=(',', ': '),
-                            sort_keys=True)
-    config_file = get_json_config_file_for_waterfall(w)
-    with open(config_file, 'r') as fp:
-      config_data = fp.read().strip()
-    up_to_date &= tests_data == config_data
-  verify_all_tests_in_benchmark_csv(all_tests,
-                                    get_all_waterfall_benchmarks_metadata())
-  return up_to_date
 
 
 def update_all_tests(waterfalls):
@@ -1162,33 +1155,11 @@ def update_benchmark_csv():
     writer.writerows(csv_data)
 
 
-def main(args):
-  parser = argparse.ArgumentParser(
-      description=('Generate perf test\' json config and benchmark.csv. '
-                   'This needs to be done anytime you add/remove any existing'
-                   'benchmarks in tools/perf/benchmarks.'))
-  parser.add_argument(
-      '--validate-only', action='store_true', default=False,
-      help=('Validate whether the perf json generated will be the same as the '
-            'existing configs. This does not change the contain of existing '
-            'configs'))
-  options = parser.parse_args(args)
-
+def main():
   waterfall = get_waterfall_config()
   waterfall['name'] = 'chromium.perf'
   fyi_waterfall = get_fyi_waterfall_config()
   fyi_waterfall['name'] = 'chromium.perf.fyi'
 
-  if options.validate_only:
-    if tests_are_up_to_date([fyi_waterfall, waterfall]):
-      print 'All the perf JSON config files are up-to-date. \\o/'
-      return 0
-    else:
-      print ('The perf JSON config files are not up-to-date. Please run %s '
-             'without --validate-only flag to update the perf JSON '
-             'configs and benchmark.csv.') % sys.argv[0]
-      return 1
-  else:
-    update_all_tests([fyi_waterfall, waterfall])
-    update_benchmark_csv()
-  return 0
+  update_all_tests([fyi_waterfall, waterfall])
+  update_benchmark_csv()

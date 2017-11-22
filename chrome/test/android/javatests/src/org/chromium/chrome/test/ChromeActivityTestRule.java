@@ -33,6 +33,7 @@ import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.DeferredStartupHandler;
 import org.chromium.chrome.browser.document.ChromeLauncherActivity;
 import org.chromium.chrome.browser.infobar.InfoBar;
+import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
 import org.chromium.chrome.browser.ntp.NewTabPage;
 import org.chromium.chrome.browser.omnibox.UrlBar;
 import org.chromium.chrome.browser.preferences.PrefServiceBridge;
@@ -48,7 +49,7 @@ import org.chromium.chrome.test.util.ApplicationTestUtils;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.MenuUtils;
 import org.chromium.chrome.test.util.NewTabPageTestUtils;
-import org.chromium.content.browser.test.util.Criteria;
+import org.chromium.chrome.test.util.browser.Features;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.JavaScriptUtils;
 import org.chromium.content.browser.test.util.RenderProcessLimit;
@@ -173,6 +174,8 @@ public class ChromeActivityTestRule<T extends ChromeActivity> extends ActivityTe
      * after the JUnit4 migration
      */
     public void startActivityCompletely(Intent intent) {
+        Features.ensureCommandLineIsUpToDate();
+
         final CallbackHelper activityCallback = new CallbackHelper();
         final AtomicReference<T> activityRef = new AtomicReference<>();
         ActivityStateListener stateListener = new ActivityStateListener() {
@@ -383,13 +386,10 @@ public class ChromeActivityTestRule<T extends ChromeActivity> extends ActivityTe
         prepareUrlIntent(intent, url);
 
         startActivityCompletely(intent);
+        waitForActivityNativeInitializationComplete();
 
-        CriteriaHelper.pollUiThread(new Criteria("Tab never selected/initialized.") {
-            @Override
-            public boolean isSatisfied() {
-                return getActivity().getActivityTab() != null;
-            }
-        });
+        CriteriaHelper.pollUiThread(
+                () -> getActivity().getActivityTab() != null, "Tab never selected/initialized.");
         Tab tab = getActivity().getActivityTab();
 
         ChromeTabUtils.waitForTabPageLoaded(tab, (String) null);
@@ -398,16 +398,28 @@ public class ChromeActivityTestRule<T extends ChromeActivity> extends ActivityTe
             NewTabPageTestUtils.waitForNtpLoaded(tab);
         }
 
-        CriteriaHelper.pollUiThread(new Criteria("Deferred startup never completed") {
-            @Override
-            public boolean isSatisfied() {
-                return DeferredStartupHandler.getInstance().isDeferredStartupCompleteForApp();
-            }
-        });
+        CriteriaHelper.pollUiThread(
+                () -> DeferredStartupHandler.getInstance().isDeferredStartupCompleteForApp(),
+                "Deferred startup never completed");
 
         Assert.assertNotNull(tab);
         Assert.assertNotNull(tab.getView());
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+    }
+
+    /**
+     * Waits for the activity to fully finish it's native initialization.
+     */
+    public void waitForActivityNativeInitializationComplete() {
+        CriteriaHelper.pollUiThread(()
+                                            -> ChromeBrowserInitializer.getInstance(getActivity())
+                                                       .hasNativeInitializationCompleted(),
+                "Native initialization never finished",
+                20 * CriteriaHelper.DEFAULT_MAX_TIME_TO_POLL,
+                CriteriaHelper.DEFAULT_POLLING_INTERVAL);
+
+        CriteriaHelper.pollUiThread(() -> getActivity().didFinishNativeInitialization(),
+                "Native initialization (of Activity) never finished");
     }
 
     /**

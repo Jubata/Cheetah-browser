@@ -41,8 +41,8 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/weborigin/SecurityViolationReportingPolicy.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCORS.h"
@@ -227,6 +227,9 @@ bool ResourceLoader::WillFollowRedirect(
     return false;
   }
 
+  // TODO(toyoshim): Move following object copy logic to
+  // ResourceRequest::CreateRedirectRequest() in order to centralize object
+  // clone-ish code.
   const ResourceRequest& last_request = resource_->LastResourceRequest();
   ResourceRequest new_request(new_url);
   new_request.SetSiteForCookies(new_site_for_cookies);
@@ -252,6 +255,7 @@ bool ResourceLoader::WillFollowRedirect(
     new_request.SetHTTPBody(last_request.HttpBody());
   new_request.SetCheckForBrowserSideNavigation(
       last_request.CheckForBrowserSideNavigation());
+  new_request.SetCORSPreflightPolicy(last_request.CORSPreflightPolicy());
 
   Resource::Type resource_type = resource_->GetType();
 
@@ -354,7 +358,6 @@ bool ResourceLoader::WillFollowRedirect(
         allow_stored_credentials = !options.cors_flag;
         break;
       case network::mojom::FetchCredentialsMode::kInclude:
-      case network::mojom::FetchCredentialsMode::kPassword:
         allow_stored_credentials = true;
         break;
     }
@@ -372,8 +375,8 @@ bool ResourceLoader::WillFollowRedirect(
   Context().PrepareRequest(new_request,
                            FetchContext::RedirectType::kForRedirect);
   if (Context().GetFrameScheduler()) {
-    ScopedVirtualTimePauser virtual_time_pauser =
-        Context().GetFrameScheduler()->CreateScopedVirtualTimePauser();
+    WebScopedVirtualTimePauser virtual_time_pauser =
+        Context().GetFrameScheduler()->CreateWebScopedVirtualTimePauser();
     virtual_time_pauser.PauseVirtualTime(true);
     resource_->VirtualTimePauser() = std::move(virtual_time_pauser);
   }
@@ -688,7 +691,7 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
 
   WrappedResourceRequest request_in(request);
   WebURLResponse response_out;
-  WebURLError error_out;
+  WTF::Optional<WebURLError> error_out;
   WebData data_out;
   int64_t encoded_data_length = WebURLLoaderClient::kUnknownEncodedDataLength;
   int64_t encoded_body_length = 0;
@@ -700,8 +703,8 @@ void ResourceLoader::RequestSynchronously(const ResourceRequest& request) {
   if (!loader_)
     return;
   int64_t decoded_body_length = data_out.size();
-  if (error_out.reason) {
-    DidFail(error_out, encoded_data_length, encoded_body_length,
+  if (error_out) {
+    DidFail(*error_out, encoded_data_length, encoded_body_length,
             decoded_body_length);
     return;
   }

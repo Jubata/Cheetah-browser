@@ -897,6 +897,7 @@ String TextControlElement::ValueWithHardLineBreaks() const {
   if (!layout_object)
     return value();
 
+  DCHECK(CanUseInlineBox(*layout_object));
   Node* break_node;
   unsigned break_offset;
   RootInlineBox* line = layout_object->FirstRootBox();
@@ -995,6 +996,7 @@ void TextControlElement::SetSuggestedValue(const String& value) {
   HTMLElement* placeholder = PlaceholderElement();
   if (!placeholder)
     return;
+  UpdatePlaceholderVisibility();
 
   // Change the pseudo-id to set the style for suggested values or reset the
   // placeholder style depending on if there is a suggested value.

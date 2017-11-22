@@ -26,6 +26,7 @@
 #ifndef FontFaceSetDocument_h
 #define FontFaceSetDocument_h
 
+#include "base/macros.h"
 #include "bindings/core/v8/Iterable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "core/css/CSSFontSelector.h"
@@ -33,13 +34,12 @@
 #include "core/css/FontFaceSet.h"
 #include "core/css/StyleEngine.h"
 #include "core/dom/Document.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "core/dom/events/EventListener.h"
 #include "core/dom/events/EventTarget.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/Vector.h"
 
 namespace blink {
 
@@ -48,7 +48,6 @@ class Font;
 class CORE_EXPORT FontFaceSetDocument final : public FontFaceSet,
                                               public Supplement<Document> {
   USING_GARBAGE_COLLECTED_MIXIN(FontFaceSetDocument);
-  WTF_MAKE_NONCOPYABLE(FontFaceSetDocument);
 
  public:
   ~FontFaceSetDocument() override;
@@ -93,7 +92,7 @@ class CORE_EXPORT FontFaceSetDocument final : public FontFaceSet,
   explicit FontFaceSetDocument(Document&);
 
   void FireDoneEventIfPossible() override;
-  const HeapListHashSet<Member<FontFace>>& CSSConnectedFontFaceList()
+  const HeapLinkedHashSet<Member<FontFace>>& CSSConnectedFontFaceList()
       const override;
 
   class FontLoadHistogram {
@@ -112,6 +111,7 @@ class CORE_EXPORT FontFaceSetDocument final : public FontFaceSet,
     bool recorded_;
   };
   FontLoadHistogram histogram_;
+  DISALLOW_COPY_AND_ASSIGN(FontFaceSetDocument);
 };
 
 }  // namespace blink

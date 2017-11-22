@@ -62,6 +62,11 @@ class ComponentInstallerPolicy {
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) = 0;
 
+  // OnCustomUninstall is called during the unregister (uninstall) process.
+  // Components that require custom uninstallation operations should implement
+  // them here.
+  virtual void OnCustomUninstall() = 0;
+
   // ComponentReady is called in two cases:
   //   1) After an installation is successfully completed.
   //   2) During component registration if the component is already installed.
@@ -157,8 +162,7 @@ class ComponentInstaller final : public update_client::CrxInstaller {
       base::Version* version,
       base::FilePath* install_path);
   void StartRegistration(
-      const scoped_refptr<RegistrationInfo>& registration_info,
-      ComponentUpdateService* cus);
+      const scoped_refptr<RegistrationInfo>& registration_info);
   void FinishRegistration(
       const scoped_refptr<RegistrationInfo>& registration_info,
       ComponentUpdateService* cus,

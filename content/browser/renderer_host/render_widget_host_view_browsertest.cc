@@ -17,7 +17,6 @@
 #include "build/build_config.h"
 #include "cc/paint/skia_paint_canvas.h"
 #include "content/browser/gpu/compositor_util.h"
-#include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -274,7 +273,10 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewBrowserTestBase,
   EXPECT_TRUE(WaitForLoadStop(web_contents));
   EXPECT_EQ(web_contents->GetMainFrame()->GetProcess(),
             new_web_contents->GetMainFrame()->GetProcess());
-  FrameWatcher(web_contents).WaitFrames(5);
+  MainThreadFrameObserver observer(
+      web_contents->GetRenderViewHost()->GetWidget());
+  for (int i = 0; i < 5; ++i)
+    observer.Wait();
 }
 
 enum CompositingMode {
@@ -677,14 +679,11 @@ class CompositingRenderWidgetHostViewBrowserTestTabCapture
                        run_loop.QuitClosure());
         rwhv->CopyFromSurfaceToVideoFrame(copy_rect, video_frame, callback);
       } else {
-        if (!content::GpuDataManager::GetInstance()
-                 ->CanUseGpuBrowserCompositor()) {
-          // Skia rendering can cause color differences, particularly in the
-          // middle two columns.
-          SetAllowableError(2);
-          SetExcludeRect(gfx::Rect(output_size.width() / 2 - 1, 0, 2,
-                                   output_size.height()));
-        }
+        // Skia rendering can cause color differences, particularly in the
+        // middle two columns.
+        SetAllowableError(2);
+        SetExcludeRect(
+            gfx::Rect(output_size.width() / 2 - 1, 0, 2, output_size.height()));
 
         const ReadbackRequestCallback callback =
             base::Bind(&CompositingRenderWidgetHostViewBrowserTestTabCapture::

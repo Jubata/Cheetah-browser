@@ -112,12 +112,12 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   // Generates an MTU discovery packet of specified size.
   void GenerateMtuDiscoveryPacket(QuicByteCount target_mtu);
 
-  // Indicates whether batch mode is currently enabled.
-  bool InBatchMode();
-  // Disables flushing.
-  void StartBatchOperations();
-  // Enables flushing and flushes queued data which can be sent.
-  void FinishBatchOperations();
+  // Indicates whether packet flusher is currently attached.
+  bool PacketFlusherAttached() const;
+  // Attaches packet flusher.
+  void AttachPacketFlusher();
+  // Flushes everything, including all queued frames and pending padding.
+  void Flush();
 
   // Flushes all queued frames, even frames which are not sendable.
   void FlushAllQueuedFrames();
@@ -139,6 +139,9 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   std::unique_ptr<QuicEncryptedPacket> SerializeVersionNegotiationPacket(
       const QuicTransportVersionVector& supported_versions);
 
+  // Creates a connectivity probing packet.
+  std::unique_ptr<QuicEncryptedPacket> SerializeConnectivityProbingPacket();
+
   // Re-serializes frames with the original packet's packet number length.
   // Used for retransmitting packets to ensure they aren't too long.
   void ReserializeAllFrames(const QuicPendingRetransmission& retransmission,
@@ -147,8 +150,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
 
   // Update the packet number length to use in future packets as soon as it
   // can be safely changed.
-  void UpdateSequenceNumberLength(QuicPacketNumber least_packet_awaited_by_peer,
-                                  QuicPacketCount max_packets_in_flight);
+  void UpdatePacketNumberLength(QuicPacketNumber least_packet_awaited_by_peer,
+                                QuicPacketCount max_packets_in_flight);
 
   // Set the minimum number of bytes for the connection id length;
   void SetConnectionIdLength(uint32_t length);
@@ -159,6 +162,10 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   // Returns true if there are control frames or current constructed packet has
   // pending retransmittable frames.
   bool HasRetransmittableFrames() const;
+
+  // Returns true if current constructed packet has pending stream frames for
+  // stream |id|.
+  bool HasPendingStreamFramesOfStream(QuicStreamId id) const;
 
   // Sets the encryption level that will be applied to new packets.
   void set_encryption_level(EncryptionLevel level);
@@ -206,8 +213,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   QuicPacketCreator packet_creator_;
   QuicFrames queued_control_frames_;
 
-  // True if batch mode is currently enabled.
-  bool batch_mode_;
+  // True if packet flusher is currently attached.
+  bool flusher_attached_;
 
   // Flags to indicate the need for just-in-time construction of a frame.
   bool should_send_ack_;

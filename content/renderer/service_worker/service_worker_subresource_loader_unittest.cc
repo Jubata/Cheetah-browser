@@ -20,6 +20,7 @@
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/http/http_util.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+#include "net/url_request/url_request.h"
 #include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -61,7 +62,7 @@ class FakeNetworkURLLoaderFactory final : public mojom::URLLoaderFactory {
                                          MOJO_WRITE_DATA_FLAG_ALL_OR_NONE);
     client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
 
-    ResourceRequestCompletionStatus status;
+    network::URLLoaderCompletionStatus status;
     status.error_code = net::OK;
     client->OnComplete(status);
   }
@@ -145,8 +146,8 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
                 network::mojom::FetchResponseType::kDefault,
                 std::make_unique<ServiceWorkerHeaderMap>(), "" /* blob_uuid */,
                 0 /* blob_size */, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorUnknown, base::Time(),
-                false /* response_is_in_cache_storage */,
+                blink::mojom::ServiceWorkerResponseError::kUnknown,
+                base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
                     ServiceWorkerHeaderList>() /* cors_exposed_header_names */),
@@ -168,7 +169,7 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
                 network::mojom::FetchResponseType::kDefault,
                 std::make_unique<ServiceWorkerHeaderMap>(), "" /* blob_uuid */,
                 0 /* blob_size */, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorPromiseRejected,
+                blink::mojom::ServiceWorkerResponseError::kPromiseRejected,
                 base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
@@ -186,8 +187,8 @@ class FakeControllerServiceWorker : public mojom::ControllerServiceWorker {
                 std::make_unique<std::vector<GURL>>(), 302, "Found",
                 network::mojom::FetchResponseType::kDefault, std::move(headers),
                 "" /* blob_uuid */, 0 /* blob_size */, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorUnknown, base::Time(),
-                false /* response_is_in_cache_storage */,
+                blink::mojom::ServiceWorkerResponseError::kUnknown,
+                base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
                     ServiceWorkerHeaderList>() /* cors_exposed_header_names */),
@@ -712,7 +713,9 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, TooManyRedirects) {
   // The Fetch spec says: "If request’s redirect count is twenty, return a
   // network error." https://fetch.spec.whatwg.org/#http-redirect-fetch
   // So fetch can follow the redirect response until 20 times.
-  for (; count < 21; ++count) {
+  static_assert(net::URLRequest::kMaxRedirects == 20,
+                "The Fetch spec requires kMaxRedirects to be 20");
+  for (; count < net::URLRequest::kMaxRedirects + 1; ++count) {
     client->RunUntilRedirectReceived();
 
     EXPECT_TRUE(client->has_received_redirect());

@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 
+#include "ash/display/window_tree_host_manager.h"
 #include "ash/wm/window_state_observer.h"
 #include "base/containers/circular_deque.h"
 #include "base/macros.h"
@@ -16,7 +17,7 @@
 #include "base/strings/string16.h"
 #include "components/exo/surface_observer.h"
 #include "components/exo/surface_tree_host.h"
-#include "components/exo/wm_helper.h"
+
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/compositor_lock.h"
@@ -25,6 +26,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/public/activation_change_observer.h"
 
 namespace ash {
 class WindowResizer;
@@ -58,8 +60,8 @@ class ShellSurface : public SurfaceTreeHost,
                      public display::DisplayObserver,
                      public ash::wm::WindowStateObserver,
                      public aura::WindowObserver,
-                     public WMHelper::ActivationObserver,
-                     public WMHelper::DisplayConfigurationObserver,
+                     public wm::ActivationChangeObserver,
+                     public ash::WindowTreeHostManager::Observer,
                      public ui::CompositorLockClient {
  public:
   enum class BoundsMode { SHELL, CLIENT, FIXED };
@@ -212,6 +214,12 @@ class ShellSurface : public SurfaceTreeHost,
   // Set the miniumum size for the surface.
   void SetMinimumSize(const gfx::Size& size);
 
+  // Set bounds mode for surface.
+  void SetBoundsMode(BoundsMode mode);
+
+  // Set "can minimize" state for surface.
+  void SetCanMinimize(bool can_minimize);
+
   // Sets the main surface for the window.
   static void SetMainSurface(aura::Window* window, Surface* surface);
 
@@ -265,15 +273,16 @@ class ShellSurface : public SurfaceTreeHost,
   // Overridden from aura::WindowObserver:
   void OnWindowBoundsChanged(aura::Window* window,
                              const gfx::Rect& old_bounds,
-                             const gfx::Rect& new_bounds) override;
+                             const gfx::Rect& new_bounds,
+                             ui::PropertyChangeReason reason) override;
   void OnWindowDestroying(aura::Window* window) override;
 
-  // Overridden from WMHelper::ActivationObserver:
-  void OnWindowActivated(
-      aura::Window* gained_active,
-      aura::Window* lost_active) override;
+  // Overridden from wm::ActivationChangeObserver:
+  void OnWindowActivated(ActivationReason reason,
+                         aura::Window* gained_active,
+                         aura::Window* lost_active) override;
 
-  // Overridden from WMHelper::DisplayConfigurationObserver:
+  // Overridden from ash::WindowTreeHostManager::Observer:
   void OnDisplayConfigurationChanged() override;
 
   // Overridden from ui::EventHandler:
@@ -353,11 +362,11 @@ class ShellSurface : public SurfaceTreeHost,
 
   views::Widget* widget_ = nullptr;
   aura::Window* parent_;
-  const BoundsMode bounds_mode_;
+  BoundsMode bounds_mode_ = BoundsMode::SHELL;
   int64_t primary_display_id_;
   gfx::Point origin_;
   bool activatable_ = true;
-  const bool can_minimize_;
+  bool can_minimize_ = true;
   // Container Window Id (see ash/public/cpp/shell_window_ids.h)
   int container_;
   bool frame_enabled_ = false;

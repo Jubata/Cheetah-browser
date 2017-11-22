@@ -31,13 +31,14 @@
 #ifndef UserMediaRequest_h
 #define UserMediaRequest_h
 
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "modules/ModulesExport.h"
 #include "modules/mediastream/NavigatorUserMediaErrorCallback.h"
 #include "modules/mediastream/NavigatorUserMediaSuccessCallback.h"
 #include "platform/mediastream/MediaStreamSource.h"
 #include "platform/wtf/Forward.h"
 #include "public/platform/WebMediaConstraints.h"
+#include "public/web/WebUserMediaRequest.h"
 
 namespace blink {
 
@@ -74,11 +75,8 @@ class MODULES_EXPORT UserMediaRequest final
   void Start();
 
   void Succeed(MediaStreamDescriptor*);
-  void FailPermissionDenied(const String& message);
   void FailConstraint(const String& constraint_name, const String& message);
-  void FailUASpecific(const String& name,
-                      const String& message,
-                      const String& constraint_name);
+  void Fail(WebUserMediaRequest::Error name, const String& message);
 
   bool Audio() const;
   bool Video() const;

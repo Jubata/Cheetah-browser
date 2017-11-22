@@ -15,8 +15,8 @@
 #include "components/payments/content/payment_request_spec.h"
 #include "components/payments/content/payment_response_helper.h"
 #include "components/payments/core/payments_profile_comparator.h"
-#include "content/public/browser/browser_context.h"
 #include "content/public/browser/payment_app_provider.h"
+#include "content/public/browser/web_contents.h"
 #include "third_party/WebKit/public/platform/modules/payments/payment_request.mojom.h"
 
 namespace autofill {
@@ -31,7 +31,7 @@ namespace payments {
 class ContentPaymentRequestDelegate;
 class JourneyLogger;
 class PaymentInstrument;
-class ServiceWorkerPaymentAppFactory;
+class ServiceWorkerPaymentInstrument;
 
 // Keeps track of the information currently selected by the user and whether the
 // user is ready to pay. Uses information from the PaymentRequestSpec, which is
@@ -72,9 +72,9 @@ class PaymentRequestState : public PaymentResponseHelper::Delegate,
     virtual ~Delegate() {}
   };
 
-  using CanMakePaymentCallback = base::OnceCallback<void(bool)>;
+  using StatusCallback = base::OnceCallback<void(bool)>;
 
-  PaymentRequestState(content::BrowserContext* context,
+  PaymentRequestState(content::WebContents* web_contents,
                       const GURL& top_level_origin,
                       const GURL& frame_origin,
                       PaymentRequestSpec* spec,
@@ -95,12 +95,12 @@ class PaymentRequestState : public PaymentResponseHelper::Delegate,
 
   // Checks whether the user has at least one instrument that satisfies the
   // specified supported payment methods asynchronously.
-  void CanMakePayment(CanMakePaymentCallback callback);
+  void CanMakePayment(StatusCallback callback);
 
-  // Returns true if the payment methods that the merchant website have
-  // requested are supported. For example, may return true for "basic-card", but
-  // false for "https://bobpay.com".
-  bool AreRequestedMethodsSupported() const;
+  // Checks if the payment methods that the merchant website have
+  // requested are supported asynchronously. For example, may return true for
+  // "basic-card", but false for "https://bobpay.com".
+  void AreRequestedMethodsSupported(StatusCallback callback);
 
   // Returns authenticated user email, or empty string.
   std::string GetAuthenticatedEmail() const;
@@ -221,6 +221,7 @@ class PaymentRequestState : public PaymentResponseHelper::Delegate,
   // Returns whether the selected data satisfies the PaymentDetails requirements
   // (payment methods).
   bool ArePaymentDetailsSatisfied();
+
   // Returns whether the selected data satisfies the PaymentOptions requirements
   // (contact info, shipping address).
   bool ArePaymentOptionsSatisfied();
@@ -230,12 +231,21 @@ class PaymentRequestState : public PaymentResponseHelper::Delegate,
                                  const GURL& top_level_origin,
                                  const GURL& frame_origin,
                                  content::PaymentAppProvider::PaymentApps apps);
-  void OnServiceWorkerPaymentAppFactoryFinishedUsingResources();
+
+  // The ServiceWorkerPaymentInstrument::ValidateCanMakePaymentCallback.
+  void OnSWPaymentInstrumentValidated(
+      ServiceWorkerPaymentInstrument* instrument,
+      bool result);
+  void FinishedGetAllSWPaymentInstruments();
 
   // Checks whether the user has at least one instrument that satisfies the
   // specified supported payment methods and call the |callback| to return the
   // result.
-  void CheckCanMakePayment(CanMakePaymentCallback callback);
+  void CheckCanMakePayment(StatusCallback callback);
+
+  // Checks if the payment methods that the merchant website have
+  // requested are supported and call the |callback| to return the result.
+  void CheckRequestedMethodsSupported(StatusCallback callback);
 
   void OnAddressNormalized(bool success,
                            const autofill::AutofillProfile& normalized_profile);
@@ -255,12 +265,17 @@ class PaymentRequestState : public PaymentResponseHelper::Delegate,
   autofill::PersonalDataManager* personal_data_manager_;
   JourneyLogger* journey_logger_;
 
-  CanMakePaymentCallback can_make_payment_callback_;
+  StatusCallback can_make_payment_callback_;
+  StatusCallback are_requested_methods_supported_callback_;
 
   autofill::AutofillProfile* selected_shipping_profile_;
   autofill::AutofillProfile* selected_shipping_option_error_profile_;
   autofill::AutofillProfile* selected_contact_profile_;
   PaymentInstrument* selected_instrument_;
+
+  // Number of pending service worker payment instruments waiting for
+  // validation.
+  int number_of_pending_sw_payment_instruments_;
 
   // Profiles may change due to (e.g.) sync events, so profiles are cached after
   // loading and owned here. They are populated once only, and ordered by
@@ -268,6 +283,7 @@ class PaymentRequestState : public PaymentResponseHelper::Delegate,
   std::vector<std::unique_ptr<autofill::AutofillProfile>> profile_cache_;
   std::vector<autofill::AutofillProfile*> shipping_profiles_;
   std::vector<autofill::AutofillProfile*> contact_profiles_;
+
   // Credit cards are directly owned by the instruments in this list.
   std::vector<std::unique_ptr<PaymentInstrument>> available_instruments_;
 
@@ -278,9 +294,6 @@ class PaymentRequestState : public PaymentResponseHelper::Delegate,
   PaymentsProfileComparator profile_comparator_;
 
   base::ObserverList<Observer> observers_;
-
-  std::unique_ptr<ServiceWorkerPaymentAppFactory>
-      service_worker_payment_app_factory_;
 
   base::WeakPtrFactory<PaymentRequestState> weak_ptr_factory_;
 

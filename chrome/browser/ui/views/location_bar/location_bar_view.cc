@@ -619,6 +619,7 @@ void LocationBarView::Update(const WebContents* contents) {
   RefreshTranslateIcon();
   RefreshSaveCreditCardIconView();
   RefreshManagePasswordsIconView();
+  RefreshFindBarIcon();
 
   if (star_view_)
     UpdateBookmarkStarVisibility();
@@ -692,7 +693,7 @@ void LocationBarView::RefreshLocationIcon() {
                            : GetSecureTextColor(security_level);
   location_icon_view_->SetImage(gfx::CreateVectorIcon(
       omnibox_view_->GetVectorIcon(), kIconWidth, icon_color));
-  location_icon_view_->UpdateInkDropMode();
+  location_icon_view_->Update();
 }
 
 bool LocationBarView::RefreshContentSettingViews() {
@@ -763,8 +764,13 @@ bool LocationBarView::RefreshSaveCreditCardIconView() {
 }
 
 bool LocationBarView::RefreshFindBarIcon() {
-  if (!find_bar_icon_)
+  // |browser_| may be nullptr since some unit tests pass it in for the
+  // Browser*. |browser_->window()| may return nullptr because Update() is
+  // called while BrowserWindow is being constructed.
+  if (!find_bar_icon_ || !browser_ || !browser_->window() ||
+      !browser_->HasFindBarController()) {
     return false;
+  }
   const bool was_visible = find_bar_icon_->visible();
   find_bar_icon_->SetVisible(
       browser_->GetFindBarController()->find_bar()->IsFindBarVisible());
@@ -893,14 +899,12 @@ void LocationBarView::UpdateSaveCreditCardIcon() {
 }
 
 void LocationBarView::UpdateFindBarIconVisibility() {
-  if (RefreshFindBarIcon()) {
+  const bool visibility_changed = RefreshFindBarIcon();
+  if (visibility_changed) {
     Layout();
-    find_bar_icon_->AnimateInkDrop(find_bar_icon_->visible()
-                                       ? views::InkDropState::ACTIVATED
-                                       : views::InkDropState::HIDDEN,
-                                   nullptr);
     SchedulePaint();
   }
+  find_bar_icon_->SetActive(find_bar_icon_->visible(), visibility_changed);
 }
 
 void LocationBarView::UpdateBookmarkStarVisibility() {

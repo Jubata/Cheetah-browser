@@ -22,8 +22,8 @@ import org.chromium.chrome.browser.media.RouterTestUtils;
 import org.chromium.chrome.browser.media.remote.RemoteVideoInfo.PlayerState;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.test.ChromeActivityTestRule;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.ClickUtils;
+import org.chromium.content.browser.test.util.Coordinates;
 import org.chromium.content.browser.test.util.DOMUtils;
 import org.chromium.content.browser.test.util.JavaScriptUtils;
 import org.chromium.content.browser.test.util.UiUtils;
@@ -536,12 +536,10 @@ public class CastTestRule extends ChromeActivityTestRule<ChromeActivity> {
     }
 
     private void tapButton(Tab tab, Rect rect) {
-        ContentViewCore core = tab.getContentViewCore();
-        int clickX = (int) core.getRenderCoordinates().fromLocalCssToPix(
-                ((float) (rect.left + rect.right)) / 2);
-        int clickY = (int) core.getRenderCoordinates().fromLocalCssToPix(
-                             ((float) (rect.top + rect.bottom)) / 2)
-                + core.getTopControlsHeightPix();
+        Coordinates coord = Coordinates.createFor(tab.getWebContents());
+        int clickX = (int) coord.fromLocalCssToPix(((float) (rect.left + rect.right)) / 2);
+        int clickY = (int) coord.fromLocalCssToPix(((float) (rect.top + rect.bottom)) / 2)
+                + getActivity().getCompositorViewHolder().getTopControlsHeightPixels();
         // Click using a virtual mouse, since a touch may result in a disambiguation pop-up.
         ClickUtils.mouseSingleClickView(
                 InstrumentationRegistry.getInstrumentation(), tab.getView(), clickX, clickY);

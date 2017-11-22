@@ -12,7 +12,9 @@ cr.define('extension_detail_view_tests', function() {
     Warnings: 'warnings',
   };
 
-  suite('ExtensionItemTest', function() {
+  var suiteName = 'ExtensionDetailViewTest';
+
+  suite(suiteName, function() {
     /**
      * Extension item created before each test.
      * @type {extensions.Item}
@@ -113,13 +115,21 @@ cr.define('extension_detail_view_tests', function() {
       Polymer.dom.flush();
       expectTrue(testIsVisible('#id-section'));
       expectTrue(testIsVisible('#inspectable-views'));
+
+      // Test whether the load path is displayed for unpacked extensions.
+      expectFalse(testIsVisible('#load-path'));
+      item.set('data.prettifiedPath', 'foo/bar/baz/');
+      Polymer.dom.flush();
+      expectTrue(testIsVisible('#load-path'));
     });
 
     test(assert(TestNames.ClickableElements), function() {
       var optionsUrl =
           'chrome-extension://' + extensionData.id + '/options.html';
       item.set('data.optionsPage', {openInTab: true, url: optionsUrl});
+      item.set('data.prettifiedPath', 'foo/bar/baz/');
       Polymer.dom.flush();
+
       mockDelegate.testClickingCalls(
           item.$$('#allow-incognito').getLabel(), 'setItemAllowedIncognito',
           [extensionData.id, true]);
@@ -134,9 +144,12 @@ cr.define('extension_detail_view_tests', function() {
           [extensionData.id, true]);
       mockDelegate.testClickingCalls(
           item.$$('#extensions-options'), 'showItemOptionsPage',
-          [extensionData.id]);
+          [extensionData]);
       mockDelegate.testClickingCalls(
           item.$$('#remove-extension'), 'deleteItem', [extensionData.id]);
+      mockDelegate.testClickingCalls(
+          item.$$('#load-path > a[is=\'action-link\']'),
+          'showInFolder', [extensionData.id]);
     });
 
     test(assert(TestNames.Indicator), function() {
@@ -151,7 +164,7 @@ cr.define('extension_detail_view_tests', function() {
       var testWarningVisible = function(id, isVisible) {
         var f = isVisible ? expectTrue : expectFalse;
         f(extension_test_util.isVisible(item, id));
-      }
+      };
 
       testWarningVisible('#corrupted-warning', false);
       testWarningVisible('#suspicious-warning', false);
@@ -205,6 +218,7 @@ cr.define('extension_detail_view_tests', function() {
   });
 
   return {
+    suiteName: suiteName,
     TestNames: TestNames,
   };
 });

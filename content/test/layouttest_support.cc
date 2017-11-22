@@ -23,8 +23,10 @@
 #include "content/browser/bluetooth/bluetooth_device_chooser_controller.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/shared_worker/shared_worker_service_impl.h"
 #include "content/common/gpu_stream_constants.h"
 #include "content/common/renderer.mojom.h"
+#include "content/common/unique_name_helper.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/screen_info.h"
 #include "content/public/renderer/renderer_gamepad_provider.h"
@@ -438,6 +440,8 @@ void EnableRendererLayoutTestMode() {
   RenderThreadImpl::current()->set_layout_test_dependencies(
       std::make_unique<LayoutTestDependenciesImpl>());
 
+  UniqueNameHelper::PreserveStableUniqueNameForTesting();
+
 #if defined(OS_WIN)
   RegisterSideloadedTypefaces(SkFontMgr_New_DirectWrite().get());
 #endif
@@ -449,6 +453,11 @@ void EnableBrowserLayoutTestMode() {
   PopupMenuHelper::DontShowPopupMenuForTesting();
 #endif
   RenderWidgetHostImpl::DisableResizeAckCheckForTesting();
+}
+
+void TerminateAllSharedWorkersForTesting(base::OnceClosure callback) {
+  SharedWorkerServiceImpl::GetInstance()->TerminateAllWorkersForTesting(
+      std::move(callback));
 }
 
 int GetLocalSessionHistoryLength(RenderView* render_view) {

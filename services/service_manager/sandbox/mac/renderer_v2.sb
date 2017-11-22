@@ -101,7 +101,10 @@
   (subpath "/usr/share/locale"))
 
 (if (= os-version 1013)
-  (allow file-read-data (subpath "/usr/share/zoneinfo.default"))
+  (begin (allow file-read-data (subpath "/private/var/db/timezone"))
+         (allow file-read-data (subpath "/usr/share/zoneinfo.default"))))
+
+(if (< os-version 1013)
   (allow file-read-data (subpath "/usr/share/zoneinfo")))
 
 ; Reads from /Library.
@@ -139,6 +142,8 @@
 (allow mach-lookup 
   (global-name "com.apple.distributed_notifications@Uv3")
   (global-name "com.apple.fonts")
+  ; crbug.com/756145, crbug.com/786615
+  (global-name "com.apple.FontObjectsServer")
   (global-name "com.apple.logd")
   (global-name "com.apple.lsd.mapdb")
   (global-name "com.apple.system.logger")
@@ -150,10 +155,6 @@
 ; but 10.9 through 10.11 use FontServer.
 (if (< os-version 1012)
   (allow mach-lookup (global-name "com.apple.FontServer")))
-
-; crbug.com/756145
-(if (= os-version 1011)
-  (allow mach-lookup (global-name "com.apple.FontObjectsServer")))
 
 ; sysctl
 (if (= os-version 1009)
@@ -181,3 +182,11 @@
     (sysctl-name "kern.usrstack64")
     (sysctl-name "kern.version")
     (sysctl-name "sysctl.proc_cputype")))
+
+; These are just part of a temporary experiment to see the perf
+; implications of allowing these resources.
+(allow mach-lookup (global-name "com.apple.cfprefsd.agent"))
+(allow mach-lookup (global-name "com.apple.cfprefsd.daemon"))
+(allow ipc-posix-shm-read-data (ipc-posix-name "apple.shm.cfprefsd.daemon"))
+(allow ipc-posix-shm-read-data (ipc-posix-name "apple.shm.cfprefsd.501"))
+(allow mach-lookup (global-name "com.apple.GameController.gamecontrollerd"))

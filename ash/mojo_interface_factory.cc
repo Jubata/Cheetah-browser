@@ -7,11 +7,12 @@
 #include <utility>
 
 #include "ash/accelerators/accelerator_controller.h"
+#include "ash/accessibility/accessibility_controller.h"
 #include "ash/cast_config_controller.h"
 #include "ash/display/ash_display_controller.h"
 #include "ash/highlighter/highlighter_controller.h"
 #include "ash/ime/ime_controller.h"
-#include "ash/login/lock_screen_controller.h"
+#include "ash/login/login_screen_controller.h"
 #include "ash/media_controller.h"
 #include "ash/message_center/message_center_controller.h"
 #include "ash/new_window_controller.h"
@@ -45,6 +46,11 @@ base::LazyInstance<RegisterInterfacesCallback>::Leaky
 void BindAcceleratorControllerRequestOnMainThread(
     mojom::AcceleratorControllerRequest request) {
   Shell::Get()->accelerator_controller()->BindRequest(std::move(request));
+}
+
+void BindAccessibilityControllerRequestOnMainThread(
+    mojom::AccessibilityControllerRequest request) {
+  Shell::Get()->accessibility_controller()->BindRequest(std::move(request));
 }
 
 void BindAppListRequestOnMainThread(
@@ -81,8 +87,8 @@ void BindLocaleNotificationControllerOnMainThread(
       std::move(request));
 }
 
-void BindLockScreenRequestOnMainThread(mojom::LockScreenRequest request) {
-  Shell::Get()->lock_screen_controller()->BindRequest(std::move(request));
+void BindLockScreenRequestOnMainThread(mojom::LoginScreenRequest request) {
+  Shell::Get()->login_screen_controller()->BindRequest(std::move(request));
 }
 
 void BindMediaControllerRequestOnMainThread(
@@ -153,6 +159,9 @@ void RegisterInterfaces(
     scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner) {
   registry->AddInterface(
       base::Bind(&BindAcceleratorControllerRequestOnMainThread),
+      main_thread_task_runner);
+  registry->AddInterface(
+      base::Bind(&BindAccessibilityControllerRequestOnMainThread),
       main_thread_task_runner);
   registry->AddInterface(base::Bind(&BindAppListRequestOnMainThread),
                          main_thread_task_runner);

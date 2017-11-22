@@ -169,7 +169,6 @@ class WebSettings {
   virtual void SetCursiveFontFamily(const WebString&,
                                     UScriptCode = USCRIPT_COMMON) = 0;
   virtual void SetDNSPrefetchingEnabled(bool) = 0;
-  virtual void SetDataSaverEnabled(bool) = 0;
   virtual void SetDOMPasteAllowed(bool) = 0;
   virtual void SetDefaultFixedFontSize(int) = 0;
   virtual void SetDefaultFontSize(int) = 0;
@@ -230,7 +229,6 @@ class WebSettings {
   virtual void SetPictographFontFamily(const WebString&,
                                        UScriptCode = USCRIPT_COMMON) = 0;
   virtual void SetPluginsEnabled(bool) = 0;
-  virtual void SetEncryptedMediaEnabled(bool) = 0;
   virtual void SetPresentationReceiver(bool) = 0;
   virtual void SetAvailablePointerTypes(int) = 0;
   virtual void SetPrimaryPointerType(PointerType) = 0;

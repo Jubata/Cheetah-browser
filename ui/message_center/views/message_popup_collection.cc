@@ -17,10 +17,10 @@
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
+#include "ui/message_center/ui_controller.h"
 #include "ui/message_center/views/message_view.h"
 #include "ui/message_center/views/message_view_context_menu_controller.h"
 #include "ui/message_center/views/message_view_factory.h"
@@ -49,7 +49,7 @@ const int kToastMarginY = kMarginBetweenPopups;
 
 MessagePopupCollection::MessagePopupCollection(
     MessageCenter* message_center,
-    MessageCenterTray* tray,
+    UiController* tray,
     PopupAlignmentDelegate* alignment_delegate)
     : message_center_(message_center),
       tray_(tray),
@@ -112,6 +112,14 @@ void MessagePopupCollection::ClickOnNotificationButton(
     const std::string& notification_id,
     int button_index) {
   message_center_->ClickOnNotificationButton(notification_id, button_index);
+}
+
+void MessagePopupCollection::ClickOnNotificationButtonWithReply(
+    const std::string& notification_id,
+    int button_index,
+    const base::string16& reply) {
+  message_center_->ClickOnNotificationButtonWithReply(notification_id,
+                                                      button_index, reply);
 }
 
 void MessagePopupCollection::ClickOnSettingsButton(
@@ -220,7 +228,7 @@ void MessagePopupCollection::UpdateWidgets() {
     // There will be no contents already since this is a new ToastContentsView.
     toast->SetContents(view, /*a11y_feedback_for_updates=*/false);
     toasts_.push_back(toast);
-    view->set_controller(toast);
+    view->set_delegate(toast);
 
     gfx::Size preferred_size = toast->GetPreferredSize();
     gfx::Point origin(

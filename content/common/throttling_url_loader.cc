@@ -149,13 +149,14 @@ std::unique_ptr<ThrottlingURLLoader> ThrottlingURLLoader::CreateLoaderAndStart(
 std::unique_ptr<ThrottlingURLLoader> ThrottlingURLLoader::CreateLoaderAndStart(
     StartLoaderCallback start_loader_callback,
     std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
+    int32_t routing_id,
     const ResourceRequest& url_request,
     mojom::URLLoaderClient* client,
     const net::NetworkTrafficAnnotationTag& traffic_annotation,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   std::unique_ptr<ThrottlingURLLoader> loader(new ThrottlingURLLoader(
       std::move(throttles), client, traffic_annotation));
-  loader->Start(nullptr, 0, 0, mojom::kURLLoadOptionNone,
+  loader->Start(nullptr, routing_id, 0, mojom::kURLLoadOptionNone,
                 std::move(start_loader_callback), url_request,
                 std::move(task_runner));
   return loader;
@@ -421,7 +422,7 @@ void ThrottlingURLLoader::OnStartLoadingResponseBody(
 }
 
 void ThrottlingURLLoader::OnComplete(
-    const ResourceRequestCompletionStatus& status) {
+    const network::URLLoaderCompletionStatus& status) {
   DCHECK_EQ(DEFERRED_NONE, deferred_stage_);
   DCHECK(!loader_cancelled_);
 
@@ -444,13 +445,13 @@ void ThrottlingURLLoader::CancelWithError(int error_code) {
   if (loader_cancelled_)
     return;
 
-  ResourceRequestCompletionStatus request_complete_data;
-  request_complete_data.error_code = error_code;
-  request_complete_data.completion_time = base::TimeTicks::Now();
+  network::URLLoaderCompletionStatus status;
+  status.error_code = error_code;
+  status.completion_time = base::TimeTicks::Now();
 
   deferred_stage_ = DEFERRED_NONE;
   DisconnectClient();
-  forwarding_client_->OnComplete(request_complete_data);
+  forwarding_client_->OnComplete(status);
 }
 
 void ThrottlingURLLoader::Resume() {

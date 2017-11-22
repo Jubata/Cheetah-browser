@@ -310,7 +310,7 @@ void BrowserCompositorMac::SubmitCompositorFrame(
                                                           pixel_size);
   }
   delegated_frame_host_->SubmitCompositorFrame(local_surface_id,
-                                               std::move(frame));
+                                               std::move(frame), nullptr);
 }
 
 void BrowserCompositorMac::OnDidNotProduceFrame(const viz::BeginFrameAck& ack) {
@@ -467,6 +467,10 @@ void BrowserCompositorMac::OnBeginFrame() {
 bool BrowserCompositorMac::IsAutoResizeEnabled() const {
   NOTREACHED();
   return false;
+}
+
+void BrowserCompositorMac::OnFrameTokenChanged(uint32_t frame_token) {
+  client_->OnFrameTokenChanged(frame_token);
 }
 
 ui::Compositor* BrowserCompositorMac::CompositorForTesting() const {

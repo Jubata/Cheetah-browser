@@ -10,6 +10,7 @@
 #include <cstdint>
 
 #include "chrome/browser/vr/content_input_delegate.h"
+#include "chrome/browser/vr/model/controller_model.h"
 #include "chrome/browser/vr/ui_browser_interface.h"
 #include "ui/gfx/transform.h"
 
@@ -20,36 +21,18 @@ class Event;
 namespace vr {
 
 class Ui;
+struct Model;
 
 // This class provides a home for the VR UI in a testapp context, and
 // manipulates the UI according to user input.
-class VrTestContext : public vr::ContentInputDelegate,
-                      public vr::UiBrowserInterface {
+class VrTestContext : public vr::UiBrowserInterface {
  public:
   VrTestContext();
   ~VrTestContext() override;
 
-  void OnGlInitialized(const gfx::Size& window_size);
+  void OnGlInitialized();
   void DrawFrame();
   void HandleInput(ui::Event* event);
-
-  // vr::ContentInputDelegate.
-  void OnContentEnter(const gfx::PointF& normalized_hit_point) override;
-  void OnContentLeave() override;
-  void OnContentMove(const gfx::PointF& normalized_hit_point) override;
-  void OnContentDown(const gfx::PointF& normalized_hit_point) override;
-  void OnContentUp(const gfx::PointF& normalized_hit_point) override;
-  void OnContentFlingStart(std::unique_ptr<blink::WebGestureEvent> gesture,
-                           const gfx::PointF& normalized_hit_point) override;
-  void OnContentFlingCancel(std::unique_ptr<blink::WebGestureEvent> gesture,
-                            const gfx::PointF& normalized_hit_point) override;
-  void OnContentScrollBegin(std::unique_ptr<blink::WebGestureEvent> gesture,
-                            const gfx::PointF& normalized_hit_point) override;
-  void OnContentScrollUpdate(std::unique_ptr<blink::WebGestureEvent> gesture,
-                             const gfx::PointF& normalized_hit_point) override;
-  void OnContentScrollEnd(std::unique_ptr<blink::WebGestureEvent> gesture,
-                          const gfx::PointF& normalized_hit_point) override;
-  void SetVoiceSearchActive(bool active) override;
 
   // vr::UiBrowserInterface implementation (UI calling to VrShell).
   void ExitPresent() override;
@@ -60,10 +43,19 @@ class VrTestContext : public vr::ContentInputDelegate,
   void OnExitVrPromptResult(vr::UiUnsupportedMode reason,
                             vr::ExitVrPromptChoice choice) override;
   void OnContentScreenBoundsChanged(const gfx::SizeF& bounds) override;
+  void SetVoiceSearchActive(bool active) override;
+  void StartAutocomplete(const base::string16& string) override;
+  void StopAutocomplete() override;
+  void Navigate(GURL gurl) override;
+
+  void set_window_size(const gfx::Size& size) { window_size_ = size; }
 
  private:
   unsigned int CreateFakeContentTexture();
   void CreateFakeOmniboxSuggestions();
+  gfx::Transform ProjectionMatrix() const;
+  gfx::Transform ViewProjectionMatrix() const;
+  ControllerModel UpdateController();
 
   std::unique_ptr<Ui> ui_;
   gfx::Size window_size_;
@@ -73,12 +65,18 @@ class VrTestContext : public vr::ContentInputDelegate,
   float head_angle_y_degrees_ = 0;
   int last_drag_x_pixels_ = 0;
   int last_drag_y_pixels_ = 0;
+  gfx::Point last_mouse_point_;
   bool touchpad_pressed_ = false;
 
   float view_scale_factor_ = 1.f;
 
+  // This avoids storing a duplicate of the model state here.
+  Model* model_;
+
   bool fullscreen_ = false;
   bool incognito_ = false;
+
+  ControllerModel last_controller_model_;
 
   DISALLOW_COPY_AND_ASSIGN(VrTestContext);
 };

@@ -31,6 +31,8 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/common/frame_messages.h"
 #include "content/common/gpu_stream_constants.h"
+#include "content/common/origin_trials/trial_policy_impl.h"
+#include "content/common/render_message_filter.mojom.h"
 #include "content/common/render_process_messages.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -45,6 +47,7 @@
 #include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/local_storage_cached_areas.h"
 #include "content/renderer/dom_storage/local_storage_namespace.h"
+#include "content/renderer/dom_storage/session_web_storage_namespace_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/file_info_util.h"
 #include "content/renderer/fileapi/webfilesystem_impl.h"
@@ -84,6 +87,7 @@
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
+#include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
 #include "media/blink/webcontentdecryptionmodule_impl.h"
@@ -493,10 +497,10 @@ void RendererBlinkPlatformImpl::CacheMetadata(const blink::WebURL& url,
   // Let the browser know we generated cacheable metadata for this resource. The
   // browser may cache it and return it on subsequent responses to speed
   // the processing of this resource.
-  std::vector<char> copy(data, data + size);
-  RenderThread::Get()->Send(
-      new RenderProcessHostMsg_DidGenerateCacheableMetadata(url, response_time,
-                                                            copy));
+  std::vector<uint8_t> copy(data, data + size);
+  RenderThreadImpl::current()
+      ->render_message_filter()
+      ->DidGenerateCacheableMetadata(url, response_time, copy);
 }
 
 void RendererBlinkPlatformImpl::CacheMetadataInCacheStorage(
@@ -509,11 +513,12 @@ void RendererBlinkPlatformImpl::CacheMetadataInCacheStorage(
   // Let the browser know we generated cacheable metadata for this resource in
   // CacheStorage. The browser may cache it and return it on subsequent
   // responses to speed the processing of this resource.
-  std::vector<char> copy(data, data + size);
-  RenderThread::Get()->Send(
-      new RenderProcessHostMsg_DidGenerateCacheableMetadataInCacheStorage(
+  std::vector<uint8_t> copy(data, data + size);
+  RenderThreadImpl::current()
+      ->render_message_filter()
+      ->DidGenerateCacheableMetadataInCacheStorage(
           url, response_time, copy, cacheStorageOrigin,
-          cacheStorageCacheName.Utf8()));
+          cacheStorageCacheName.Utf8());
 }
 
 WebString RendererBlinkPlatformImpl::DefaultLocale() {
@@ -535,9 +540,9 @@ void RendererBlinkPlatformImpl::SuddenTerminationChanged(bool enabled) {
       return;
   }
 
-  RenderThread* thread = RenderThread::Get();
+  RenderThreadImpl* thread = RenderThreadImpl::current();
   if (thread)  // NULL in unittests.
-    thread->Send(new RenderProcessHostMsg_SuddenTerminationChanged(enabled));
+    thread->GetRendererHost()->SuddenTerminationChanged(enabled);
 }
 
 void RendererBlinkPlatformImpl::AddRefProcess() {
@@ -558,7 +563,8 @@ RendererBlinkPlatformImpl::CreateLocalStorageNamespace() {
           switches::kDisableMojoLocalStorage)) {
     if (!local_storage_cached_areas_) {
       local_storage_cached_areas_.reset(new LocalStorageCachedAreas(
-          RenderThreadImpl::current()->GetStoragePartitionService()));
+          RenderThreadImpl::current()->GetStoragePartitionService(),
+          renderer_scheduler_));
     }
     return std::make_unique<LocalStorageNamespace>(
         local_storage_cached_areas_.get());
@@ -567,6 +573,20 @@ RendererBlinkPlatformImpl::CreateLocalStorageNamespace() {
   return std::make_unique<WebStorageNamespaceImpl>();
 }
 
+std::unique_ptr<blink::WebStorageNamespace>
+RendererBlinkPlatformImpl::CreateSessionStorageNamespace(int64_t namespace_id) {
+  if (base::FeatureList::IsEnabled(features::kMojoSessionStorage)) {
+    if (!local_storage_cached_areas_) {
+      local_storage_cached_areas_.reset(new LocalStorageCachedAreas(
+          RenderThreadImpl::current()->GetStoragePartitionService(),
+          renderer_scheduler_));
+    }
+    return std::make_unique<SessionWebStorageNamespaceImpl>(
+        namespace_id, local_storage_cached_areas_.get());
+  }
+
+  return std::make_unique<WebStorageNamespaceImpl>(namespace_id);
+}
 
 //------------------------------------------------------------------------------
 
@@ -1368,20 +1388,15 @@ blink::WebPushProvider* RendererBlinkPlatformImpl::PushProvider() {
 //------------------------------------------------------------------------------
 
 std::unique_ptr<blink::WebTrialTokenValidator>
-RendererBlinkPlatformImpl::TrialTokenValidator() {
+RendererBlinkPlatformImpl::CreateTrialTokenValidator() {
   return std::make_unique<WebTrialTokenValidatorImpl>(
-      std::make_unique<blink::TrialTokenValidator>(OriginTrialPolicy()));
-}
-
-std::unique_ptr<blink::TrialPolicy>
-RendererBlinkPlatformImpl::OriginTrialPolicy() {
-  return std::make_unique<TrialPolicyImpl>();
+      TrialPolicyImpl::CreateValidatorForPolicy());
 }
 
 //------------------------------------------------------------------------------
 
 blink::WebNotificationManager*
-RendererBlinkPlatformImpl::GetNotificationManager() {
+RendererBlinkPlatformImpl::GetWebNotificationManager() {
   if (!thread_safe_sender_.get() || !notification_dispatcher_.get())
     return nullptr;
 

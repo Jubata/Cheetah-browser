@@ -10,11 +10,14 @@ import android.os.AsyncTask;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
+import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.browser.AppHooks;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+
+import javax.annotation.concurrent.GuardedBy;
 
 /**
  * Reads bookmarks from the partner content provider (if any).
@@ -33,11 +36,36 @@ public class PartnerBookmarksReader {
     /** ID used to indicate an invalid bookmark node. */
     static final long INVALID_BOOKMARK_ID = -1;
 
+    /** Storage for failed favicon retrieval attempts to throttle future requests. **/
+    private PartnerBookmarksFaviconThrottle mFaviconThrottle;
+
     // JNI c++ pointer
     private long mNativePartnerBookmarksReader;
 
     /** The context (used to get a ContentResolver) */
     protected Context mContext;
+
+    // Favicons are loaded asynchronously so we need to keep track of how many are currently in
+    // progress, as well as whether or not we've finished reading bookmarks from this class so we
+    // don't end up shutting the bookmark reader down prematurely.
+    private final Object mProgressLock = new Object();
+    @GuardedBy("mProgressLock")
+    private int mNumFaviconsInProgress = 0;
+    @GuardedBy("mProgressLock")
+    private boolean mShutDown = false;
+    private boolean mFinishedReading;
+
+    /**
+     * A callback used to indicate success or failure of favicon fetching when retrieving favicons
+     * from cache or server.
+     */
+    private interface FetchFaviconCallback {
+        @CalledByNative("FetchFaviconCallback")
+        void onFaviconFetched(@FaviconFetchResult int result);
+
+        @CalledByNative("FetchFaviconCallback")
+        void onFaviconFetch();
+    }
 
     /**
      * Creates the instance of the reader.
@@ -72,15 +100,59 @@ public class PartnerBookmarksReader {
      */
     private long onBookmarkPush(String url, String title, boolean isFolder, long parentId,
             byte[] favicon, byte[] touchicon) {
-        return nativeAddPartnerBookmark(mNativePartnerBookmarksReader, url, title,
-                isFolder, parentId, favicon, touchicon);
+        FetchFaviconCallback callback = new FetchFaviconCallback() {
+            @Override
+            public void onFaviconFetched(@FaviconFetchResult int result) {
+                RecordHistogram.recordEnumeratedHistogram(
+                        "PartnerBookmark.FaviconThrottleFetchResult", result,
+                        FaviconFetchResult.UMA_BOUNDARY);
+                synchronized (mProgressLock) {
+                    mFaviconThrottle.onFaviconFetched(url, result);
+                    --mNumFaviconsInProgress;
+                    if (mNumFaviconsInProgress == 0 && mFinishedReading) {
+                        shutDown();
+                    }
+                }
+            }
+
+            @Override
+            public void onFaviconFetch() {
+                synchronized (mProgressLock) {
+                    ++mNumFaviconsInProgress;
+                }
+            }
+        };
+        return nativeAddPartnerBookmark(mNativePartnerBookmarksReader, url, title, isFolder,
+                parentId, favicon, touchicon,
+                mFaviconThrottle.shouldFetchFromServerIfNecessary(url), callback);
+    }
+
+    /**
+     * Sets our finished reading flag, and if there is no work being done on the native side, shuts
+     * down the bookmark reader.
+     */
+    protected void onBookmarksRead() {
+        mFinishedReading = true;
+        synchronized (mProgressLock) {
+            if (mNumFaviconsInProgress == 0) {
+                shutDown();
+            }
+        }
     }
 
     /** Notifies the reader is complete and partner bookmarks should be submitted to the shim. */
-    protected void onBookmarksRead() {
-        nativePartnerBookmarksCreationComplete(mNativePartnerBookmarksReader);
-        nativeDestroy(mNativePartnerBookmarksReader);
-        mNativePartnerBookmarksReader = 0;
+    protected void shutDown() {
+        synchronized (mProgressLock) {
+            if (mShutDown) return;
+
+            nativePartnerBookmarksCreationComplete(mNativePartnerBookmarksReader);
+            nativeDestroy(mNativePartnerBookmarksReader);
+            mNativePartnerBookmarksReader = 0;
+            if (mFaviconThrottle != null) {
+                mFaviconThrottle.commit();
+            }
+            mShutDown = true;
+        }
     }
 
     /** Handles fetching partner bookmarks in a background thread. */
@@ -99,6 +171,11 @@ public class PartnerBookmarksReader {
 
         @Override
         protected Void doInBackground(Void... params) {
+            if (mFaviconThrottle == null) {
+                // Initialize the throttle here since we need to load shared preferences on the
+                // background thread as well.
+                mFaviconThrottle = new PartnerBookmarksFaviconThrottle(mContext);
+            }
             PartnerBookmark.BookmarkIterator bookmarkIterator =
                     AppHooks.get().getPartnerBookmarkIterator();
             RecordHistogram.recordBooleanHistogram(
@@ -254,9 +331,9 @@ public class PartnerBookmarksReader {
     private native long nativeInit();
     private native void nativeReset(long nativePartnerBookmarksReader);
     private native void nativeDestroy(long nativePartnerBookmarksReader);
-    private native long nativeAddPartnerBookmark(long nativePartnerBookmarksReader,
-            String url, String title, boolean isFolder, long parentId,
-            byte[] favicon, byte[] touchicon);
+    private native long nativeAddPartnerBookmark(long nativePartnerBookmarksReader, String url,
+            String title, boolean isFolder, long parentId, byte[] favicon, byte[] touchicon,
+            boolean fetchUncachedFaviconsFromServer, FetchFaviconCallback callback);
     private native void nativePartnerBookmarksCreationComplete(long nativePartnerBookmarksReader);
     private static native void nativeDisablePartnerBookmarksEditing();
 }

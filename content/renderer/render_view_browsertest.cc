@@ -70,6 +70,7 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerNetworkProvider.h"
+#include "third_party/WebKit/public/web/WebDevToolsAgent.h"
 #include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebDocumentLoader.h"
 #include "third_party/WebKit/public/web/WebFrameContentDumper.h"
@@ -419,14 +420,14 @@ class DevToolsAgentTest : public RenderViewImplTest {
   void Attach() {
     notifications_ = std::vector<std::string>();
     expecting_pause_ = false;
-    agent()->OnAttach(17);
+    agent()->GetWebAgent()->Attach(17);
     agent()->send_protocol_message_callback_for_test_ = base::Bind(
        &DevToolsAgentTest::OnDevToolsMessage, base::Unretained(this));
   }
 
   void Detach() {
     agent()->send_protocol_message_callback_for_test_.Reset();
-    agent()->DetachAllSessions();
+    agent()->GetWebAgent()->Detach(17);
   }
 
   bool IsPaused() {
@@ -435,7 +436,7 @@ class DevToolsAgentTest : public RenderViewImplTest {
 
   void DispatchDevToolsMessage(const std::string& method,
                                const std::string& message) {
-    agent()->OnDispatchOnInspectorBackend(17, 1, method, message);
+    agent()->DispatchOnInspectorBackend(17, 1, method, message);
   }
 
   void CloseWhilePaused() {
@@ -443,8 +444,10 @@ class DevToolsAgentTest : public RenderViewImplTest {
     view()->NotifyOnClose();
   }
 
-  void OnDevToolsMessage(
-      int, int, const std::string& message, const std::string&) {
+  void OnDevToolsMessage(int,
+                         int,
+                         const std::string& message,
+                         const std::string&) {
     last_message_ = base::WrapUnique(static_cast<base::DictionaryValue*>(
         base::JSONReader::Read(message).release()));
     int id;
@@ -467,6 +470,12 @@ class DevToolsAgentTest : public RenderViewImplTest {
                            base::Unretained(this), "Debugger.resume",
                            "{\"id\":100,\"method\":\"Debugger.resume\"}"));
       }
+
+      if (notification == "Page.windowOpen") {
+        window_open_notification_ =
+            base::WrapUnique(static_cast<base::DictionaryValue*>(
+                base::JSONReader::Read(message).release()));
+      }
     }
   }
 
@@ -488,6 +497,10 @@ class DevToolsAgentTest : public RenderViewImplTest {
     call_frames_count_ = call_frames_count;
   }
 
+  base::DictionaryValue* WindowOpenNotification() {
+    return window_open_notification_.get();
+  }
+
  private:
   DevToolsAgent* agent() {
     return frame()->devtools_agent();
@@ -495,6 +508,7 @@ class DevToolsAgentTest : public RenderViewImplTest {
 
   std::vector<std::string> notifications_;
   std::unique_ptr<base::DictionaryValue> last_message_;
+  std::unique_ptr<base::DictionaryValue> window_open_notification_;
   int call_frames_count_;
   bool expecting_pause_;
 };
@@ -654,6 +668,7 @@ TEST_F(RenderViewImplTest, OnNavigationLoadDataWithBaseURL) {
   request_params.data_url_as_string =
       "data:text/html,<html><head><title>Data page</title></head></html>";
 
+  render_thread_->sink().ClearMessages();
   frame()->Navigate(common_params, StartNavigationParams(),
                     request_params);
   const IPC::Message* frame_title_msg = nullptr;
@@ -1362,12 +1377,8 @@ TEST_F(RenderViewImplTest, OnSetTextDirection) {
     WebTextDirection direction;
     const wchar_t* expected_result;
   } kTextDirection[] = {
-      {blink::kWebTextDirectionRightToLeft,
-       L"\x000A"
-       L"rtl,rtl"},
-      {blink::kWebTextDirectionLeftToRight,
-       L"\x000A"
-       L"ltr,ltr"},
+      {blink::kWebTextDirectionRightToLeft, L"rtl,rtl"},
+      {blink::kWebTextDirectionLeftToRight, L"ltr,ltr"},
   };
   for (size_t i = 0; i < arraysize(kTextDirection); ++i) {
     // Set the text direction of the <textarea> element.
@@ -1397,10 +1408,7 @@ TEST_F(RenderViewImplTest, OnSetTextDirection) {
 // Crashy, http://crbug.com/53247.
 TEST_F(RenderViewImplTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
   GetMainFrame()->EnableViewSourceMode(true);
-  WebURLError error;
-  error.domain = WebURLError::Domain::kNet;
-  error.reason = net::ERR_FILE_NOT_FOUND;
-  error.unreachable_url = GURL("http://foo");
+  WebURLError error(net::ERR_FILE_NOT_FOUND, GURL("http://foo"));
   WebLocalFrame* web_frame = GetMainFrame();
 
   // Start a load that will reach provisional state synchronously,
@@ -1420,10 +1428,7 @@ TEST_F(RenderViewImplTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
 
 TEST_F(RenderViewImplTest, DidFailProvisionalLoadWithErrorForCancellation) {
   GetMainFrame()->EnableViewSourceMode(true);
-  WebURLError error;
-  error.domain = WebURLError::Domain::kNet;
-  error.reason = net::ERR_ABORTED;
-  error.unreachable_url = GURL("http://foo");
+  WebURLError error(net::ERR_ABORTED, GURL("http://foo"));
   WebLocalFrame* web_frame = GetMainFrame();
 
   // Start a load that will reach provisional state synchronously,
@@ -1903,10 +1908,8 @@ class RendererErrorPageTest : public RenderViewImplTest {
 #endif
 
 TEST_F(RendererErrorPageTest, MAYBE_Suppresses) {
-  WebURLError error;
-  error.domain = WebURLError::Domain::kNet;
-  error.reason = net::ERR_FILE_NOT_FOUND;
-  error.unreachable_url = GURL("http://example.com/suppress");
+  WebURLError error(net::ERR_FILE_NOT_FOUND,
+                    GURL("http://example.com/suppress"));
 
   // Start a load that will reach provisional state synchronously,
   // but won't complete synchronously.
@@ -1933,10 +1936,8 @@ TEST_F(RendererErrorPageTest, MAYBE_Suppresses) {
 #endif
 
 TEST_F(RendererErrorPageTest, MAYBE_DoesNotSuppress) {
-  WebURLError error;
-  error.domain = WebURLError::Domain::kNet;
-  error.reason = net::ERR_FILE_NOT_FOUND;
-  error.unreachable_url = GURL("http://example.com/dont-suppress");
+  WebURLError error(net::ERR_FILE_NOT_FOUND,
+                    GURL("http://example.com/dont-suppress"));
 
   // Start a load that will reach provisional state synchronously,
   // but won't complete synchronously.
@@ -2707,6 +2708,64 @@ TEST_F(DevToolsAgentTest, CallFramesInIsolatedWorld) {
 
   EXPECT_FALSE(IsPaused());
   Detach();
+}
+
+TEST_F(DevToolsAgentTest, WindowOpenWithEmptyURL) {
+  Attach();
+  DispatchDevToolsMessage("Page.enable",
+                          "{\"id\":1,\"method\":\"Page.enable\"}");
+  LoadHTMLWithUrlOverride("<script>window.open()</script>",
+                          "https://www.example.com");
+
+  base::DictionaryValue* notification = WindowOpenNotification();
+  EXPECT_TRUE(notification);
+  const base::Value* params_value = notification->FindKey("params");
+  EXPECT_TRUE(params_value && params_value->is_dict());
+  const base::Value* url_value = params_value->FindKey("url");
+  EXPECT_TRUE(url_value);
+  EXPECT_EQ(url::kAboutBlankURL, url_value->GetString());
+}
+
+TEST_F(DevToolsAgentTest, WindowOpenWithRelativeURL) {
+  // Enable browser side navigation to avoid actually load url for the new
+  // window.
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableBrowserSideNavigation);
+  Attach();
+  DispatchDevToolsMessage("Page.enable",
+                          "{\"id\":1,\"method\":\"Page.enable\"}");
+  LoadHTMLWithUrlOverride("<script>window.open('path')</script>",
+                          "https://www.example.com");
+
+  base::DictionaryValue* notification = WindowOpenNotification();
+  EXPECT_TRUE(notification);
+  const base::Value* params_value = notification->FindKey("params");
+  EXPECT_TRUE(params_value && params_value->is_dict());
+  const base::Value* url_value = params_value->FindKey("url");
+  EXPECT_TRUE(url_value);
+  EXPECT_EQ("https://www.example.com/path", url_value->GetString());
+}
+
+TEST_F(DevToolsAgentTest, WindowOpenFromClick) {
+  // Enable browser side navigation to avoid actually load url for the new
+  // window.
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableBrowserSideNavigation);
+  Attach();
+  DispatchDevToolsMessage("Page.enable",
+                          "{\"id\":1,\"method\":\"Page.enable\"}");
+  LoadHTMLWithUrlOverride(
+      "<a id='my_anchor' href='/anchor' target='_blank'> </a>\n"
+      "<script>document.getElementById('my_anchor').click();</script>",
+      "https://www.example.com");
+
+  base::DictionaryValue* notification = WindowOpenNotification();
+  EXPECT_TRUE(notification);
+  const base::Value* params_value = notification->FindKey("params");
+  EXPECT_TRUE(params_value && params_value->is_dict());
+  const base::Value* url_value = params_value->FindKey("url");
+  EXPECT_TRUE(url_value);
+  EXPECT_EQ("https://www.example.com/anchor", url_value->GetString());
 }
 
 }  // namespace content

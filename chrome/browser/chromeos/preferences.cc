@@ -79,37 +79,47 @@ const char* const kLanguageRemapPrefs[] = {
     prefs::kLanguageRemapEscapeKeyTo, prefs::kLanguageRemapBackspaceKeyTo,
     prefs::kLanguageRemapDiamondKeyTo};
 
+// Migrates kResolveTimezoneByGeolocation value to
+// kResolveTimezoneByGeolocationMethod.
+// Default preference value will become another default value.
+// TODO(alemate): https://crbug.com/783367 Remove outdated prefs.
+void TryMigrateToResolveTimezoneByGeolocationMethod(PrefService* prefs) {
+  if (prefs->GetBoolean(prefs::kResolveTimezoneByGeolocationMigratedToMethod))
+    return;
+
+  prefs->SetBoolean(prefs::kResolveTimezoneByGeolocationMigratedToMethod, true);
+  const PrefService::Preference* old_preference =
+      prefs->FindPreference(prefs::kResolveTimezoneByGeolocation);
+  if (old_preference->IsDefaultValue())
+    return;
+
+  const PrefService::Preference* new_preference =
+      prefs->FindPreference(prefs::kResolveTimezoneByGeolocationMethod);
+  if (!new_preference->IsDefaultValue())
+    return;
+
+  const system::TimeZoneResolverManager::TimeZoneResolveMethod method(
+      old_preference->GetValue()->GetBool()
+          ? system::TimeZoneResolverManager::TimeZoneResolveMethod::IP_ONLY
+          : system::TimeZoneResolverManager::TimeZoneResolveMethod::DISABLED);
+  prefs->SetInteger(prefs::kResolveTimezoneByGeolocationMethod,
+                    static_cast<int>(method));
+}
+
 }  // namespace
 
 Preferences::Preferences()
-    : prefs_(NULL),
-      input_method_manager_(input_method::InputMethodManager::Get()),
-      user_(NULL),
-      user_is_primary_(false) {
-  // Do not observe shell, if there is no shell instance; e.g., in some unit
-  // tests.
-  if (ash::Shell::HasInstance())
-    ash::Shell::Get()->AddShellObserver(this);
-}
+    : Preferences(input_method::InputMethodManager::Get()) {}
 
 Preferences::Preferences(input_method::InputMethodManager* input_method_manager)
     : prefs_(NULL),
       input_method_manager_(input_method_manager),
       user_(NULL),
-      user_is_primary_(false) {
-  // Do not observe shell, if there is no shell instance; e.g., in some unit
-  // tests.
-  if (ash::Shell::HasInstance())
-    ash::Shell::Get()->AddShellObserver(this);
-}
+      user_is_primary_(false) {}
 
 Preferences::~Preferences() {
   prefs_->RemoveObserver(this);
   user_manager::UserManager::Get()->RemoveSessionStateObserver(this);
-  // If shell instance is destoryed before this preferences instance, there is
-  // no need to remove this shell observer.
-  if (ash::Shell::HasInstance())
-    ash::Shell::Get()->RemoveShellObserver(this);
 }
 
 // static
@@ -119,18 +129,21 @@ void Preferences::RegisterPrefs(PrefRegistrySimple* registry) {
   // TODO(jamescook): Move ownership and registration into ash.
   registry->RegisterBooleanPref(
       ash::prefs::kAccessibilityVirtualKeyboardEnabled, false);
-  registry->RegisterBooleanPref(ash::prefs::kAccessibilityMonoAudioEnabled,
-                                false);
   registry->RegisterStringPref(prefs::kLogoutStartedLast, std::string());
   registry->RegisterStringPref(prefs::kSigninScreenTimezone, std::string());
   registry->RegisterBooleanPref(prefs::kResolveDeviceTimezoneByGeolocation,
                                 true);
+  registry->RegisterIntegerPref(
+      prefs::kResolveDeviceTimezoneByGeolocationMethod,
+      static_cast<int>(
+          system::TimeZoneResolverManager::TimeZoneResolveMethod::IP_ONLY));
   registry->RegisterIntegerPref(
       prefs::kSystemTimezoneAutomaticDetectionPolicy,
       enterprise_management::SystemTimezoneProto::USERS_DECIDE);
 
   registry->RegisterDictionaryPref(ash::prefs::kWallpaperColors,
                                    PrefRegistry::PUBLIC);
+  registry->RegisterStringPref(prefs::kMinimumAllowedChromeVersion, "");
 }
 
 // static
@@ -215,7 +228,7 @@ void Preferences::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       ash::prefs::kAccessibilityMonoAudioEnabled, false,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF | PrefRegistry::PUBLIC);
   registry->RegisterBooleanPref(
       ash::prefs::kAccessibilityCaretHighlightEnabled, false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
@@ -345,8 +358,6 @@ void Preferences::RegisterProfilePrefs(
 
   registry->RegisterStringPref(prefs::kTermsOfServiceURL, "");
 
-  registry->RegisterBooleanPref(prefs::kTouchHudProjectionEnabled, false);
-
   registry->RegisterBooleanPref(prefs::kTouchVirtualKeyboardEnabled, false);
 
   input_method::InputMethodSyncer::RegisterProfilePrefs(registry);
@@ -363,6 +374,16 @@ void Preferences::RegisterProfilePrefs(
 
   registry->RegisterBooleanPref(
       prefs::kResolveTimezoneByGeolocation, true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+
+  registry->RegisterBooleanPref(
+      prefs::kResolveTimezoneByGeolocationMigratedToMethod, false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+
+  registry->RegisterIntegerPref(
+      prefs::kResolveTimezoneByGeolocationMethod,
+      static_cast<int>(
+          system::TimeZoneResolverManager::TimeZoneResolveMethod::IP_ONLY),
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   registry->RegisterBooleanPref(prefs::kCaptivePortalAuthenticationIgnoresProxy,
@@ -415,8 +436,6 @@ void Preferences::InitUserPrefs(sync_preferences::PrefServiceSyncable* prefs) {
   mouse_reverse_scroll_.Init(prefs::kMouseReverseScroll, prefs, callback);
   download_default_directory_.Init(prefs::kDownloadDefaultDirectory,
                                    prefs, callback);
-  touch_hud_projection_enabled_.Init(prefs::kTouchHudProjectionEnabled,
-                                     prefs, callback);
   preload_engines_.Init(prefs::kLanguagePreloadEngines, prefs, callback);
   enabled_extension_imes_.Init(prefs::kLanguageEnabledExtensionImes,
                                prefs, callback);
@@ -443,6 +462,8 @@ void Preferences::InitUserPrefs(sync_preferences::PrefServiceSyncable* prefs) {
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(prefs::kUserTimezone, callback);
   pref_change_registrar_.Add(prefs::kResolveTimezoneByGeolocation, callback);
+  pref_change_registrar_.Add(prefs::kResolveTimezoneByGeolocationMethod,
+                             callback);
   pref_change_registrar_.Add(prefs::kUse24HourClock, callback);
   for (auto* remap_pref : kLanguageRemapPrefs)
     pref_change_registrar_.Add(remap_pref, callback);
@@ -666,15 +687,6 @@ void Preferences::ApplyPreferences(ApplyReason reason,
           "FileBrowser.DownloadDestination.IsGoogleDrive.Started",
           default_download_to_drive);
   }
-  if (reason != REASON_PREF_CHANGED ||
-      pref_name == prefs::kTouchHudProjectionEnabled) {
-    if (user_is_active) {
-      const bool enabled = touch_hud_projection_enabled_.GetValue();
-      // There may not be a shell, e.g., in some unit tests.
-      if (ash::Shell::HasInstance())
-        ash::Shell::Get()->SetTouchHudProjectionEnabled(enabled);
-    }
-  }
 
   if (reason != REASON_PREF_CHANGED ||
       pref_name == prefs::kLanguageXkbAutoRepeatEnabled) {
@@ -752,18 +764,33 @@ void Preferences::ApplyPreferences(ApplyReason reason,
     system::UpdateSystemTimezone(ProfileHelper::Get()->GetProfileByUser(user_));
   }
 
-  if (pref_name == prefs::kResolveTimezoneByGeolocation &&
+  if ((pref_name == prefs::kResolveTimezoneByGeolocation ||
+       pref_name == prefs::kResolveTimezoneByGeolocationMethod) &&
       reason != REASON_ACTIVE_USER_CHANGED) {
-    const bool value = prefs_->GetBoolean(prefs::kResolveTimezoneByGeolocation);
+    if (pref_name == prefs::kResolveTimezoneByGeolocationMethod &&
+        !prefs_->FindPreference(prefs::kResolveTimezoneByGeolocationMethod)
+             ->IsDefaultValue()) {
+      prefs_->SetBoolean(prefs::kResolveTimezoneByGeolocationMigratedToMethod,
+                         true);
+    }
     if (user_is_owner) {
-      g_browser_process->local_state()->SetBoolean(
-          prefs::kResolveDeviceTimezoneByGeolocation, value);
+      // Policy check is false here, because there is no owner for enterprise.
+      g_browser_process->local_state()->SetInteger(
+          prefs::kResolveDeviceTimezoneByGeolocationMethod,
+          static_cast<int>(system::TimeZoneResolverManager::
+                               GetEffectiveUserTimeZoneResolveMethod(
+                                   prefs_, false /* check_policy */)));
     }
     if (user_is_primary_) {
       g_browser_process->platform_part()
           ->GetTimezoneResolverManager()
           ->UpdateTimezoneResolver();
-      if (!value && reason == REASON_PREF_CHANGED) {
+      if (system::TimeZoneResolverManager::
+                  GetEffectiveUserTimeZoneResolveMethod(
+                      prefs_, true /* check_policy */) ==
+              system::TimeZoneResolverManager::TimeZoneResolveMethod::
+                  DISABLED &&
+          reason == REASON_PREF_CHANGED) {
         // Allow immediate timezone update on Stop + Start.
         g_browser_process->local_state()->ClearPref(
             TimeZoneResolver::kLastTimeZoneRefreshTime);
@@ -789,6 +816,10 @@ void Preferences::ApplyPreferences(ApplyReason reason,
 
 void Preferences::OnIsSyncingChanged() {
   DVLOG(1) << "OnIsSyncingChanged";
+
+  // By this moment, |prefs| are already synchronized.
+  TryMigrateToResolveTimezoneByGeolocationMethod(prefs_);
+
   ForceNaturalScrollDefault();
 }
 
@@ -868,14 +899,6 @@ void Preferences::UpdateAutoRepeatRate() {
   user_manager::known_user::SetIntegerPref(
       user_->GetAccountId(), prefs::kLanguageXkbAutoRepeatInterval,
       rate.repeat_interval_in_ms);
-}
-
-void Preferences::OnTouchHudProjectionToggled(bool enabled) {
-  if (touch_hud_projection_enabled_.GetValue() == enabled)
-    return;
-  if (!user_->is_active())
-    return;
-  touch_hud_projection_enabled_.SetValue(enabled);
 }
 
 void Preferences::ActiveUserChanged(const user_manager::User* active_user) {

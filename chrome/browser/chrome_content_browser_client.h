@@ -94,7 +94,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::WebContents* web_contents) override;
   void RenderProcessWillLaunch(content::RenderProcessHost* host) override;
   GURL GetEffectiveURL(content::BrowserContext* browser_context,
-                       const GURL& url) override;
+                       const GURL& url,
+                       bool is_isolated_origin) override;
   bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
                                const GURL& effective_url) override;
   bool DoesSiteRequireDedicatedProcess(content::BrowserContext* browser_context,
@@ -140,6 +141,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const GURL& new_url) override;
   bool ShouldAssignSiteForURL(const GURL& url) override;
   std::vector<url::Origin> GetOriginsRequiringDedicatedProcess() override;
+  bool IsFileAccessAllowed(const base::FilePath& path,
+                           const base::FilePath& absolute_path,
+                           const base::FilePath& profile_path) override;
   void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                       int child_process_id) override;
   void AdjustUtilityServiceProcessCommandLine(
@@ -168,7 +172,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                       int render_frame_id) override;
   bool AllowSetCookie(const GURL& url,
                       const GURL& first_party,
-                      const std::string& cookie_line,
+                      const net::CanonicalCookie& cookie,
                       content::ResourceContext* context,
                       int render_process_id,
                       int render_frame_id,
@@ -277,7 +281,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const GURL& url) override;
   void OverridePageVisibilityState(
       content::RenderFrameHost* render_frame_host,
-      blink::WebPageVisibilityState* visibility_state) override;
+      blink::mojom::PageVisibilityState* visibility_state) override;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   void GetAdditionalMappedFilesForChildProcess(
@@ -360,6 +364,13 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   std::vector<std::unique_ptr<content::URLLoaderThrottle>>
   CreateURLLoaderThrottles(
       const base::Callback<content::WebContents*()>& wc_getter) override;
+  void RegisterNonNetworkNavigationURLLoaderFactories(
+      content::RenderFrameHost* frame_host,
+      NonNetworkURLLoaderFactoryMap* factories) override;
+  void RegisterNonNetworkSubresourceURLLoaderFactories(
+      content::RenderFrameHost* frame_host,
+      const GURL& frame_url,
+      NonNetworkURLLoaderFactoryMap* factories) override;
 
  protected:
   static bool HandleWebUI(GURL* url, content::BrowserContext* browser_context);

@@ -65,6 +65,13 @@ class KEYBOARD_EXPORT ContainerBehavior {
                                   const gfx::Vector2d& kb_offset) = 0;
 
   virtual ContainerType GetType() const = 0;
+
+  // Removing focus from a text field should cause the keyboard to be dismissed.
+  virtual bool TextBlurHidesKeyboard() const = 0;
+
+  // Any region of the screen that is occluded by the keyboard should cause the
+  // workspace to change its layout.
+  virtual bool BoundsAffectWorkspaceLayout() const = 0;
 };
 
 }  // namespace keyboard

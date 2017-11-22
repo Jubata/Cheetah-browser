@@ -185,7 +185,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
                                 bool shrink) override;
   void SetBrowserControlsShownRatio(float) override;
   void RequestDecode(const PaintImage& image,
-                     const base::Callback<void(bool)>& callback) override;
+                     base::OnceCallback<void(bool)> callback) override;
 
   void SetScrollBoundaryBehavior(
       const blink::WebScrollBoundaryBehavior&) override;
@@ -243,6 +243,8 @@ class CONTENT_EXPORT RenderWidgetCompositor
   std::unique_ptr<cc::LayerTreeHost> layer_tree_host_;
   bool never_visible_;
   bool is_for_oopif_;
+
+  bool layer_tree_frame_sink_request_failed_while_invisible_ = false;
 
   blink::WebLayoutAndPaintAsyncCallback* layout_and_paint_async_callback_;
 

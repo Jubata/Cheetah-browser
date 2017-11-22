@@ -6,6 +6,10 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
+#include "base/run_loop.h"
 #include "chrome/browser/notifications/notification_handler.h"
 #include "chrome/browser/profiles/profile.h"
 
@@ -40,6 +44,20 @@ StubNotificationDisplayService::GetDisplayedNotificationsForType(
   return notifications;
 }
 
+base::Optional<message_center::Notification>
+StubNotificationDisplayService::GetNotification(
+    const std::string& notification_id) {
+  auto iter = std::find_if(notifications_.begin(), notifications_.end(),
+                           [notification_id](const NotificationData& data) {
+                             return data.notification.id() == notification_id;
+                           });
+
+  if (iter == notifications_.end())
+    return base::nullopt;
+
+  return iter->notification;
+}
+
 const NotificationCommon::Metadata*
 StubNotificationDisplayService::GetMetadataForNotification(
     const message_center::Notification& notification) {
@@ -71,10 +89,15 @@ void StubNotificationDisplayService::RemoveNotification(
 
   if (!silent) {
     NotificationHandler* handler = GetNotificationHandler(notification_type);
-    DCHECK(handler);
-
-    handler->OnClose(profile_, iter->notification.origin_url().spec(),
-                     notification_id, by_user);
+    if (notification_type == NotificationCommon::TRANSIENT) {
+      DCHECK(!handler);
+      iter->notification.delegate()->Close(by_user);
+    } else {
+      base::RunLoop run_loop;
+      handler->OnClose(profile_, iter->notification.origin_url(),
+                       notification_id, by_user, run_loop.QuitClosure());
+      run_loop.Run();
+    }
   }
 
   notifications_.erase(iter);
@@ -84,11 +107,18 @@ void StubNotificationDisplayService::RemoveAllNotifications(
     NotificationCommon::Type notification_type,
     bool by_user) {
   NotificationHandler* handler = GetNotificationHandler(notification_type);
-  DCHECK(handler);
+  DCHECK_NE(!!handler, notification_type == NotificationCommon::TRANSIENT);
   for (auto iter = notifications_.begin(); iter != notifications_.end();) {
     if (iter->type == notification_type) {
-      handler->OnClose(profile_, iter->notification.origin_url().spec(),
-                       iter->notification.id(), by_user);
+      if (handler) {
+        base::RunLoop run_loop;
+        handler->OnClose(profile_, iter->notification.origin_url(),
+                         iter->notification.id(), by_user,
+                         run_loop.QuitClosure());
+        run_loop.Run();
+      } else {
+        iter->notification.delegate()->Close(by_user);
+      }
       iter = notifications_.erase(iter);
     } else {
       iter++;
@@ -98,17 +128,17 @@ void StubNotificationDisplayService::RemoveAllNotifications(
 
 void StubNotificationDisplayService::Display(
     NotificationCommon::Type notification_type,
-    const std::string& notification_id,
     const message_center::Notification& notification,
     std::unique_ptr<NotificationCommon::Metadata> metadata) {
   // This mimics notification replacement behaviour; the Close() method on a
   // notification's delegate is not meant to be invoked in this situation.
-  Close(notification_type, notification_id);
+  Close(notification_type, notification.id());
 
   NotificationHandler* handler = GetNotificationHandler(notification_type);
-  DCHECK(handler);
-
-  handler->OnShow(profile_, notification_id);
+  if (notification_type == NotificationCommon::TRANSIENT)
+    DCHECK(!handler);
+  else
+    handler->OnShow(profile_, notification.id());
   if (notification_added_closure_)
     notification_added_closure_.Run();
 

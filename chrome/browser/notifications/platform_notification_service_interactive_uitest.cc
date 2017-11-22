@@ -13,7 +13,9 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/user_action_tester.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/engagement/site_engagement_score.h"
@@ -185,6 +187,8 @@ class PlatformNotificationServiceBrowserTest : public InProcessBrowserTest {
 
   const base::FilePath server_root_;
   std::unique_ptr<NotificationDisplayServiceTester> display_service_tester_;
+  base::HistogramTester histogram_tester_;
+  base::UserActionTester user_action_tester_;
 
  private:
   std::unique_ptr<net::EmbeddedTestServer> https_server_;
@@ -211,6 +215,7 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
                        DisplayPersistentNotificationWithPermission) {
+  base::UserActionTester user_action_tester;
   RequestAndAcceptPermission();
 
   // Expect 5 engagement for notification permission and 0.5 for the navigation.
@@ -230,8 +235,9 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
       KeepAliveOrigin::PENDING_NOTIFICATION_CLICK_EVENT));
 #endif
 
-  // We expect +1 engagement for the notification interaction.
   notifications[0].delegate()->Click();
+
+  // We expect +1 engagement for the notification interaction.
   EXPECT_DOUBLE_EQ(6.5, GetEngagementScore(GetLastCommittedURL()));
 
   // Clicking on the notification should not automatically close it.
@@ -243,7 +249,8 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
       KeepAliveOrigin::PENDING_NOTIFICATION_CLICK_EVENT));
 #endif
 
-  EXPECT_FALSE(notifications[0].delegate()->ShouldDisplayOverFullscreen());
+  EXPECT_EQ(message_center::FullscreenVisibility::NONE,
+            notifications[0].fullscreen_visibility());
 
   ASSERT_TRUE(RunScript("GetMessageFromWorker()", &script_result));
   EXPECT_EQ("action_none", script_result);
@@ -255,6 +262,15 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
 
   notifications = GetDisplayedNotifications(true /* is_persistent */);
   ASSERT_EQ(1u, notifications.size());
+
+  // Check UMA was recorded.
+  EXPECT_EQ(
+      1, user_action_tester_.GetActionCount("Notifications.Persistent.Shown"));
+  EXPECT_EQ(1, user_action_tester_.GetActionCount(
+                   "Notifications.Persistent.Clicked"));
+  histogram_tester_.ExpectUniqueSample(
+      "Notifications.PersistentWebNotificationClickResult",
+      0 /* SERVICE_WORKER_OK */, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
@@ -419,6 +435,7 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
                        UserClosesPersistentNotification) {
+  base::UserActionTester user_action_tester;
   ASSERT_NO_FATAL_FAILURE(GrantNotificationPermissionForTest());
 
   // Expect 5 engagement for notification permission and 0.5 for the navigation.
@@ -433,13 +450,21 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
       GetDisplayedNotifications(true /* is_persistent */);
   ASSERT_EQ(1u, notifications.size());
 
-  notifications[0].delegate()->Close(true /* by_user */);
+  display_service_tester_->RemoveNotification(NotificationCommon::PERSISTENT,
+                                              notifications[0].id(),
+                                              true /* by_user */);
 
   // The user closed this notification so the score should remain the same.
   EXPECT_DOUBLE_EQ(5.5, GetEngagementScore(GetLastCommittedURL()));
 
   ASSERT_TRUE(RunScript("GetMessageFromWorker()", &script_result));
   EXPECT_EQ("closing notification: close_test", script_result);
+
+  EXPECT_EQ(1, user_action_tester_.GetActionCount(
+                   "Notifications.Persistent.ClosedByUser"));
+  histogram_tester_.ExpectUniqueSample(
+      "Notifications.PersistentWebNotificationCloseResult",
+      0 /* SERVICE_WORKER_OK */, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
@@ -570,6 +595,7 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
                        DisplayPersistentNotificationWithActionButtons) {
+  base::UserActionTester user_action_tester;
   ASSERT_NO_FATAL_FAILURE(GrantNotificationPermissionForTest());
 
   // Expect 5 engagement for notification permission and 0.5 for the navigation.
@@ -590,18 +616,33 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
   EXPECT_EQ("actionTitle2", base::UTF16ToUTF8(notification.buttons()[1].title));
 
   notification.delegate()->ButtonClick(0);
+
   ASSERT_TRUE(RunScript("GetMessageFromWorker()", &script_result));
   EXPECT_EQ("action_button_click actionId1", script_result);
   EXPECT_DOUBLE_EQ(6.5, GetEngagementScore(GetLastCommittedURL()));
 
+  EXPECT_EQ(1, user_action_tester_.GetActionCount(
+                   "Notifications.Persistent.ClickedActionButton"));
+  histogram_tester_.ExpectUniqueSample(
+      "Notifications.PersistentWebNotificationClickResult",
+      0 /* SERVICE_WORKER_OK */, 1);
+
   notification.delegate()->ButtonClick(1);
+
   ASSERT_TRUE(RunScript("GetMessageFromWorker()", &script_result));
   EXPECT_EQ("action_button_click actionId2", script_result);
   EXPECT_DOUBLE_EQ(7.5, GetEngagementScore(GetLastCommittedURL()));
+
+  EXPECT_EQ(2, user_action_tester_.GetActionCount(
+                   "Notifications.Persistent.ClickedActionButton"));
+  histogram_tester_.ExpectUniqueSample(
+      "Notifications.PersistentWebNotificationClickResult",
+      0 /* SERVICE_WORKER_OK */, 2);
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
                        DisplayPersistentNotificationWithReplyButton) {
+  base::UserActionTester user_action_tester;
   ASSERT_NO_FATAL_FAILURE(GrantNotificationPermissionForTest());
 
   // Expect 5 engagement for notification permission and 0.5 for the navigation.
@@ -621,9 +662,16 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
   EXPECT_EQ("actionTitle1", base::UTF16ToUTF8(notification.buttons()[0].title));
 
   notification.delegate()->ButtonClickWithReply(0, base::ASCIIToUTF16("hello"));
+
   ASSERT_TRUE(RunScript("GetMessageFromWorker()", &script_result));
   EXPECT_EQ("action_button_click actionId1 hello", script_result);
   EXPECT_DOUBLE_EQ(6.5, GetEngagementScore(GetLastCommittedURL()));
+
+  EXPECT_EQ(1, user_action_tester_.GetActionCount(
+                   "Notifications.Persistent.ClickedActionButton"));
+  histogram_tester_.ExpectUniqueSample(
+      "Notifications.PersistentWebNotificationClickResult",
+      0 /* SERVICE_WORKER_OK */, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
@@ -692,11 +740,6 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
                        TestShouldDisplayFullscreen) {
   ASSERT_NO_FATAL_FAILURE(GrantNotificationPermissionForTest());
 
-  std::string script_result;
-  ASSERT_TRUE(RunScript(
-      "DisplayPersistentNotification('display_normal')", &script_result));
-  EXPECT_EQ("ok", script_result);
-
   // Set the page fullscreen
   browser()->exclusive_access_manager()->fullscreen_controller()->
       ToggleBrowserFullscreenMode();
@@ -712,11 +755,17 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
   ASSERT_TRUE(browser()->window()->IsActive())
       << "Browser is active after going fullscreen";
 
+  std::string script_result;
+  ASSERT_TRUE(RunScript("DisplayPersistentNotification('display_normal')",
+                        &script_result));
+  EXPECT_EQ("ok", script_result);
+
   std::vector<message_center::Notification> notifications =
       GetDisplayedNotifications(true /* is_persistent */);
   ASSERT_EQ(1u, notifications.size());
 
-  EXPECT_TRUE(notifications[0].delegate()->ShouldDisplayOverFullscreen());
+  EXPECT_EQ(message_center::FullscreenVisibility::OVER_USER,
+            notifications[0].fullscreen_visibility());
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
@@ -758,7 +807,8 @@ IN_PROC_BROWSER_TEST_F(PlatformNotificationServiceBrowserTest,
       GetDisplayedNotifications(true /* is_persistent */);
   ASSERT_EQ(1u, notifications.size());
 
-  EXPECT_FALSE(notifications[0].delegate()->ShouldDisplayOverFullscreen());
+  EXPECT_EQ(message_center::FullscreenVisibility::NONE,
+            notifications[0].fullscreen_visibility());
 }
 
 #endif  // defined(OS_MACOSX)

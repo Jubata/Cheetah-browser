@@ -235,6 +235,7 @@ class Internals final : public ScriptWrappable {
   bool elementShouldAutoComplete(Element* input_element, ExceptionState&);
   String suggestedValue(Element*, ExceptionState&);
   void setSuggestedValue(Element*, const String&, ExceptionState&);
+  void setAutofilledValue(Element*, const String&, ExceptionState&);
   void setEditingValue(Element* input_element, const String&, ExceptionState&);
   void setAutofilled(Element*, bool enabled, ExceptionState&);
 
@@ -287,7 +288,7 @@ class Internals final : public ScriptWrappable {
 
   unsigned mediaKeysCount();
   unsigned mediaKeySessionCount();
-  unsigned suspendableObjectCount(Document*);
+  unsigned pausableObjectCount(Document*);
   unsigned wheelEventHandlerCount(Document*) const;
   unsigned scrollEventHandlerCount(Document*) const;
   unsigned touchStartOrMoveEventHandlerCount(Document*) const;
@@ -510,6 +511,8 @@ class Internals final : public ScriptWrappable {
                                      unsigned long transport_rtt_msec,
                                      double downlink_throughput_mbps,
                                      ExceptionState&);
+  void setSaveDataEnabled(bool);
+
   void clearNetworkConnectionInfoOverride();
 
   unsigned countHitRegions(CanvasRenderingContext*);

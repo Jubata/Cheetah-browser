@@ -39,15 +39,13 @@ ChromeClient& RenderingTest::GetChromeClient() const {
 }
 
 RenderingTest::RenderingTest(LocalFrameClient* local_frame_client)
-    : local_frame_client_(local_frame_client) {}
+    : UseMockScrollbarSettings(), local_frame_client_(local_frame_client) {}
 
 void RenderingTest::SetUp() {
   Page::PageClients page_clients;
   FillWithEmptyClients(page_clients);
   page_clients.chrome_client = &GetChromeClient();
   SetupPageWithClients(&page_clients, local_frame_client_, SettingOverrider());
-  Settings::SetMockScrollbarsEnabled(true);
-  RuntimeEnabledFeatures::SetOverlayScrollbarsEnabled(true);
   EXPECT_TRUE(
       GetDocument().GetPage()->GetScrollbarTheme().UsesOverlayScrollbars());
 

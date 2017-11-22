@@ -18,6 +18,7 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "base/strings/string16.h"
@@ -150,17 +151,16 @@ bool MakeWidevineCdmPluginInfo(const base::Version& version,
       kWidevineCdmPluginMimeTypeDescription);
 
   // Put codec support string in additional param.
-  widevine_cdm_mime_type.additional_param_names.push_back(
-      base::ASCIIToUTF16(kCdmSupportedCodecsParamName));
-  widevine_cdm_mime_type.additional_param_values.push_back(
+  widevine_cdm_mime_type.additional_params.emplace_back(
+      base::ASCIIToUTF16(kCdmSupportedCodecsParamName),
       base::ASCIIToUTF16(codecs));
 
   // Put persistent license support string in additional param.
-  widevine_cdm_mime_type.additional_param_names.push_back(
-      base::ASCIIToUTF16(kCdmPersistentLicenseSupportedParamName));
-  widevine_cdm_mime_type.additional_param_values.push_back(base::ASCIIToUTF16(
-      is_persistent_license_supported ? kCdmFeatureSupported
-                                      : kCdmFeatureNotSupported));
+  widevine_cdm_mime_type.additional_params.emplace_back(
+      base::ASCIIToUTF16(kCdmPersistentLicenseSupportedParamName),
+      base::ASCIIToUTF16(is_persistent_license_supported
+                             ? kCdmFeatureSupported
+                             : kCdmFeatureNotSupported));
 
   plugin_info->mime_types.push_back(widevine_cdm_mime_type);
   plugin_info->permissions = kWidevineCdmPluginPermissions;
@@ -281,6 +281,7 @@ class WidevineCdmComponentInstallerPolicy : public ComponentInstallerPolicy {
   update_client::CrxInstaller::Result OnCustomInstall(
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) override;
+  void OnCustomUninstall() override;
   bool VerifyInstallation(
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) const override;
@@ -323,6 +324,8 @@ WidevineCdmComponentInstallerPolicy::OnCustomInstall(
   return update_client::CrxInstaller::Result(0);
 }
 
+void WidevineCdmComponentInstallerPolicy::OnCustomUninstall() {}
+
 // Once the CDM is ready, check the CDM adapter.
 void WidevineCdmComponentInstallerPolicy::ComponentReady(
     const base::Version& version,
@@ -335,9 +338,9 @@ void WidevineCdmComponentInstallerPolicy::ComponentReady(
 
   base::PostTaskWithTraits(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::BACKGROUND},
-      base::Bind(&WidevineCdmComponentInstallerPolicy::UpdateCdmAdapter,
-                 base::Unretained(this), version, path,
-                 base::Passed(&manifest)));
+      base::BindOnce(&WidevineCdmComponentInstallerPolicy::UpdateCdmAdapter,
+                     base::Unretained(this), version, path,
+                     base::Passed(&manifest)));
 }
 
 bool WidevineCdmComponentInstallerPolicy::VerifyInstallation(
@@ -450,10 +453,11 @@ void WidevineCdmComponentInstallerPolicy::UpdateCdmAdapter(
     }
   }
 
-  BrowserThread::PostTask(
-      content::BrowserThread::UI, FROM_HERE,
-      base::Bind(&RegisterWidevineCdmWithChrome, cdm_version,
-                 absolute_cdm_install_dir, base::Passed(&manifest)));
+  content::BrowserThread::GetTaskRunnerForThread(content::BrowserThread::UI)
+      ->PostTask(
+          FROM_HERE,
+          base::BindOnce(&RegisterWidevineCdmWithChrome, cdm_version,
+                         absolute_cdm_install_dir, base::Passed(&manifest)));
 }
 
 #endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(WIDEVINE_CDM_IS_COMPONENT)
@@ -464,11 +468,10 @@ void RegisterWidevineCdmComponent(ComponentUpdateService* cus) {
   PathService::Get(chrome::FILE_WIDEVINE_CDM_ADAPTER, &adapter_source_path);
   if (!base::PathExists(adapter_source_path))
     return;
-  std::unique_ptr<ComponentInstallerPolicy> policy(
-      new WidevineCdmComponentInstallerPolicy);
-  // |cus| will take ownership of |installer| during installer->Register(cus).
-  ComponentInstaller* installer = new ComponentInstaller(std::move(policy));
-  installer->Register(cus, base::Closure());
+
+  auto installer = base::MakeRefCounted<ComponentInstaller>(
+      std::make_unique<WidevineCdmComponentInstallerPolicy>());
+  installer->Register(cus, base::OnceClosure());
 #endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(WIDEVINE_CDM_IS_COMPONENT)
 }
 

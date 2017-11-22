@@ -808,6 +808,7 @@ static_library("extensions") {
     "//chrome/common/extensions/api:api_registration",
     "//chrome/common/extensions/api:extensions_features",
     "//chrome/common/safe_browsing:proto",
+    "//chrome/services/media_gallery_util/public/cpp",
     "//components/app_modal",
     "//components/autofill/content/browser",
     "//components/bookmarks/browser",
@@ -869,7 +870,6 @@ static_library("extensions") {
     "//content/public/common",
     "//crypto",
     "//device/bluetooth",
-    "//device/hid",
     "//extensions:extensions_resources",
     "//extensions/browser",
     "//extensions/browser/api:api_registration",
@@ -884,6 +884,7 @@ static_library("extensions") {
     "//printing/features",
     "//rlz/features",
     "//services/data_decoder/public/cpp",
+    "//services/device/public/interfaces",
     "//services/identity/public/interfaces",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/interfaces",
@@ -975,7 +976,7 @@ static_library("extensions") {
     }
     deps += [
       "//ash",
-      "//ash/public/cpp:ash_public_cpp",
+      "//ash/public/cpp",
       "//components/arc",
       "//components/chrome_apps",
       "//components/constrained_window",
@@ -1075,6 +1076,7 @@ static_library("extensions") {
 
   if (is_win) {
     deps += [
+      "//chrome/services/wifi_util_win/public/interfaces",
       "//third_party/iaccessible2",
       "//third_party/isimpledom",
     ]

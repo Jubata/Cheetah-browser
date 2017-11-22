@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 #include "chrome/browser/safe_browsing/chrome_password_protection_service.h"
 
+#include "base/run_loop.h"
 #include "base/test/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
@@ -65,6 +66,14 @@ class ChromePasswordProtectionServiceBrowserTest : public InProcessBrowserTest {
   void SimulateAction(ChromePasswordProtectionService* service,
                       ChromePasswordProtectionService::WarningUIType ui_type,
                       ChromePasswordProtectionService::WarningAction action) {
+    if (ui_type == PasswordProtectionService::CHROME_SETTINGS) {
+      service->OnUserAction(
+          browser()->tab_strip_model()->GetActiveWebContents(),
+          safe_browsing::PasswordProtectionService::CHROME_SETTINGS,
+          safe_browsing::PasswordProtectionService::CHANGE_PASSWORD);
+      return;
+    }
+
     for (auto& observer : service->observer_list_) {
       if (ui_type == observer.GetObserverType()) {
         observer.InvokeActionForTesting(action);

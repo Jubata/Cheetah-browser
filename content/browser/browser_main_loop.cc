@@ -78,6 +78,7 @@
 #include "content/browser/media/media_internals.h"
 #include "content/browser/memory/memory_coordinator_impl.h"
 #include "content/browser/memory/swap_metrics_delegate_uma.h"
+#include "content/browser/mus_util.h"
 #include "content/browser/net/browser_online_state_observer.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -128,6 +129,7 @@
 #include "sql/sql_memory_dump_provider.h"
 #include "third_party/boringssl/src/include/openssl/evp.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 #include "ui/gfx/switches.h"
 
@@ -235,6 +237,10 @@
 #include "gpu/vulkan/vulkan_implementation.h"
 #endif
 
+#if BUILDFLAG(ENABLE_MUS)
+#include "services/ui/common/image_cursors_set.h"
+#endif
+
 // One of the linux specific headers defines this as a macro.
 #ifdef DestroyAll
 #undef DestroyAll
@@ -242,14 +248,6 @@
 
 namespace content {
 namespace {
-
-bool IsUsingMus() {
-#if defined(USE_AURA)
-  return aura::Env::GetInstance()->mode() == aura::Env::Mode::MUS;
-#else
-  return false;
-#endif
-}
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
     !defined(OS_FUCHSIA)
@@ -455,7 +453,12 @@ GetDefaultTaskSchedulerInitParams() {
           base::TimeDelta::FromSeconds(30)),
       base::SchedulerWorkerPoolParams(
           base::RecommendedMaxNumberOfThreadsInPool(8, 32, 0.3, 0),
-          base::TimeDelta::FromSeconds(60)));
+          base::TimeDelta::FromSeconds(60))
+#if defined(OS_WIN)
+          ,
+      base::TaskScheduler::InitParams::SharedWorkerPoolEnvironment::COM_MTA
+#endif  // defined(OS_WIN)
+      );
 #endif
 }
 
@@ -918,9 +921,6 @@ int BrowserMainLoop::PreCreateThreads() {
   for (auto origin : origins)
     policy->AddIsolatedOrigin(origin);
 
-  EVP_set_buggy_rsa_parser(
-      base::FeatureList::IsEnabled(features::kBuggyRSAParser));
-
   return result_code_;
 }
 
@@ -1228,6 +1228,12 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   if (RenderProcessHost::run_renderer_in_process())
     RenderProcessHostImpl::ShutDownInProcessRenderer();
 
+#if BUILDFLAG(ENABLE_MUS)
+  // NOTE: because of dependencies this has to happen before
+  // PostMainMessageLoopRun().
+  image_cursors_set_.reset();
+#endif
+
   if (parts_) {
     TRACE_EVENT0("shutdown",
                  "BrowserMainLoop::Subsystem:PostMainMessageLoopRun");
@@ -1446,11 +1452,11 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   // so this cannot happen any earlier than now.
   InitializeMojo();
 
-  const bool is_mus = IsUsingMus();
-#if defined(USE_AURA)
-  if (is_mus) {
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kIsRunningInMash);
+#if BUILDFLAG(ENABLE_MUS)
+  if (IsUsingMus()) {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kMus,
+        IsMusHostingViz() ? switches::kMusHostVizValue : std::string());
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kEnableSurfaceSynchronization);
   }
@@ -1473,6 +1479,9 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   InitShaderCacheFactorySingleton(
       BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
 
+  // If mus is not hosting viz, then the browser must.
+  bool browser_is_viz_host = !IsMusHostingViz();
+
   bool always_uses_gpu = true;
   bool established_gpu_channel = false;
 #if defined(OS_ANDROID)
@@ -1482,17 +1491,16 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
 #elif defined(USE_AURA) || defined(OS_MACOSX)
   established_gpu_channel = true;
-  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor() ||
+  if (parsed_command_line_.HasSwitch(switches::kDisableGpu) ||
+      parsed_command_line_.HasSwitch(switches::kDisableGpuCompositing) ||
       parsed_command_line_.HasSwitch(switches::kDisableGpuEarlyInit) ||
-      is_mus) {
+      !browser_is_viz_host) {
     established_gpu_channel = always_uses_gpu = false;
   }
 
-  if (!is_mus) {
+  if (browser_is_viz_host) {
     host_frame_sink_manager_ = std::make_unique<viz::HostFrameSinkManager>();
-
     BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
-
     if (parsed_command_line_.HasSwitch(switches::kEnableViz)) {
       auto transport_factory = std::make_unique<VizProcessTransportFactory>(
           BrowserGpuChannelHostFactory::instance(), GetResizeTaskRunner());
@@ -1521,7 +1529,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   }
 
 #if defined(USE_AURA)
-  if (env_->mode() == aura::Env::Mode::LOCAL) {
+  if (browser_is_viz_host) {
     env_->set_context_factory(GetContextFactory());
     env_->set_context_factory_private(GetContextFactoryPrivate());
   }
@@ -1570,7 +1578,8 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     // network service.
     resource_dispatcher_host_.reset(new ResourceDispatcherHostImpl(
         base::Bind(&DownloadResourceHandler::Create),
-        BrowserThread::GetTaskRunnerForThread(BrowserThread::IO)));
+        BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
+        !parsed_command_line_.HasSwitch(switches::kDisableResourceScheduler)));
     GetContentClient()->browser()->ResourceDispatcherHostCreated();
 
     loader_delegate_.reset(new LoaderDelegateImpl());
@@ -1623,7 +1632,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   // ChildProcess instance which is created by the renderer thread.
   if (GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(nullptr) &&
       !established_gpu_channel && always_uses_gpu && !UsingInProcessGpu() &&
-      !is_mus) {
+      browser_is_viz_host) {
     TRACE_EVENT_INSTANT0("gpu", "Post task to launch GPU process",
                          TRACE_EVENT_SCOPE_THREAD);
     BrowserThread::PostTask(
@@ -1714,6 +1723,11 @@ bool BrowserMainLoop::InitializeToolkit() {
   // before they can be initialized by the browser.
   env_ = aura::Env::CreateInstance(parameters_.env_mode);
 #endif  // defined(USE_AURA)
+
+#if BUILDFLAG(ENABLE_MUS)
+  if (parsed_command_line_.HasSwitch(switches::kMus))
+    image_cursors_set_ = base::MakeUnique<ui::ImageCursorsSet>();
+#endif
 
   if (parts_)
     parts_->ToolkitInitialized();

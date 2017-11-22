@@ -34,8 +34,8 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/wtf/AddressSanitizer.h"
 #include "platform/wtf/Atomics.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/HashSet.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 
 namespace blink {
@@ -132,9 +132,9 @@ void TimerBase::SetNextFireTime(double now, double delay) {
     // Cancel any previously posted task.
     weak_ptr_factory_.RevokeAll();
 
-    TimerTaskRunner()->ToSingleThreadTaskRunner()->PostDelayedTask(
+    TimerTaskRunner()->PostDelayedTask(
         location_,
-        base::Bind(&TimerBase::RunInternal, weak_ptr_factory_.CreateWeakPtr()),
+        WTF::Bind(&TimerBase::RunInternal, weak_ptr_factory_.CreateWeakPtr()),
         TimeDelta::FromSecondsD(delay));
   }
 }

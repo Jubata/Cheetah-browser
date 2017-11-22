@@ -469,7 +469,7 @@ public class ChromeTabbedActivity
                 private void closeIfNoTabsAndHomepageEnabled(boolean isPendingClosure) {
                     if (getTabModelSelector().getTotalTabCount() == 0) {
                         // If the last tab is closed, and homepage is enabled, then exit Chrome.
-                        if (HomepageManager.isHomepageEnabled(getApplicationContext())) {
+                        if (HomepageManager.isHomepageEnabled()) {
                             finish();
                         } else if (isPendingClosure) {
                             NewTabPageUma.recordNTPImpression(
@@ -505,18 +505,22 @@ public class ChromeTabbedActivity
 
     @Override
     public void onNewIntent(Intent intent) {
+        // The intent to use in maybeDispatchExplicitMainViewIntent(). We're explicitly
+        // adding NEW_TASK flag to make sure backing from CCT brings up the caller activity,
+        // and not Chrome
+        Intent intentForDispatching = new Intent(intent);
+        intentForDispatching.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         @LaunchIntentDispatcher.Action
         int action = maybeDispatchExplicitMainViewIntent(
-                intent, sExplicitMainViewIntentDispatchedOnNewIntent);
+                intentForDispatching, sExplicitMainViewIntentDispatchedOnNewIntent);
+        BrowserActionsService.recordTabOpenedNotificationClicked(intent);
         if (action != LaunchIntentDispatcher.Action.CONTINUE) {
-            // Change our position in the activity stack to make sure back button sends user
-            // to the activity that started the custom tab.
-            if ((intent.getFlags() & Intent.FLAG_ACTIVITY_NEW_TASK) != 0) {
-                moveTaskToBack(true);
-            }
+            // Pressing back button in CCT should bring user to the caller activity.
+            moveTaskToBack(true);
             // Intent was dispatched to CustomTabActivity, consume it.
             return;
         }
+
         mIntentHandlingTimeMs = SystemClock.uptimeMillis();
         super.onNewIntent(intent);
     }
@@ -552,9 +556,11 @@ public class ChromeTabbedActivity
             //                might not have completed at this point and we could show multiple
             //                promos.
             boolean isShowingPromo = mLocaleManager.hasShownSearchEnginePromoThisSession();
+            // Promo dialogs in multiwindow mode are broken on some devices: http://crbug.com/354696
+            boolean isLegacyMultiWindow = MultiWindowUtils.getInstance().isLegacyMultiWindow(this);
             if (!isShowingPromo && !mIntentWithEffect && FirstRunStatus.getFirstRunFlowComplete()
-                    && preferenceManager.getPromosSkippedOnFirstStart()
-                    && !VrShellDelegate.isInVr()) {
+                    && preferenceManager.getPromosSkippedOnFirstStart() && !VrShellDelegate.isInVr()
+                    && !isLegacyMultiWindow) {
                 // Data reduction promo should be temporarily suppressed if the sign in promo is
                 // shown to avoid nagging users too much.
                 isShowingPromo = SigninPromoUtil.launchSigninPromoIfNeeded(this)
@@ -722,7 +728,7 @@ public class ChromeTabbedActivity
         super.onStartWithNative();
 
         setInitialOverviewState();
-        BrowserActionsService.cancelBrowserActionsNotification();
+        BrowserActionsService.onTabbedModeForegrounded();
 
         resetSavedInstanceState();
     }
@@ -962,7 +968,11 @@ public class ChromeTabbedActivity
             BottomSheet bottomSheet = getBottomSheet();
             assert bottomSheet != null;
 
-            if (bottomSheet.isSheetOpen()) return false;
+            if (bottomSheet.isSheetOpen()
+                    || (getTimeSinceLastBackgroundedMs()
+                               < TIME_SINCE_BACKGROUNDED_TO_SHOW_BOTTOM_SHEET_HALF_MS)) {
+                return false;
+            }
 
             if (mLayoutManager != null && mLayoutManager.overviewVisible()) {
                 if (reuseOrCreateNewNtp()) {
@@ -1175,7 +1185,7 @@ public class ChromeTabbedActivity
      * Create an initial tab for cold start without restored tabs.
      */
     private void createInitialTab() {
-        String url = HomepageManager.getHomepageUri(getApplicationContext());
+        String url = HomepageManager.getHomepageUri();
         if (TextUtils.isEmpty(url) || NewTabPage.isNTPUrl(url)) {
             url = UrlConstants.NTP_URL;
         }
@@ -2265,7 +2275,9 @@ public class ChromeTabbedActivity
     @Override
     public void onMultiWindowModeChanged(boolean isInMultiWindowMode) {
         super.onMultiWindowModeChanged(isInMultiWindowMode);
-        if (!FeatureUtilities.isTabModelMergingEnabled() || !mNativeInitialized) return;
+        if (!FeatureUtilities.isTabModelMergingEnabled() || !didFinishNativeInitialization()) {
+            return;
+        }
         if (!isInMultiWindowMode) {
             // If the activity is currently resumed when multi-window mode is exited, try to merge
             // tabs from the other activity instance.

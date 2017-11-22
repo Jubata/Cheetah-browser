@@ -55,6 +55,7 @@ class VaapiPicture;
 class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
     : public VideoDecodeAccelerator {
  public:
+  // Wrapper of a VASurface with id and visible area.
   class VaapiDecodeSurface;
 
   VaapiVideoDecodeAccelerator(
@@ -84,9 +85,13 @@ class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
   static VideoDecodeAccelerator::SupportedProfiles GetSupportedProfiles();
 
  private:
+  friend class VaapiVideoDecodeAcceleratorTest;
   class VaapiH264Accelerator;
   class VaapiVP8Accelerator;
   class VaapiVP9Accelerator;
+
+  // An input buffer with id provided by the client and awaiting consumption.
+  class InputBuffer;
 
   // Notify the client that an error has occurred and decoding cannot continue.
   void NotifyError(Error error);
@@ -208,26 +213,13 @@ class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
   State state_;
   Config::OutputMode output_mode_;
 
-  // An input buffer awaiting consumption, provided by the client.
-  struct InputBuffer {
-    InputBuffer();
-    ~InputBuffer();
-
-    // Indicates this is a dummy buffer for flush request.
-    bool is_flush() const { return shm == nullptr; }
-
-    int32_t id = -1;
-    std::unique_ptr<SharedMemoryRegion> shm;
-  };
-
-  // Queue for available PictureBuffers (picture_buffer_ids).
-  using InputBuffers = base::queue<linked_ptr<InputBuffer>>;
-  InputBuffers input_buffers_;
-  // Signalled when input buffers are queued onto the input_buffers_ queue.
+  // Queue of available InputBuffers (picture_buffer_ids).
+  base::queue<std::unique_ptr<InputBuffer>> input_buffers_;
+  // Signalled when input buffers are queued onto |input_buffers_| queue.
   base::ConditionVariable input_ready_;
 
   // Current input buffer at decoder.
-  linked_ptr<InputBuffer> curr_input_buffer_;
+  std::unique_ptr<InputBuffer> curr_input_buffer_;
 
   // Queue for incoming output buffers (texture ids).
   using OutputBuffers = base::queue<int32_t>;
@@ -235,11 +227,21 @@ class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
 
   scoped_refptr<VaapiWrapper> vaapi_wrapper_;
 
-  typedef std::map<int32_t, linked_ptr<VaapiPicture>> Pictures;
-  // All allocated Pictures, regardless of their current state.
-  // Pictures are allocated once and destroyed at the end of decode.
-  // Comes after vaapi_wrapper_ to ensure all pictures are destroyed
-  // before vaapi_wrapper_ is destroyed.
+  // TODO(mcasas): Use a VaapiPicture factory instead, https://crbug.com/784507.
+  base::Callback<std::unique_ptr<VaapiPicture>(
+      const scoped_refptr<VaapiWrapper>&,
+      const MakeGLContextCurrentCallback&,
+      const BindGLImageCallback&,
+      int32_t,
+      const gfx::Size&,
+      uint32_t,
+      uint32_t)>
+      create_vaapi_picture_callback_;
+  // All allocated Pictures, regardless of their current state. Pictures are
+  // allocated once using |create_vaapi_picture_callback_| and destroyed at the
+  // end of decode. Comes after |vaapi_wrapper_| to ensure all pictures are
+  // destroyed before said |vaapi_wrapper_| is destroyed.
+  using Pictures = std::map<int32_t, std::unique_ptr<VaapiPicture>>;
   Pictures pictures_;
 
   // Return a VaapiPicture associated with given client-provided id.
@@ -297,7 +299,6 @@ class MEDIA_GPU_EXPORT VaapiVideoDecodeAccelerator
   scoped_refptr<base::SingleThreadTaskRunner> decoder_thread_task_runner_;
 
   int num_frames_at_client_;
-  int num_stream_bufs_at_decoder_;
 
   // Whether we are waiting for any pending_output_cbs_ to be run before
   // NotifyingFlushDone.

@@ -130,7 +130,7 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   // anything other than PREVIEWS_UNSPECIFIED, it is taken as a limit on
   // available preview states.
   virtual PreviewsState DeterminePreviewsState(
-      const net::URLRequest& url_request,
+      net::URLRequest* url_request,
       content::ResourceContext* resource_context,
       PreviewsState previews_to_allow);
 
@@ -142,10 +142,8 @@ class CONTENT_EXPORT ResourceDispatcherHostDelegate {
   virtual std::unique_ptr<net::ClientCertStore> CreateClientCertStore(
       ResourceContext* resource_context);
 
-  // Whether or not to enable ResourceScheduling. This will almost always be
-  // enabled, except for some C++ headless embedders who may implement their own
-  // resource scheduling via protocol handlers.
-  virtual bool ShouldUseResourceScheduler() const;
+  // Whether or not to allow load and render MHTML page from http/https URLs.
+  virtual bool AllowRenderingMhtmlOverHttp(net::URLRequest* request) const;
 
  protected:
   virtual ~ResourceDispatcherHostDelegate();

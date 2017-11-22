@@ -42,7 +42,7 @@ const int kArrowSize = 16;
 const SkColor kArrowColor = gfx::kGoogleBlue500;
 const float kArrowFullOpacity = 1.f;
 const float kArrowInitialOpacity = .3f;
-const float kReloadArrowInitialRotation = -90.f;
+const float kReloadArrowInitialRotation = -180.f;
 
 // The arrow opacity remains constant until progress reaches this threshold,
 // then increases quickly as the progress increases beyond the threshold
@@ -138,7 +138,6 @@ class Arrow : public ui::LayerDelegate {
  private:
   // ui::LayerDelegate:
   void OnPaintLayer(const ui::PaintContext& context) override;
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                   float new_device_scale_factor) override;
 
@@ -184,8 +183,6 @@ void Arrow::OnPaintLayer(const ui::PaintContext& context) {
   gfx::Canvas* canvas = recorder.canvas();
   canvas->DrawImageInt(image, 0, 0);
 }
-
-void Arrow::OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) {}
 
 void Arrow::OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                        float new_device_scale_factor) {}
@@ -242,7 +239,6 @@ class Affordance : public ui::LayerDelegate, public gfx::AnimationDelegate {
 
   // ui::LayerDelegate:
   void OnPaintLayer(const ui::PaintContext& context) override;
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                   float new_device_scale_factor) override;
 
@@ -394,20 +390,18 @@ void Affordance::UpdateArrowLayer() {
   }
   arrow_.layer()->SetTransform(transform);
 
-  if (mode_ != OVERSCROLL_SOUTH) {
-    // The arrow opacity is fixed before progress reaches
-    // kArrowOpacityProgressThreshold and after that increases linearly to 1;
-    // essentially, making a quick bump at the end.
-    float opacity = kArrowInitialOpacity;
-    if (progress > kArrowOpacityProgressThreshold) {
-      const float max_opacity_bump = kArrowFullOpacity - kArrowInitialOpacity;
-      const float opacity_bump_ratio =
-          std::min(1.f, (progress - kArrowOpacityProgressThreshold) /
-                            (1.f - kArrowOpacityProgressThreshold));
-      opacity += opacity_bump_ratio * max_opacity_bump;
-    }
-    arrow_.layer()->SetOpacity(opacity);
+  // The arrow opacity is fixed before progress reaches
+  // kArrowOpacityProgressThreshold and after that increases linearly to 1;
+  // essentially, making a quick bump at the end.
+  float opacity = kArrowInitialOpacity;
+  if (progress > kArrowOpacityProgressThreshold) {
+    const float max_opacity_bump = kArrowFullOpacity - kArrowInitialOpacity;
+    const float opacity_bump_ratio =
+        std::min(1.f, (progress - kArrowOpacityProgressThreshold) /
+                          (1.f - kArrowOpacityProgressThreshold));
+    opacity += opacity_bump_ratio * max_opacity_bump;
   }
+  arrow_.layer()->SetOpacity(opacity);
 }
 
 void Affordance::UpdateLayers() {
@@ -505,8 +499,6 @@ void Affordance::OnPaintLayer(const ui::PaintContext& context) {
   bg_flags.setLooper(gfx::CreateShadowDrawLooper(shadow));
   canvas->DrawCircle(center_point, kBackgroundRadius, bg_flags);
 }
-
-void Affordance::OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) {}
 
 void Affordance::OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                             float new_device_scale_factor) {}

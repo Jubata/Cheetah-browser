@@ -398,6 +398,7 @@ class CONTENT_EXPORT RenderWidget
   float GetOriginalDeviceScaleFactor() const;
 
   // Helper to convert |point| using ConvertWindowToViewport().
+  gfx::PointF ConvertWindowPointToViewport(const gfx::PointF& point);
   gfx::Point ConvertWindowPointToViewport(const gfx::Point& point);
 
   void TransferActiveWheelFlingAnimation(
@@ -517,6 +518,11 @@ class CONTENT_EXPORT RenderWidget
       RenderWidgetScreenMetricsEmulator* emulator);
 #endif
 
+  void SetLocalSurfaceIdForAutoResize(
+      uint64_t sequence_number,
+      const content::ScreenInfo& screen_info,
+      const viz::LocalSurfaceId& local_surface_id);
+
   // RenderWidget IPC message handlers
   void OnHandleInputEvent(
       const blink::WebInputEvent* event,
@@ -528,6 +534,9 @@ class CONTENT_EXPORT RenderWidget
   virtual void OnResize(const ResizeParams& params);
   void OnSetLocalSurfaceIdForAutoResize(
       uint64_t sequence_number,
+      const gfx::Size& min_size,
+      const gfx::Size& max_size,
+      const content::ScreenInfo& screen_info,
       const viz::LocalSurfaceId& local_surface_id);
   void OnEnableDeviceEmulation(const blink::WebDeviceEmulationParams& params);
   void OnDisableDeviceEmulation();
@@ -552,32 +561,34 @@ class CONTENT_EXPORT RenderWidget
   void OnUpdateWindowScreenRect(const gfx::Rect& window_screen_rect);
   void OnSetViewportIntersection(const gfx::Rect& viewport_intersection);
   void OnSetIsInert(bool);
+  void OnUpdateRenderThrottlingStatus(bool is_throttled,
+                                      bool subtree_throttled);
   // Real data that is dragged is not included at DragEnter time.
   void OnDragTargetDragEnter(
       const std::vector<DropData::Metadata>& drop_meta_data,
-      const gfx::Point& client_pt,
-      const gfx::Point& screen_pt,
+      const gfx::PointF& client_pt,
+      const gfx::PointF& screen_pt,
       blink::WebDragOperationsMask operations_allowed,
       int key_modifiers);
-  void OnDragTargetDragOver(const gfx::Point& client_pt,
-                            const gfx::Point& screen_pt,
+  void OnDragTargetDragOver(const gfx::PointF& client_pt,
+                            const gfx::PointF& screen_pt,
                             blink::WebDragOperationsMask operations_allowed,
                             int key_modifiers);
-  void OnDragTargetDragLeave(const gfx::Point& client_point,
-                             const gfx::Point& screen_point);
+  void OnDragTargetDragLeave(const gfx::PointF& client_point,
+                             const gfx::PointF& screen_point);
   void OnDragTargetDrop(const DropData& drop_data,
-                        const gfx::Point& client_pt,
-                        const gfx::Point& screen_pt,
+                        const gfx::PointF& client_pt,
+                        const gfx::PointF& screen_pt,
                         int key_modifiers);
-  void OnDragSourceEnded(const gfx::Point& client_point,
-                         const gfx::Point& screen_point,
+  void OnDragSourceEnded(const gfx::PointF& client_point,
+                         const gfx::PointF& screen_point,
                          blink::WebDragOperation drag_operation);
   void OnDragSourceSystemDragEnded();
 
   // Notify the compositor about a change in viewport size. This should be
   // used only with auto resize mode WebWidgets, as normal WebWidgets should
   // go through OnResize.
-  void AutoResizeCompositor();
+  void AutoResizeCompositor(const viz::LocalSurfaceId& local_surface_id);
 
   void OnOrientationChange();
 
@@ -691,9 +702,9 @@ class CONTENT_EXPORT RenderWidget
   // by extension popups.
   bool auto_resize_mode_;
 
-  // True if we need to send an UpdateRect message to notify the browser about
-  // an already-completed auto-resize.
-  bool need_update_rect_for_auto_resize_;
+  // True if we need to send a ViewHsotMsg_ResizeOrRepaint_ACK message to notify
+  // the browser about an already-completed auto-resize.
+  bool need_resize_ack_for_auto_resize_;
 
   // The sequence number used for ViewHostMsg_UpdateRect.
   uint64_t resize_or_repaint_ack_num_ = 0;

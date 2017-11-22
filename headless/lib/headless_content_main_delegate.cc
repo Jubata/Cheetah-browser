@@ -17,6 +17,7 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/crash/content/app/breakpad_linux.h"
+#include "components/crash/core/common/crash_key.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "headless/lib/browser/headless_browser_impl.h"
@@ -84,6 +85,9 @@ bool HeadlessContentMainDelegate::BasicStartupComplete(int* exit_code) {
 
   if (browser_->options()->disable_sandbox)
     command_line->AppendSwitch(switches::kNoSandbox);
+
+  if (!browser_->options()->enable_resource_scheduler)
+    command_line->AppendSwitch(switches::kDisableResourceScheduler);
 
 #if defined(USE_OZONE)
   // The headless backend is automatically chosen for a headless build, but also
@@ -183,6 +187,8 @@ void HeadlessContentMainDelegate::InitCrashReporter(
   g_headless_crash_client.Pointer()->set_crash_dumps_dir(
       browser_->options()->crash_dumps_dir);
 
+  crash_reporter::InitializeCrashKeys();
+
 #if defined(HEADLESS_USE_BREAKPAD)
   if (!browser_->options()->enable_crash_reporter) {
     DCHECK(!breakpad::IsCrashReporterEnabled());
@@ -227,7 +233,8 @@ int HeadlessContentMainDelegate::RunProcess(
   if (!process_type.empty())
     return -1;
 
-  base::trace_event::TraceLog::GetInstance()->SetProcessName("HeadlessBrowser");
+  base::trace_event::TraceLog::GetInstance()->set_process_name(
+      "HeadlessBrowser");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventBrowserProcessSortIndex);
 

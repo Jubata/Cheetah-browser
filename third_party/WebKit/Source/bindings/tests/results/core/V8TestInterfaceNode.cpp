@@ -10,6 +10,7 @@
 // clang-format off
 #include "V8TestInterfaceNode.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/IDLTypes.h"
 #include "bindings/core/v8/NativeValueTraitsImpl.h"
@@ -23,7 +24,6 @@
 #include "platform/bindings/RuntimeCallStats.h"
 #include "platform/bindings/V8ObjectConstructor.h"
 #include "platform/wtf/GetPtr.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -44,7 +44,6 @@ const WrapperTypeInfo V8TestInterfaceNode::wrapperTypeInfo = {
     WrapperTypeInfo::kWrapperTypeObjectPrototype,
     WrapperTypeInfo::kNodeClassId,
     WrapperTypeInfo::kNotInheritFromActiveScriptWrappable,
-    WrapperTypeInfo::kDependent,
 };
 #if defined(COMPONENT_BUILD) && defined(WIN32) && defined(__clang__)
 #pragma clang diagnostic pop
@@ -256,7 +255,7 @@ static void perWorldBindingsTestInterfaceEmptyMethodOptionalBooleanArgMethod(con
     V8SetReturnValueFast(info, impl->perWorldBindingsTestInterfaceEmptyMethodOptionalBooleanArg(), impl);
     return;
   }
-  optionalBooleanArgument = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+  optionalBooleanArgument = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), info[0], exceptionState);
   if (exceptionState.HadException())
     return;
 
@@ -279,7 +278,7 @@ static void perWorldBindingsTestInterfaceEmptyMethodOptionalBooleanArgMethodForM
     V8SetReturnValueForMainWorld(info, impl->perWorldBindingsTestInterfaceEmptyMethodOptionalBooleanArg());
     return;
   }
-  optionalBooleanArgument = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+  optionalBooleanArgument = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), info[0], exceptionState);
   if (exceptionState.HadException())
     return;
 

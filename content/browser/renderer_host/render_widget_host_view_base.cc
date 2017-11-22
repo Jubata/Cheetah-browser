@@ -23,6 +23,7 @@
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/display/screen.h"
+#include "ui/events/event.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -119,6 +120,13 @@ void RenderWidgetHostViewBase::SelectionBoundsChanged(
 
 float RenderWidgetHostViewBase::GetBottomControlsHeight() const {
   return 0.f;
+}
+
+int RenderWidgetHostViewBase::GetMouseWheelMinimumGranularity() const {
+  // Most platforms can specify the floating-point delta in the wheel event so
+  // they don't have a minimum granularity. Android is currently the only
+  // platform that overrides this.
+  return 0;
 }
 
 void RenderWidgetHostViewBase::SelectionChanged(const base::string16& text,
@@ -273,6 +281,13 @@ void RenderWidgetHostViewBase::DidUnregisterFromTextInputManager(
   text_input_manager_ = nullptr;
 }
 
+void RenderWidgetHostViewBase::ResizeDueToAutoResize(const gfx::Size& new_size,
+                                                     uint64_t sequence_number) {
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  host->DidAllocateLocalSurfaceIdForAutoResize(sequence_number);
+}
+
 base::WeakPtr<RenderWidgetHostViewBase> RenderWidgetHostViewBase::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
@@ -302,7 +317,13 @@ void RenderWidgetHostViewBase::FocusedNodeTouched(
 }
 
 void RenderWidgetHostViewBase::GetScreenInfo(ScreenInfo* screen_info) {
-  *screen_info = ScreenInfo();
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (!host || !host->delegate()) {
+    *screen_info = ScreenInfo();
+    return;
+  }
+  host->delegate()->GetScreenInfo(screen_info);
 }
 
 uint32_t RenderWidgetHostViewBase::RendererFrameNumber() {
@@ -395,6 +416,14 @@ ScreenOrientationValues RenderWidgetHostViewBase::GetOrientationTypeForDesktop(
 }
 
 void RenderWidgetHostViewBase::OnDidNavigateMainFrameToNewPage() {
+}
+
+void RenderWidgetHostViewBase::OnFrameTokenChangedForView(
+    uint32_t frame_token) {
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (host)
+    host->DidProcessFrame(frame_token);
 }
 
 viz::FrameSinkId RenderWidgetHostViewBase::GetFrameSinkId() {

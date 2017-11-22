@@ -259,8 +259,22 @@ void KeyboardController::NotifyContentsBoundsChanging(
     const gfx::Rect& new_bounds) {
   current_keyboard_bounds_ = new_bounds;
   if (ui_->HasContentsWindow() && ui_->GetContentsWindow()->IsVisible()) {
-    for (KeyboardControllerObserver& observer : observer_list_)
+    for (KeyboardControllerObserver& observer : observer_list_) {
+      observer.OnKeyboardAvailabilityChanging(!new_bounds.IsEmpty());
+      observer.OnKeyboardVisibleBoundsChanging(new_bounds);
+
+      // TODO(blakeo): reduce redundant successive calls with that have
+      // identical bounds.
+      const gfx::Rect unusable_workspace_region =
+          container_behavior_->BoundsAffectWorkspaceLayout() ? new_bounds
+                                                             : gfx::Rect();
+      observer.OnKeyboardWorkspaceOccludedBoundsChanging(
+          unusable_workspace_region);
+
+      // TODO(blakeo): remove this when all consumers have migrated to one of
+      // the notifications above.
       observer.OnKeyboardBoundsChanging(new_bounds);
+    }
     if (keyboard::IsKeyboardOverscrollEnabled())
       ui_->InitInsets(new_bounds);
     else
@@ -393,10 +407,10 @@ void KeyboardController::SetContainerBehaviorInternal(
     const ContainerType type) {
   switch (type) {
     case ContainerType::FULL_WIDTH:
-      container_behavior_ = std::make_unique<ContainerFullWidthBehavior>();
+      container_behavior_ = std::make_unique<ContainerFullWidthBehavior>(this);
       break;
     case ContainerType::FLOATING:
-      container_behavior_ = std::make_unique<ContainerFloatingBehavior>();
+      container_behavior_ = std::make_unique<ContainerFloatingBehavior>(this);
       break;
     default:
       NOTREACHED();
@@ -435,9 +449,11 @@ void KeyboardController::OnWindowRemovingFromRootWindow(aura::Window* window,
     window->GetRootWindow()->RemoveObserver(this);
 }
 
-void KeyboardController::OnWindowBoundsChanged(aura::Window* window,
-                                               const gfx::Rect& old_bounds,
-                                               const gfx::Rect& new_bounds) {
+void KeyboardController::OnWindowBoundsChanged(
+    aura::Window* window,
+    const gfx::Rect& old_bounds,
+    const gfx::Rect& new_bounds,
+    ui::PropertyChangeReason reason) {
   if (!window->IsRootWindow())
     return;
   // Keep the same height when window resizes. It gets called when the screen
@@ -469,7 +485,7 @@ void KeyboardController::OnTextInputStateChanged(
 
   bool focused =
       client && (client->GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE);
-  bool should_hide = !focused && !keyboard_locked_;
+  bool should_hide = !focused && container_behavior_->TextBlurHidesKeyboard();
 
   if (should_hide) {
     switch (state_) {
@@ -698,6 +714,14 @@ void KeyboardController::ChangeState(KeyboardControllerState state) {
 void KeyboardController::ReportLingeringState() {
   UMA_HISTOGRAM_ENUMERATION("VirtualKeyboard.LingeringIntermediateState",
                             state_, KeyboardControllerState::COUNT);
+}
+
+const gfx::Rect KeyboardController::GetWorkspaceObscuringBounds() const {
+  if (keyboard_visible() &&
+      container_behavior_->BoundsAffectWorkspaceLayout()) {
+    return current_keyboard_bounds_;
+  }
+  return gfx::Rect();
 }
 
 const gfx::Rect KeyboardController::AdjustSetBoundsRequest(

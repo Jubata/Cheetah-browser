@@ -93,10 +93,10 @@
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/public/platform/WebFeaturePolicy.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
-#include "third_party/WebKit/public/web/WebSandboxFlags.h"
 #include "ui/display/display_switches.h"
 #include "ui/display/screen.h"
 #include "ui/events/base_event_utils.h"
@@ -738,10 +738,9 @@ class SitePerProcessFeaturePolicyBrowserTest
         "FeaturePolicy,FeaturePolicyExperimentalFeatures");
   }
 
-  ParsedFeaturePolicyHeader CreateFPHeader(
-      blink::WebFeaturePolicyFeature feature,
-      const std::vector<GURL>& origins) {
-    ParsedFeaturePolicyHeader result(1);
+  blink::ParsedFeaturePolicy CreateFPHeader(blink::FeaturePolicyFeature feature,
+                                            const std::vector<GURL>& origins) {
+    blink::ParsedFeaturePolicy result(1);
     result[0].feature = feature;
     result[0].matches_all_origins = false;
     DCHECK(!origins.empty());
@@ -750,9 +749,9 @@ class SitePerProcessFeaturePolicyBrowserTest
     return result;
   }
 
-  ParsedFeaturePolicyHeader CreateFPHeaderMatchesAll(
-      blink::WebFeaturePolicyFeature feature) {
-    ParsedFeaturePolicyHeader result(1);
+  blink::ParsedFeaturePolicy CreateFPHeaderMatchesAll(
+      blink::FeaturePolicyFeature feature) {
+    blink::ParsedFeaturePolicy result(1);
     result[0].feature = feature;
     result[0].matches_all_origins = true;
     return result;
@@ -969,45 +968,6 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, TitleAfterCrossSiteIframe) {
   EXPECT_EQ(expected_title, entry->GetTitle());
 }
 
-// Class to detect incoming GestureScrollEnd acks for bubbling tests.
-class InputEventAckWaiter
-    : public content::RenderWidgetHost::InputEventObserver {
- public:
-  explicit InputEventAckWaiter(blink::WebInputEvent::Type ack_type_waiting_for)
-      : message_loop_runner_(new content::MessageLoopRunner),
-        ack_type_waiting_for_(ack_type_waiting_for),
-        desired_ack_type_received_(false) {}
-  ~InputEventAckWaiter() override {}
-
-  void OnInputEventAck(InputEventAckSource source,
-                       InputEventAckState state,
-                       const blink::WebInputEvent& event) override {
-    if (event.GetType() == ack_type_waiting_for_) {
-      desired_ack_type_received_ = true;
-      if (message_loop_runner_->loop_running())
-        message_loop_runner_->Quit();
-    }
-  }
-
-  void Wait() {
-    if (!desired_ack_type_received_) {
-      message_loop_runner_->Run();
-    }
-  }
-
-  void Reset() {
-    desired_ack_type_received_ = false;
-    message_loop_runner_ = new content::MessageLoopRunner;
-  }
-
- private:
-  scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
-  blink::WebInputEvent::Type ack_type_waiting_for_;
-  bool desired_ack_type_received_;
-
-  DISALLOW_COPY_AND_ASSIGN(InputEventAckWaiter);
-};
-
 // Test that the view bounds for an out-of-process iframe are set and updated
 // correctly, including accounting for local frame offsets in the parent and
 // scroll positions.
@@ -1072,7 +1032,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ViewBoundsInNestedFrameTest) {
   scroll_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
   rwhv_root->ProcessMouseWheelEvent(scroll_event, ui::LatencyInfo());
 
-  filter->Wait();
+  filter->WaitForRect();
 
   // The precise amount of scroll for the first view position update is not
   // deterministic, so this simply verifies that the OOPIF moved from its
@@ -1094,6 +1054,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
                             ->GetFrameTree()
                             ->root();
   ASSERT_EQ(1U, root->child_count());
+  RenderWidgetHost* root_rwh =
+      root->current_frame_host()->GetRenderWidgetHost();
 
   FrameTreeNode* child_iframe_node = root->child_at(0);
 
@@ -1103,21 +1065,15 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   RenderWidgetHostViewBase* child_rwhv =
       static_cast<RenderWidgetHostViewBase*>(child_rwh->GetView());
 
-  std::unique_ptr<InputEventAckWaiter> gesture_fling_start_ack_observer =
-      std::make_unique<InputEventAckWaiter>(
-          blink::WebInputEvent::kGestureFlingStart);
-  if (child_rwhv->wheel_scroll_latching_enabled()) {
-    // If wheel scroll latching is enabled, the fling start won't bubble since
-    // its corresponding GSB hasn't bubbled.
-    child_rwh->AddInputEventObserver(gesture_fling_start_ack_observer.get());
-  } else {
-    root->current_frame_host()->GetRenderWidgetHost()->AddInputEventObserver(
-        gesture_fling_start_ack_observer.get());
-  }
+  // If wheel scroll latching is enabled, the fling start won't bubble since
+  // its corresponding GSB hasn't bubbled.
+  InputEventAckWaiter gesture_fling_start_ack_observer(
+      (child_rwhv->wheel_scroll_latching_enabled() ? child_rwh : root_rwh),
+      blink::WebInputEvent::kGestureFlingStart);
 
   WaitForChildFrameSurfaceReady(child_iframe_node->current_frame_host());
 
-  gesture_fling_start_ack_observer->Reset();
+  gesture_fling_start_ack_observer.Reset();
   // Send a GSB, GSU, GFS sequence and verify that the GFS bubbles.
   blink::WebGestureEvent gesture_scroll_begin(
       blink::WebGestureEvent::kGestureScrollBegin,
@@ -1156,7 +1112,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 
   // We now wait for the fling start event to be acked by the parent
   // frame. If the test fails, then the test times out.
-  gesture_fling_start_ack_observer->Wait();
+  gesture_fling_start_ack_observer.Wait();
 }
 
 // Test that scrolling a nested out-of-process iframe bubbles unused scroll
@@ -1185,12 +1141,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   parent_iframe_node->current_frame_host()->GetProcess()->AddFilter(
       filter.get());
 
-  std::unique_ptr<InputEventAckWaiter> ack_observer =
-      std::make_unique<InputEventAckWaiter>(
-          blink::WebInputEvent::kGestureScrollEnd);
-  parent_iframe_node->current_frame_host()
-      ->GetRenderWidgetHost()
-      ->AddInputEventObserver(ack_observer.get());
+  InputEventAckWaiter ack_observer(
+      parent_iframe_node->current_frame_host()->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureScrollEnd);
 
   GURL site_url(embedded_test_server()->GetURL(
       "b.com", "/frame_tree/page_with_positioned_frame.html"));
@@ -1226,10 +1179,10 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   WaitForChildFrameSurfaceReady(nested_iframe_node->current_frame_host());
 
   // Save the original offset as a point of reference.
-  filter->Wait();
+  filter->WaitForRect();
   gfx::Rect update_rect = filter->last_rect();
   int initial_y = update_rect.y();
-  filter->Reset();
+  filter->ResetRectRunLoop();
 
   // Scroll the parent frame downward.
   blink::WebMouseWheelEvent scroll_event(
@@ -1258,11 +1211,11 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   }
 
   // Ensure that the view position is propagated to the child properly.
-  filter->Wait();
+  filter->WaitForRect();
   update_rect = filter->last_rect();
   EXPECT_LT(update_rect.y(), initial_y);
-  filter->Reset();
-  ack_observer->Reset();
+  filter->ResetRectRunLoop();
+  ack_observer.Reset();
 
   // Now scroll the nested frame upward, which should bubble to the parent.
   // The upscroll exceeds the amount that the frame was initially scrolled
@@ -1272,7 +1225,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   scroll_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
   rwhv_nested->ProcessMouseWheelEvent(scroll_event, ui::LatencyInfo());
 
-  filter->Wait();
+  filter->WaitForRect();
   // This loop isn't great, but it accounts for the possibility of multiple
   // incremental updates happening as a result of the scroll animation.
   // A failure condition of this test is that the loop might not terminate
@@ -1300,7 +1253,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
     rwhv_nested->ProcessMouseWheelEvent(scroll_event, ui::LatencyInfo());
   }
 
-  filter->Reset();
+  filter->ResetRectRunLoop();
   // Once we've sent a wheel to the nested iframe that we expect to turn into
   // a bubbling scroll, we need to delay to make sure the GestureScrollBegin
   // from this new scroll doesn't hit the RenderWidgetHostImpl before the
@@ -1308,7 +1261,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   // This timing only seems to be needed for CrOS, but we'll enable it on
   // all platforms just to lessen the possibility of tests being flakey
   // on non-CrOS platforms.
-  ack_observer->Wait();
+  ack_observer.Wait();
 
   // Scroll the parent down again in order to test scroll bubbling from
   // gestures.
@@ -1330,8 +1283,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   }
 
   // Ensure ensuing offset change is received, and then reset the filter.
-  filter->Wait();
-  filter->Reset();
+  filter->WaitForRect();
+  filter->ResetRectRunLoop();
 
   // Scroll down the nested iframe via gesture. This requires 3 separate input
   // events.
@@ -1368,7 +1321,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
   gesture_event.y = 1;
   rwhv_nested->GetRenderWidgetHost()->ForwardGestureEvent(gesture_event);
 
-  filter->Wait();
+  filter->WaitForRect();
   update_rect = filter->last_rect();
   // As above, if this loop does not terminate then it indicates an issue
   // with scroll bubbling.
@@ -1382,7 +1335,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ScrollBubblingFromOOPIFTest) {
 
   // Test that when the child frame absorbs all of the scroll delta, it does
   // not propagate to the parent (see https://crbug.com/621624).
-  filter->Reset();
+  filter->ResetRectRunLoop();
   scroll_event.delta_y = -5.0f;
   scroll_event.dispatch_type = blink::WebInputEvent::DispatchType::kBlocking;
   scroll_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
@@ -1432,17 +1385,12 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 
   WaitForChildFrameSurfaceReady(iframe_node->current_frame_host());
 
-  std::unique_ptr<InputEventAckWaiter> scroll_begin_observer =
-      std::make_unique<InputEventAckWaiter>(
-          blink::WebInputEvent::kGestureScrollBegin);
-  root->current_frame_host()->GetRenderWidgetHost()->AddInputEventObserver(
-      scroll_begin_observer.get());
-
-  std::unique_ptr<InputEventAckWaiter> scroll_end_observer =
-      std::make_unique<InputEventAckWaiter>(
-          blink::WebInputEvent::kGestureScrollEnd);
-  root->current_frame_host()->GetRenderWidgetHost()->AddInputEventObserver(
-      scroll_end_observer.get());
+  InputEventAckWaiter scroll_begin_observer(
+      root->current_frame_host()->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureScrollBegin);
+  InputEventAckWaiter scroll_end_observer(
+      root->current_frame_host()->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureScrollEnd);
 
   // Scroll the iframe upward, scroll events get bubbled up to the root.
   blink::WebMouseWheelEvent scroll_event(
@@ -1460,7 +1408,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   scroll_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
   scroll_event.has_precise_scrolling_deltas = true;
   router->RouteMouseWheelEvent(root_view, &scroll_event, ui::LatencyInfo());
-  scroll_begin_observer->Wait();
+  scroll_begin_observer.Wait();
 
   // Now destroy the child_rwhv, scroll bubbling stops and a GSE gets sent to
   // the root_view.
@@ -1476,7 +1424,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
       blink::WebInputEvent::DispatchType::kEventNonBlocking;
   router->RouteMouseWheelEvent(root_view, &scroll_event, ui::LatencyInfo());
 
-  scroll_end_observer->Wait();
+  scroll_end_observer.Wait();
 }
 
 class ScrollObserver : public RenderWidgetHost::InputEventObserver {
@@ -1554,11 +1502,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 
   WaitForChildFrameSurfaceReady(nested_iframe_node->current_frame_host());
 
-  std::unique_ptr<InputEventAckWaiter> ack_observer =
-      std::make_unique<InputEventAckWaiter>(
-          blink::WebInputEvent::kGestureScrollBegin);
-  root->current_frame_host()->GetRenderWidgetHost()->AddInputEventObserver(
-      ack_observer.get());
+  InputEventAckWaiter ack_observer(
+      root->current_frame_host()->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureScrollBegin);
 
   std::unique_ptr<ScrollObserver> scroll_observer;
   if (root_view->wheel_scroll_latching_enabled()) {
@@ -1590,7 +1536,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   scroll_event.phase = blink::WebMouseWheelEvent::kPhaseBegan;
   scroll_event.has_precise_scrolling_deltas = true;
   rwhv_nested->ProcessMouseWheelEvent(scroll_event, ui::LatencyInfo());
-  ack_observer->Wait();
+  ack_observer.Wait();
 
   // When wheel scroll latching is disabled, each wheel event will have its own
   // complete scroll seqeunce.
@@ -1748,12 +1694,10 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
     const gfx::Rect root_bounds = rwhv_root->GetViewBounds();
     const gfx::Rect child_bounds = rwhv_child->GetViewBounds();
     const float page_scale_factor = GetPageScaleFactor(shell());
-    const gfx::Point point_in_child(
-        gfx::ToCeiledInt((child_bounds.x() - root_bounds.x() + 10) *
-                         page_scale_factor),
-        gfx::ToCeiledInt((child_bounds.y() - root_bounds.y() + 10) *
-                         page_scale_factor));
-    gfx::Point dont_care;
+    const gfx::PointF point_in_child(
+        (child_bounds.x() - root_bounds.x() + 10) * page_scale_factor,
+        (child_bounds.y() - root_bounds.y() + 10) * page_scale_factor);
+    gfx::PointF dont_care;
     ASSERT_EQ(rwhv_child->GetRenderWidgetHost(),
               router->GetRenderWidgetHostAtPoint(rwhv_root, point_in_child,
                                                  &dont_care));
@@ -1799,18 +1743,12 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
       mock_overscroll_handler.get();
 #endif  // defined(USE_AURA)
 
-  std::unique_ptr<InputEventAckWaiter> gesture_begin_observer_child =
-      std::make_unique<InputEventAckWaiter>(
-          blink::WebInputEvent::kGestureScrollBegin);
-  child_node->current_frame_host()
-      ->GetRenderWidgetHost()
-      ->AddInputEventObserver(gesture_begin_observer_child.get());
-  std::unique_ptr<InputEventAckWaiter> gesture_end_observer_child =
-      std::make_unique<InputEventAckWaiter>(
-          blink::WebInputEvent::kGestureScrollEnd);
-  child_node->current_frame_host()
-      ->GetRenderWidgetHost()
-      ->AddInputEventObserver(gesture_end_observer_child.get());
+  InputEventAckWaiter gesture_begin_observer_child(
+      child_node->current_frame_host()->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureScrollBegin);
+  InputEventAckWaiter gesture_end_observer_child(
+      child_node->current_frame_host()->GetRenderWidgetHost(),
+      blink::WebInputEvent::kGestureScrollEnd);
 
 #if defined(USE_AURA)
   const float overscroll_threshold =
@@ -1844,7 +1782,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
                             ui::LatencyInfo(ui::SourceEventType::TOUCH));
 
   // Make sure the child is indeed receiving the gesture stream.
-  gesture_begin_observer_child->Wait();
+  gesture_begin_observer_child.Wait();
 
   blink::WebGestureEvent gesture_scroll_update(
       blink::WebGestureEvent::kGestureScrollUpdate,
@@ -1902,7 +1840,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
 
   // Ensure that the method of providing the child's scroll events to the root
   // does not leave the child in an invalid state.
-  gesture_end_observer_child->Wait();
+  gesture_end_observer_child.Wait();
 }
 #endif  // defined(USE_AURA) || defined(OS_ANDROID)
 
@@ -2943,7 +2881,7 @@ namespace {
 class FailingURLLoaderImpl : public mojom::URLLoader {
  public:
   explicit FailingURLLoaderImpl(mojom::URLLoaderClientPtr client) {
-    ResourceRequestCompletionStatus status;
+    network::URLLoaderCompletionStatus status;
     status.error_code = net::ERR_NOT_IMPLEMENTED;
     client->OnComplete(status);
   }
@@ -8909,34 +8847,21 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   EXPECT_FALSE(rvh->is_swapped_out_);
 }
 
-// Helper class to wait for a ChildProcessHostMsg_ShutdownRequest message to
-// arrive.
-class ShutdownRequestMessageFilter : public BrowserMessageFilter {
+// Helper class to wait for a ShutdownRequest message to arrive, in response to
+// which RenderProcessWillExit is called on observers by RenderProcessHost.
+class ShutdownObserver : public RenderProcessHostObserver {
  public:
-  ShutdownRequestMessageFilter()
-      : BrowserMessageFilter(ChildProcessMsgStart),
-        message_loop_runner_(new MessageLoopRunner) {}
+  ShutdownObserver() : message_loop_runner_(new MessageLoopRunner) {}
 
-  bool OnMessageReceived(const IPC::Message& message) override {
-    if (message.type() == ChildProcessHostMsg_ShutdownRequest::ID) {
-      content::BrowserThread::PostTask(
-          content::BrowserThread::UI, FROM_HERE,
-          base::BindOnce(&ShutdownRequestMessageFilter::OnShutdownRequest,
-                         this));
-    }
-    return false;
+  void RenderProcessShutdownRequested(RenderProcessHost* host) override {
+    message_loop_runner_->Quit();
   }
-
-  void OnShutdownRequest() { message_loop_runner_->Quit(); }
 
   void Wait() { message_loop_runner_->Run(); }
 
  private:
-  ~ShutdownRequestMessageFilter() override {}
-
   scoped_refptr<MessageLoopRunner> message_loop_runner_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShutdownRequestMessageFilter);
+  DISALLOW_COPY_AND_ASSIGN(ShutdownObserver);
 };
 
 // Test for https://crbug.com/568836.  From an A-embed-B page, navigate the
@@ -8975,15 +8900,15 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
   // Navigate the subframe away from b.com.  Since this is the last active
   // frame in the b.com process, this causes the RenderWidget and RenderView to
   // be closed.  If this succeeds without crashing, the renderer will release
-  // the process and send a ChildProcessHostMsg_ShutdownRequest to the browser
+  // the process and send a ShutdownRequest to the browser
   // process to ask whether it's ok to terminate.  Thus, wait for this message
   // to ensure that the RenderView and widget were closed without crashing.
-  scoped_refptr<ShutdownRequestMessageFilter> filter =
-      new ShutdownRequestMessageFilter();
-  subframe_process->AddFilter(filter.get());
+  ShutdownObserver shutdown_observer;
+  subframe_process->AddObserver(&shutdown_observer);
   NavigateFrameToURL(root->child_at(0),
                      embedded_test_server()->GetURL("a.com", "/title1.html"));
-  filter->Wait();
+  shutdown_observer.Wait();
+  subframe_process->RemoveObserver(&shutdown_observer);
 
   // TODO(alexmos): Navigating the subframe back to b.com at this point would
   // trigger the race in https://crbug.com/535246, where the browser process
@@ -10398,14 +10323,14 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessFeaturePolicyBrowserTest,
   EXPECT_TRUE(NavigateToURL(shell(), start_url));
 
   FrameTreeNode* root = web_contents()->GetFrameTree()->root();
-  EXPECT_EQ(CreateFPHeader(blink::WebFeaturePolicyFeature::kVibrate,
+  EXPECT_EQ(CreateFPHeader(blink::FeaturePolicyFeature::kVibrate,
                            {start_url.GetOrigin()}),
             root->current_replication_state().feature_policy_header);
 
   // When the main frame navigates to a page with a new policy, it should
   // overwrite the old one.
   EXPECT_TRUE(NavigateToURL(shell(), first_nav_url));
-  EXPECT_EQ(CreateFPHeaderMatchesAll(blink::WebFeaturePolicyFeature::kVibrate),
+  EXPECT_EQ(CreateFPHeaderMatchesAll(blink::FeaturePolicyFeature::kVibrate),
             root->current_replication_state().feature_policy_header);
 
   // When the main frame navigates to a page without a policy, the replicated
@@ -10425,14 +10350,14 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessFeaturePolicyBrowserTest,
   EXPECT_TRUE(NavigateToURL(shell(), start_url));
 
   FrameTreeNode* root = web_contents()->GetFrameTree()->root();
-  EXPECT_EQ(CreateFPHeader(blink::WebFeaturePolicyFeature::kVibrate,
+  EXPECT_EQ(CreateFPHeader(blink::FeaturePolicyFeature::kVibrate,
                            {start_url.GetOrigin()}),
             root->current_replication_state().feature_policy_header);
 
   // When the main frame navigates to a page with a new policy, it should
   // overwrite the old one.
   EXPECT_TRUE(NavigateToURL(shell(), first_nav_url));
-  EXPECT_EQ(CreateFPHeaderMatchesAll(blink::WebFeaturePolicyFeature::kVibrate),
+  EXPECT_EQ(CreateFPHeaderMatchesAll(blink::FeaturePolicyFeature::kVibrate),
             root->current_replication_state().feature_policy_header);
 
   // When the main frame navigates to a page without a policy, the replicated
@@ -10454,19 +10379,19 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessFeaturePolicyBrowserTest,
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
 
   FrameTreeNode* root = web_contents()->GetFrameTree()->root();
-  EXPECT_EQ(CreateFPHeader(blink::WebFeaturePolicyFeature::kVibrate,
+  EXPECT_EQ(CreateFPHeader(blink::FeaturePolicyFeature::kVibrate,
                            {main_url.GetOrigin(), GURL("http://example.com/")}),
             root->current_replication_state().feature_policy_header);
   EXPECT_EQ(1UL, root->child_count());
   EXPECT_EQ(
-      CreateFPHeader(blink::WebFeaturePolicyFeature::kVibrate,
+      CreateFPHeader(blink::FeaturePolicyFeature::kVibrate,
                      {main_url.GetOrigin()}),
       root->child_at(0)->current_replication_state().feature_policy_header);
 
   // Navigate the iframe cross-site.
   NavigateFrameToURL(root->child_at(0), first_nav_url);
   EXPECT_EQ(
-      CreateFPHeaderMatchesAll(blink::WebFeaturePolicyFeature::kVibrate),
+      CreateFPHeaderMatchesAll(blink::FeaturePolicyFeature::kVibrate),
       root->child_at(0)->current_replication_state().feature_policy_header);
 
   // Navigate the iframe to another location, this one with no policy header
@@ -10478,7 +10403,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessFeaturePolicyBrowserTest,
   // Navigate the iframe back to a page with a policy
   NavigateFrameToURL(root->child_at(0), first_nav_url);
   EXPECT_EQ(
-      CreateFPHeaderMatchesAll(blink::WebFeaturePolicyFeature::kVibrate),
+      CreateFPHeaderMatchesAll(blink::FeaturePolicyFeature::kVibrate),
       root->child_at(0)->current_replication_state().feature_policy_header);
 }
 
@@ -10767,7 +10692,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessFeaturePolicyBrowserTest,
 
   // Validate that the effective container policy contains a single non-unique
   // origin.
-  const ParsedFeaturePolicyHeader initial_effective_policy =
+  const blink::ParsedFeaturePolicy initial_effective_policy =
       root->child_at(2)->effective_frame_policy().container_policy;
   EXPECT_EQ(1UL, initial_effective_policy[0].origins.size());
   EXPECT_FALSE(initial_effective_policy[0].origins[0].unique());
@@ -10776,9 +10701,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessFeaturePolicyBrowserTest,
   // contain a unique origin, but effective policy should remain unchanged.
   EXPECT_TRUE(ExecuteScript(
       root, "document.getElementById('child-2').setAttribute('sandbox','')"));
-  const ParsedFeaturePolicyHeader updated_effective_policy =
+  const blink::ParsedFeaturePolicy updated_effective_policy =
       root->child_at(2)->effective_frame_policy().container_policy;
-  const ParsedFeaturePolicyHeader updated_pending_policy =
+  const blink::ParsedFeaturePolicy updated_pending_policy =
       root->child_at(2)->pending_frame_policy().container_policy;
   EXPECT_EQ(1UL, updated_effective_policy[0].origins.size());
   EXPECT_FALSE(updated_effective_policy[0].origins[0].unique());
@@ -10787,7 +10712,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessFeaturePolicyBrowserTest,
 
   // Navigate the frame; pending policy should now be committed.
   NavigateFrameToURL(root->child_at(2), nav_url);
-  const ParsedFeaturePolicyHeader final_effective_policy =
+  const blink::ParsedFeaturePolicy final_effective_policy =
       root->child_at(2)->effective_frame_policy().container_policy;
   EXPECT_EQ(1UL, final_effective_policy[0].origins.size());
   EXPECT_TRUE(final_effective_policy[0].origins[0].unique());

@@ -28,7 +28,7 @@ MockWidgetInputHandler::~MockWidgetInputHandler() {}
 
 void MockWidgetInputHandler::SetFocus(bool focused) {
   dispatched_messages_.emplace_back(
-      std::make_unique<DispatchedMessage>("SetFocus"));
+      std::make_unique<DispatchedFocusMessage>(focused));
 }
 
 void MockWidgetInputHandler::MouseCaptureLost() {
@@ -80,7 +80,8 @@ void MockWidgetInputHandler::RequestTextInputStateUpdate() {
 void MockWidgetInputHandler::RequestCompositionUpdates(bool immediate_request,
                                                        bool monitor_request) {
   dispatched_messages_.emplace_back(
-      std::make_unique<DispatchedMessage>("RequestCompositionUpdates"));
+      std::make_unique<DispatchedRequestCompositionUpdatesMessage>(
+          immediate_request, monitor_request));
 }
 
 void MockWidgetInputHandler::DispatchEvent(
@@ -117,8 +118,17 @@ MockWidgetInputHandler::DispatchedEventMessage*
 MockWidgetInputHandler::DispatchedMessage::ToEvent() {
   return nullptr;
 }
+MockWidgetInputHandler::DispatchedFocusMessage*
+MockWidgetInputHandler::DispatchedMessage::ToFocus() {
+  return nullptr;
+}
 MockWidgetInputHandler::DispatchedIMEMessage*
 MockWidgetInputHandler::DispatchedMessage::ToIME() {
+  return nullptr;
+}
+
+MockWidgetInputHandler::DispatchedRequestCompositionUpdatesMessage*
+MockWidgetInputHandler::DispatchedMessage::ToRequestCompositionUpdates() {
   return nullptr;
 }
 
@@ -222,6 +232,33 @@ bool MockWidgetInputHandler::DispatchedEventMessage::HasCallback() const {
 const content::InputEvent*
 MockWidgetInputHandler::DispatchedEventMessage::Event() const {
   return event_.get();
+}
+
+MockWidgetInputHandler::DispatchedRequestCompositionUpdatesMessage::
+    DispatchedRequestCompositionUpdatesMessage(bool immediate_request,
+                                               bool monitor_request)
+    : DispatchedMessage("RequestCompositionUpdates"),
+      immediate_request_(immediate_request),
+      monitor_request_(monitor_request) {}
+
+MockWidgetInputHandler::DispatchedRequestCompositionUpdatesMessage::
+    ~DispatchedRequestCompositionUpdatesMessage() {}
+
+MockWidgetInputHandler::DispatchedRequestCompositionUpdatesMessage*
+MockWidgetInputHandler::DispatchedRequestCompositionUpdatesMessage::
+    ToRequestCompositionUpdates() {
+  return this;
+}
+
+MockWidgetInputHandler::DispatchedFocusMessage::DispatchedFocusMessage(
+    bool focused)
+    : DispatchedMessage("SetFocus"), focused_(focused) {}
+
+MockWidgetInputHandler::DispatchedFocusMessage::~DispatchedFocusMessage() {}
+
+MockWidgetInputHandler::DispatchedFocusMessage*
+MockWidgetInputHandler::DispatchedFocusMessage::ToFocus() {
+  return this;
 }
 
 }  // namespace content

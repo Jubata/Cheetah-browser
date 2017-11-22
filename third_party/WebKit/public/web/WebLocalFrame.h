@@ -12,16 +12,17 @@
 #include "WebFrameLoadType.h"
 #include "WebHistoryItem.h"
 #include "WebImeTextSpan.h"
+#include "base/unguessable_token.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebFocusType.h"
 #include "public/platform/WebSize.h"
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
-#include "public/platform/scheduler/single_thread_task_runner.h"
 #include "public/platform/site_engagement.mojom-shared.h"
-#include "public/web/WebSandboxFlags.h"
 #include "public/web/selection_menu_behavior.mojom-shared.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -104,7 +105,7 @@ class WebLocalFrame : public WebFrame {
       blink::InterfaceRegistry*,
       WebRemoteFrame*,
       WebSandboxFlags,
-      WebParsedFeaturePolicy);
+      ParsedFeaturePolicy);
 
   // Creates a new local child of this frame. Similar to the other methods that
   // create frames, the returned frame should be freed by calling Close() when
@@ -190,11 +191,13 @@ class WebLocalFrame : public WebFrame {
 
   // Load the given URL. For history navigations, a valid WebHistoryItem
   // should be given, as well as a WebHistoryLoadType.
-  virtual void Load(const WebURLRequest&,
-                    WebFrameLoadType = WebFrameLoadType::kStandard,
-                    const WebHistoryItem& = WebHistoryItem(),
-                    WebHistoryLoadType = kWebHistoryDifferentDocumentLoad,
-                    bool is_client_redirect = false) = 0;
+  virtual void Load(
+      const WebURLRequest&,
+      WebFrameLoadType,
+      const WebHistoryItem&,
+      WebHistoryLoadType,
+      bool is_client_redirect,
+      const base::UnguessableToken& devtools_navigation_token) = 0;
 
   // This method is short-hand for calling LoadData, where mime_type is
   // "text/html" and text_encoding is "UTF-8".
@@ -711,7 +714,8 @@ class WebLocalFrame : public WebFrame {
 
   // Returns frame-specific task runner to run tasks of this type on.
   // They have the same lifetime as the frame.
-  virtual SingleThreadTaskRunnerRefPtr GetTaskRunner(TaskType) = 0;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
+      TaskType) = 0;
 
   // Returns the WebInputMethodController associated with this local frame.
   virtual WebInputMethodController* GetInputMethodController() = 0;

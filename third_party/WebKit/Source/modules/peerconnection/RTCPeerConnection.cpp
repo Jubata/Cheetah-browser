@@ -56,6 +56,7 @@
 #include "core/html/VoidCallback.h"
 #include "modules/crypto/CryptoResultImpl.h"
 #include "modules/mediastream/MediaConstraintsImpl.h"
+#include "modules/mediastream/MediaStream.h"
 #include "modules/mediastream/MediaStreamEvent.h"
 #include "modules/peerconnection/RTCAnswerOptions.h"
 #include "modules/peerconnection/RTCConfiguration.h"
@@ -86,8 +87,8 @@
 #include "platform/peerconnection/RTCAnswerOptionsPlatform.h"
 #include "platform/peerconnection/RTCOfferOptionsPlatform.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCryptoAlgorithmParams.h"
 #include "public/platform/WebMediaStream.h"
@@ -181,7 +182,7 @@ WebRTCAnswerOptions ConvertToWebRTCAnswerOptions(
                                           : true));
 }
 
-WebRTCICECandidate ConvertToWebRTCIceCandidate(
+scoped_refptr<WebRTCICECandidate> ConvertToWebRTCIceCandidate(
     ExecutionContext* context,
     const RTCIceCandidateInitOrRTCIceCandidate& candidate) {
   DCHECK(!candidate.IsNull());
@@ -196,8 +197,9 @@ WebRTCICECandidate ConvertToWebRTCIceCandidate(
       UseCounter::Count(context,
                         WebFeature::kRTCIceCandidateDefaultSdpMLineIndex);
     }
-    return WebRTCICECandidate(ice_candidate_init.candidate(),
-                              ice_candidate_init.sdpMid(), sdp_m_line_index);
+    return WebRTCICECandidate::Create(ice_candidate_init.candidate(),
+                                      ice_candidate_init.sdpMid(),
+                                      sdp_m_line_index);
   }
 
   DCHECK(candidate.IsRTCIceCandidate());
@@ -482,7 +484,7 @@ RTCPeerConnection::RTCPeerConnection(ExecutionContext* context,
                                      const WebRTCConfiguration& configuration,
                                      WebMediaConstraints constraints,
                                      ExceptionState& exception_state)
-    : SuspendableObject(context),
+    : PausableObject(context),
       signaling_state_(kSignalingStateStable),
       ice_gathering_state_(kICEGatheringStateNew),
       ice_connection_state_(kICEConnectionStateNew),
@@ -977,9 +979,10 @@ ScriptPromise RTCPeerConnection::addIceCandidate(
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
   RTCVoidRequest* request = RTCVoidRequestPromiseImpl::Create(this, resolver);
-  WebRTCICECandidate web_candidate = ConvertToWebRTCIceCandidate(
+  scoped_refptr<WebRTCICECandidate> web_candidate = ConvertToWebRTCIceCandidate(
       ExecutionContext::From(script_state), candidate);
-  bool implemented = peer_handler_->AddICECandidate(request, web_candidate);
+  bool implemented =
+      peer_handler_->AddICECandidate(request, std::move(web_candidate));
   if (!implemented)
     resolver->Reject(DOMException::Create(
         kOperationError, "This operation could not be completed."));
@@ -1007,9 +1010,10 @@ ScriptPromise RTCPeerConnection::addIceCandidate(
 
   RTCVoidRequest* request = RTCVoidRequestImpl::Create(
       GetExecutionContext(), this, success_callback, error_callback);
-  WebRTCICECandidate web_candidate = ConvertToWebRTCIceCandidate(
+  scoped_refptr<WebRTCICECandidate> web_candidate = ConvertToWebRTCIceCandidate(
       ExecutionContext::From(script_state), candidate);
-  bool implemented = peer_handler_->AddICECandidate(request, web_candidate);
+  bool implemented =
+      peer_handler_->AddICECandidate(request, std::move(web_candidate));
   if (!implemented)
     AsyncCallErrorCallback(
         error_callback,
@@ -1425,11 +1429,12 @@ void RTCPeerConnection::NegotiationNeeded() {
 }
 
 void RTCPeerConnection::DidGenerateICECandidate(
-    const WebRTCICECandidate& web_candidate) {
+    scoped_refptr<WebRTCICECandidate> web_candidate) {
   DCHECK(!closed_);
   DCHECK(GetExecutionContext()->IsContextThread());
-  DCHECK(!web_candidate.IsNull());
-  RTCIceCandidate* ice_candidate = RTCIceCandidate::Create(web_candidate);
+  DCHECK(web_candidate);
+  RTCIceCandidate* ice_candidate =
+      RTCIceCandidate::Create(std::move(web_candidate));
   ScheduleDispatchEvent(
       RTCPeerConnectionIceEvent::Create(false, false, ice_candidate));
 }
@@ -1549,17 +1554,18 @@ void RTCPeerConnection::DidRemoveRemoteTrack(
   MediaStreamTrack* track = rtp_receiver->track();
   rtp_receivers_.erase(it);
 
+  // End streams no longer in use and fire "removestream" events. This behavior
+  // is no longer in the spec.
   for (const WebMediaStream& web_stream : web_streams) {
     MediaStreamDescriptor* stream_descriptor = web_stream;
     DCHECK(stream_descriptor->Client());
     MediaStream* stream =
         static_cast<MediaStream*>(stream_descriptor->Client());
 
-    // Remove track.
-    if (stream->getTracks().Contains(track)) {
-      NonThrowableExceptionState exception;
-      stream->removeTrack(track, exception);
-    }
+    // The track should already have been removed from the stream thanks to
+    // wiring listening to the webrtc layer stream. This should make sure the
+    // "removetrack" event fires.
+    DCHECK(!stream->getTracks().Contains(track));
 
     // Was this the last usage of the stream? Remove from remote streams.
     if (!getRemoteStreamUsageCount(web_stream)) {
@@ -1571,6 +1577,10 @@ void RTCPeerConnection::DidRemoveRemoteTrack(
           MediaStreamEvent::Create(EventTypeNames::removestream, stream));
     }
   }
+
+  // Mute track and fire "onmute" if not already muted.
+  track->Component()->Source()->SetReadyState(
+      MediaStreamSource::kReadyStateMuted);
 }
 
 void RTCPeerConnection::DidAddRemoteDataChannel(
@@ -1613,14 +1623,14 @@ const AtomicString& RTCPeerConnection::InterfaceName() const {
 }
 
 ExecutionContext* RTCPeerConnection::GetExecutionContext() const {
-  return SuspendableObject::GetExecutionContext();
+  return PausableObject::GetExecutionContext();
 }
 
-void RTCPeerConnection::Suspend() {
+void RTCPeerConnection::Pause() {
   dispatch_scheduled_event_runner_->Pause();
 }
 
-void RTCPeerConnection::Resume() {
+void RTCPeerConnection::Unpause() {
   dispatch_scheduled_event_runner_->Unpause();
 }
 
@@ -1757,7 +1767,7 @@ void RTCPeerConnection::Trace(blink::Visitor* visitor) {
   visitor->Trace(dispatch_scheduled_event_runner_);
   visitor->Trace(scheduled_events_);
   EventTargetWithInlineData::Trace(visitor);
-  SuspendableObject::Trace(visitor);
+  PausableObject::Trace(visitor);
   MediaStreamObserver::Trace(visitor);
 }
 

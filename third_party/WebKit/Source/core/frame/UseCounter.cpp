@@ -48,15 +48,15 @@ int totalPagesMeasuredCSSSampleId() {
 }
 
 // Make sure update_use_counter_css.py was run which updates histograms.xml.
-constexpr int kMaximumCSSSampleId = 588;
+constexpr int kMaximumCSSSampleId = 589;
 
 }  // namespace
 
 namespace blink {
 
 int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
-    CSSPropertyID css_property_id) {
-  switch (css_property_id) {
+    CSSPropertyID unresolved_property) {
+  switch (unresolved_property) {
     // Begin at 2, because 1 is reserved for totalPagesMeasuredCSSSampleId.
     case CSSPropertyColor:
       return 2;
@@ -382,10 +382,10 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
     // CSSPropertyWebkitAspectRatio was 176
     case CSSPropertyAliasWebkitBackfaceVisibility:
       return 177;
-    case CSSPropertyWebkitBackgroundClip:
+    case CSSPropertyAliasWebkitBackgroundClip:
       return 178;
     // case CSSPropertyWebkitBackgroundComposite: return 179;
-    case CSSPropertyWebkitBackgroundOrigin:
+    case CSSPropertyAliasWebkitBackgroundOrigin:
       return 180;
     case CSSPropertyAliasWebkitBackgroundSize:
       return 181;
@@ -1025,8 +1025,7 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
       return 530;
     case CSSPropertyColumns:
       return 531;
-    case CSSPropertyApplyAtRule:
-      return 532;
+    // CSSPropertyApplyAtRule was 532.
     case CSSPropertyFontVariantCaps:
       return 533;
     case CSSPropertyHyphens:
@@ -1052,8 +1051,7 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
       return 544;
     case CSSPropertyOffsetPosition:
       return 545;
-    case CSSPropertyTextDecorationSkip:
-      return 546;
+    // CSSPropertyTextDecorationSkip was 546.
     case CSSPropertyCaretColor:
       return 547;
     case CSSPropertyOffsetRotate:
@@ -1138,6 +1136,8 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
       return 587;
     case CSSPropertyFontVariantEastAsian:
       return 588;
+    case CSSPropertyTextDecorationSkipInk:
+      return 589;
     // 1. Add new features above this line (don't change the assigned numbers of
     // the existing items).
     // 2. Update kMaximumCSSSampleId with the new maximum value.

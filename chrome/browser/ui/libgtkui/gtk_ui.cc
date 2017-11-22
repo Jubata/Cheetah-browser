@@ -418,6 +418,12 @@ GtkUi::GtkUi() : middle_click_action_(GetDefaultMiddleClickAction()) {
   if (_gdk_set_allowed_backends)
     _gdk_set_allowed_backends("x11");
 #endif
+#if GTK_MAJOR_VERSION >= 3
+  // Avoid GTK initializing atk-bridge, and let AuraLinux implementation
+  // do it once it is ready.
+  std::unique_ptr<base::Environment> env(base::Environment::Create());
+  env->SetVar("NO_AT_BRIDGE", "1");
+#endif
   GtkInitFromCommandLine(*base::CommandLine::ForCurrentProcess());
 #if GTK_MAJOR_VERSION == 2
   native_theme_ = NativeThemeGtk2::instance();
@@ -790,6 +796,13 @@ void GtkUi::AddDeviceScaleFactorObserver(
 void GtkUi::RemoveDeviceScaleFactorObserver(
     views::DeviceScaleFactorObserver* observer) {
   device_scale_factor_observer_list_.RemoveObserver(observer);
+}
+
+bool GtkUi::PreferDarkTheme() const {
+  gboolean dark = false;
+  g_object_get(gtk_settings_get_default(), "gtk-application-prefer-dark-theme",
+               &dark, nullptr);
+  return dark;
 }
 
 #if BUILDFLAG(ENABLE_NATIVE_WINDOW_NAV_BUTTONS)

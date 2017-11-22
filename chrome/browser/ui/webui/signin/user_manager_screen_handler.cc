@@ -209,6 +209,15 @@ void HandleLogRemoveUserWarningShown(const base::ListValue* args) {
       ProfileMetrics::DELETE_PROFILE_USER_MANAGER_SHOW_WARNING);
 }
 
+void DisplayErrorMessage(const base::string16 error_message,
+                         content::WebUI* web_ui) {
+  LoginUIServiceFactory::GetForProfile(
+      Profile::FromWebUI(web_ui)->GetOriginalProfile())
+      ->DisplayLoginResult(nullptr, error_message, base::string16());
+  UserManagerProfileDialog::ShowDialogAndDisplayErrorMessage(
+      web_ui->GetWebContents()->GetBrowserContext());
+}
+
 }  // namespace
 
 // ProfileUpdateObserver ------------------------------------------------------
@@ -455,16 +464,25 @@ void UserManagerScreenHandler::HandleAuthenticatedLaunchUser(
     // Supervised profile will only be locked when force-sign-in is enabled
     // and it shouldn't be unlocked. Display the error message directly via
     // the system profile to avoid profile creation.
-    LoginUIServiceFactory::GetForProfile(
-        Profile::FromWebUI(web_ui())->GetOriginalProfile())
-        ->DisplayLoginResult(nullptr,
-                             l10n_util::GetStringUTF16(
-                                 IDS_SUPERVISED_USER_NOT_ALLOWED_BY_POLICY),
-                             base::string16());
-    UserManagerProfileDialog::ShowDialogAndDisplayErrorMessage(browser_context);
+    DisplayErrorMessage(
+        l10n_util::GetStringUTF16(IDS_SUPERVISED_USER_NOT_ALLOWED_BY_POLICY),
+        web_ui());
+  } else if (entry->IsSigninRequired() && signin_util::IsForceSigninEnabled() &&
+             entry->GetActiveTime() != base::Time()) {
+    // If force-sign-in is enabled, do not allow users to sign in to a
+    // pre-existing locked profile, as this may force unexpected profile data
+    // merge. We consider a profile as pre-existing if it has been actived
+    // previously. A pre-existed profile can still be used if it has been signed
+    // in with an email address matched RestrictSigninToPattern policy already.
+    DisplayErrorMessage(
+        l10n_util::GetStringUTF16(IDS_USER_NOT_ALLOWED_BY_POLICY), web_ui());
   } else {
     // Fresh sign in via user manager without existing email address.
-    UserManagerProfileDialog::ShowSigninDialog(browser_context, profile_path);
+    UserManagerProfileDialog::ShowSigninDialog(
+        browser_context, profile_path,
+        signin_util::IsForceSigninEnabled()
+            ? signin_metrics::Reason::REASON_FORCED_SIGNIN_PRIMARY_ACCOUNT
+            : signin_metrics::Reason::REASON_SIGNIN_PRIMARY_ACCOUNT);
   }
 }
 

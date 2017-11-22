@@ -37,6 +37,7 @@ namespace omnibox {
 extern const base::Feature kNewOmniboxAnswerTypes;
 extern const base::Feature kOmniboxEntitySuggestions;
 extern const base::Feature kOmniboxTailSuggestions;
+extern const base::Feature kOmniboxTabSwitchSuggestions;
 extern const base::Feature kEnableClipboardProvider;
 extern const base::Feature kAndroidChromeHomePersonalizedSuggestions;
 extern const base::Feature kSearchProviderWarmUpOnFocus;
@@ -54,6 +55,7 @@ extern const base::Feature kUIExperimentSwapTitleAndUrl;
 extern const base::Feature kUIExperimentVerticalLayout;
 extern const base::Feature kUIExperimentVerticalMargin;
 extern const base::Feature kSpeculativeServiceWorkerStartOnQueryInput;
+extern const base::Feature kBreakWordsAtUnderscores;
 
 #if defined(OS_IOS)
 extern const base::Feature kZeroSuggestProviderIOS;

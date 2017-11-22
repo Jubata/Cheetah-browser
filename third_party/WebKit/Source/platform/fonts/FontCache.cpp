@@ -46,13 +46,11 @@
 #include "platform/fonts/FontSmoothingMode.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/TextRenderingMode.h"
-#include "platform/fonts/opentype/OpenTypeVerticalData.h"
 #include "platform/fonts/shaping/ShapeCache.h"
 #include "platform/instrumentation/tracing/web_memory_allocator_dump.h"
 #include "platform/instrumentation/tracing/web_process_memory_dump.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/wtf/HashMap.h"
-#include "platform/wtf/ListHashSet.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/debug/Alias.h"
@@ -208,23 +206,6 @@ void FontCache::SetFontManager(sk_sp<SkFontMgr> font_manager) {
   static_font_manager_ = font_manager.release();
 }
 
-scoped_refptr<OpenTypeVerticalData> FontCache::GetVerticalData(
-    const FontFileKey& key,
-    const FontPlatformData& platform_data) {
-  FontVerticalDataCache& font_vertical_data_cache =
-      FontGlobalContext::GetFontVerticalDataCache();
-  FontVerticalDataCache::iterator result = font_vertical_data_cache.find(key);
-  if (result != font_vertical_data_cache.end())
-    return result.Get()->value;
-
-  scoped_refptr<OpenTypeVerticalData> vertical_data =
-      OpenTypeVerticalData::Create(platform_data);
-  if (!vertical_data->IsOpenType())
-    vertical_data = nullptr;
-  font_vertical_data_cache.Set(key, vertical_data);
-  return vertical_data;
-}
-
 void FontCache::AcceptLanguagesChanged(const String& accept_languages) {
   AcceptLanguagesResolver::AcceptLanguagesChanged(accept_languages);
   GetFontCache()->InvalidateShapeCache();
@@ -316,34 +297,6 @@ void FontCache::PurgePlatformFontDataCache() {
   font_platform_data_cache_.RemoveAll(keys_to_remove);
 }
 
-void FontCache::PurgeFontVerticalDataCache() {
-  FontVerticalDataCache& font_vertical_data_cache =
-      FontGlobalContext::GetFontVerticalDataCache();
-  if (!font_vertical_data_cache.IsEmpty()) {
-    // Mark & sweep unused verticalData
-    FontVerticalDataCache::iterator vertical_data_end =
-        font_vertical_data_cache.end();
-    for (FontVerticalDataCache::iterator vertical_data =
-             font_vertical_data_cache.begin();
-         vertical_data != vertical_data_end; ++vertical_data) {
-      if (vertical_data->value)
-        vertical_data->value->SetInFontCache(false);
-    }
-
-    font_data_cache_.MarkAllVerticalData();
-
-    Vector<FontCache::FontFileKey> keys_to_remove;
-    keys_to_remove.ReserveInitialCapacity(font_vertical_data_cache.size());
-    for (FontVerticalDataCache::iterator vertical_data =
-             font_vertical_data_cache.begin();
-         vertical_data != vertical_data_end; ++vertical_data) {
-      if (!vertical_data->value || !vertical_data->value->InFontCache())
-        keys_to_remove.push_back(vertical_data->key);
-    }
-    font_vertical_data_cache.RemoveAll(keys_to_remove);
-  }
-}
-
 void FontCache::PurgeFallbackListShaperCache() {
   unsigned items = 0;
   FallbackListShaperCache::iterator iter;
@@ -372,7 +325,6 @@ void FontCache::Purge(PurgeSeverity purge_severity) {
     return;
 
   PurgePlatformFontDataCache();
-  PurgeFontVerticalDataCache();
   PurgeFallbackListShaperCache();
 }
 

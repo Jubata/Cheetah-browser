@@ -5,6 +5,11 @@
 #ifndef CHROME_BROWSER_PROFILING_HOST_PROFILING_PROCESS_HOST_H_
 #define CHROME_BROWSER_PROFILING_HOST_PROFILING_PROCESS_HOST_H_
 
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "base/feature_list.h"
 #include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/process/process.h"
@@ -23,9 +28,16 @@
 
 namespace base {
 class FilePath;
-}
+}  // namespace base
+
+namespace content {
+class RenderProcessHost;
+}  // namespace content
 
 namespace profiling {
+
+extern const base::Feature kOOPHeapProfilingFeature;
+extern const char kOOPHeapProfilingFeatureMode[];
 
 // Represents the browser side of the profiling process (//chrome/profiling).
 //
@@ -59,6 +71,16 @@ class ProfilingProcessHost : public content::BrowserChildProcessObserver,
 
     // Profile all processes.
     kAll = 2,
+
+    // Profile only the browser process.
+    kBrowser = 3,
+
+    // Profile only the gpu process.
+    kGpu = 4,
+
+    // Profile a sampled number of renderer processes.
+    kRendererSampling = 5,
+
     kCount
   };
 
@@ -67,6 +89,8 @@ class ProfilingProcessHost : public content::BrowserChildProcessObserver,
 
   // Returns the mode set on the current process' command line.
   static Mode GetCurrentMode();
+  static Mode ConvertStringToMode(const std::string& input);
+  bool ShouldProfileProcessType(int process_type);
 
   // Launches the profiling process and returns a pointer to it.
   static ProfilingProcessHost* Start(
@@ -81,24 +105,28 @@ class ProfilingProcessHost : public content::BrowserChildProcessObserver,
 
   void ConfigureBackgroundProfilingTriggers();
 
-  // Sends a message to the profiling process that it dump the given process'
+  // Sends a message to the profiling process to dump the given process'
   // memory data to the given file.
   void RequestProcessDump(base::ProcessId pid,
                           base::FilePath dest,
                           base::OnceClosure done);
 
-  // Sends a message to the profiling process that it report the given process'
+  // Sends a message to the profiling process to report all profiled processes
   // memory data to the crash server (slow-report).
-  void RequestProcessReport(base::ProcessId pid, std::string trigger_name);
+  void RequestProcessReport(std::string trigger_name);
 
   // For testing. Only one can be set at a time. Will be called after the
   // profiling process dumps heaps into the trace log. No guarantees are made
   // about the task queue on which the callback will be Run.
   void SetDumpProcessForTracingCallback(base::OnceClosure callback);
 
- protected:
+ private:
   friend struct base::DefaultSingletonTraits<ProfilingProcessHost>;
-  // Exposed for unittests.
+  friend class BackgroundProfilingTriggersTest;
+  friend class MemlogBrowserTest;
+  friend class ProfilingTestDriver;
+  FRIEND_TEST_ALL_PREFIXES(ProfilingProcessHost, ShouldProfileNewRenderer);
+
   ProfilingProcessHost();
   ~ProfilingProcessHost() override;
 
@@ -108,7 +136,6 @@ class ProfilingProcessHost : public content::BrowserChildProcessObserver,
   // Set the profiling mode. Exposed for unittests.
   void SetMode(Mode mode);
 
- private:
   // Make and store a connector from |connection|.
   void MakeConnector(content::ServiceManagerConnection* connection);
 
@@ -160,6 +187,18 @@ class ProfilingProcessHost : public content::BrowserChildProcessObserver,
   // Reports the profiling mode.
   void ReportMetrics();
 
+  // Helpers for controlling process selection for the sampling modes.
+  bool ShouldProfileNewRenderer(content::RenderProcessHost* renderer) const;
+
+  // Sets up the profiling connection for the given child process.
+  void StartProfilingNonRendererChild(
+      int child_process_id,
+      base::ProcessId proc_id,
+      profiling::mojom::ProcessType process_type);
+
+  // SetRenderer.
+  void SetRendererSamplingAlwaysProfileForTest();
+
   content::NotificationRegistrar registrar_;
   std::unique_ptr<service_manager::Connector> connector_;
   mojom::ProfilingServicePtr profiling_service_;
@@ -179,6 +218,22 @@ class ProfilingProcessHost : public content::BrowserChildProcessObserver,
 
   // Whether or not the profiling host is started.
   static bool has_started_;
+
+  // If in kRendererSampling mode, this is used to identify the currently
+  // profiled renderer. If no renderer is being profiled, this is set to
+  // nullptr.  This variable shouild only be accessed on the UI thread and
+  // the value should be considered opaque.
+  //
+  // Semantically, the value must be something that identifies which
+  // specific RenderProcess is being profiled. When the underlying RenderProcess
+  // goes away, this value needs to be reset to nullptr. The RenderProcessHost
+  // pointer and the NOTIFICATION_RENDERER_PROCESS_CREATED notification can be
+  // used to provide these semantics.
+  void* profiled_renderer_;
+
+  // For Tests. In kRendererSampling mode, overrides sampling to always profile
+  // a renderer process if one is already not going.
+  bool always_sample_for_tests_;
 
   // For tests.
   base::OnceClosure dump_process_for_tracing_callback_;

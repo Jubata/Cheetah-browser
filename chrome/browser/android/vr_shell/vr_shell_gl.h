@@ -19,21 +19,18 @@
 #include "chrome/browser/android/vr_shell/vr_controller.h"
 #include "chrome/browser/vr/content_input_delegate.h"
 #include "chrome/browser/vr/controller_mesh.h"
+#include "chrome/browser/vr/model/controller_model.h"
 #include "chrome/browser/vr/ui_input_manager.h"
 #include "chrome/browser/vr/ui_renderer.h"
 #include "device/vr/vr_service.mojom.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/gvr-android-keyboard/src/libraries/headers/vr/gvr/capi/include/gvr_keyboard.h"
 #include "third_party/gvr-android-sdk/src/libraries/headers/vr/gvr/capi/include/gvr.h"
 #include "third_party/gvr-android-sdk/src/libraries/headers/vr/gvr/capi/include/gvr_types.h"
 #include "ui/gfx/geometry/quaternion.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/native_widget_types.h"
-
-namespace blink {
-class WebMouseEvent;
-}  // namespace blink
 
 namespace gl {
 class GLContext;
@@ -52,8 +49,6 @@ class BrowserUiInterface;
 class FPSMeter;
 class SlidingAverage;
 class Ui;
-class UiBrowserInterface;
-struct UiInitialState;
 }  // namespace vr
 
 namespace vr_shell {
@@ -75,15 +70,14 @@ struct WebVrBounds {
 
 // This class manages all GLThread owned objects and GL rendering for VrShell.
 // It is not threadsafe and must only be used on the GL thread.
-class VrShellGl : public device::mojom::VRPresentationProvider,
-                  public vr::ContentInputDelegate {
+class VrShellGl : public device::mojom::VRPresentationProvider {
  public:
   VrShellGl(GlBrowserInterface* browser_interface,
-            vr::UiBrowserInterface* ui_host_interface,
-            const vr::UiInitialState& ui_initial_state,
+            std::unique_ptr<vr::Ui> ui,
             gvr_context* gvr_api,
             bool reprojected_rendering,
-            bool daydream_support);
+            bool daydream_support,
+            bool start_in_web_vr_mode);
   ~VrShellGl() override;
 
   void Initialize();
@@ -92,6 +86,8 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
   void OnTriggerEvent();
   void OnPause();
   void OnResume();
+  void DrawKeyboard();
+  void CreateKeyboard();
 
   base::WeakPtr<vr::BrowserUiInterface> GetBrowserUiWeakPtr();
 
@@ -118,7 +114,6 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
   void set_is_exiting(bool exiting) { is_exiting_ = exiting; }
 
   void OnSwapContents(int new_content_id);
-  bool ContentGestureIsLocked(blink::WebInputEvent::Type type);
 
  private:
   void GvrInit(gvr_context* gvr_api);
@@ -130,8 +125,8 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
                       int viewport_offset,
                       const gfx::Size& render_size,
                       vr::RenderInfo* out_render_info);
-  void DrawFrame(int16_t frame_index);
-  void DrawIntoAcquiredFrame(int16_t frame_index);
+  void DrawFrame(int16_t frame_index, base::TimeTicks current_time);
+  void DrawIntoAcquiredFrame(int16_t frame_index, base::TimeTicks current_time);
   void DrawFrameSubmitWhenReady(int16_t frame_index,
                                 const gfx::Transform& head_pose,
                                 std::unique_ptr<gl::GLFenceEGL> fence);
@@ -140,37 +135,15 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
   void DrawWebVr();
   bool WebVrPoseByteIsValid(int pose_index_byte);
 
-  void UpdateController(const gfx::Transform& head_pose);
-  std::unique_ptr<blink::WebMouseEvent> MakeMouseEvent(
-      blink::WebInputEvent::Type type,
-      const gfx::PointF& normalized_web_content_location);
-  void UpdateGesture(const gfx::PointF& normalized_content_hit_point,
-                     blink::WebGestureEvent& gesture);
-
-  // vr::ContentInputDelegate.
-  void OnContentEnter(const gfx::PointF& normalized_hit_point) override;
-  void OnContentLeave() override;
-  void OnContentMove(const gfx::PointF& normalized_hit_point) override;
-  void OnContentDown(const gfx::PointF& normalized_hit_point) override;
-  void OnContentUp(const gfx::PointF& normalized_hit_point) override;
-  void OnContentFlingStart(std::unique_ptr<blink::WebGestureEvent> gesture,
-                           const gfx::PointF& normalized_hit_point) override;
-  void OnContentFlingCancel(std::unique_ptr<blink::WebGestureEvent> gesture,
-                            const gfx::PointF& normalized_hit_point) override;
-  void OnContentScrollBegin(std::unique_ptr<blink::WebGestureEvent> gesture,
-                            const gfx::PointF& normalized_hit_point) override;
-  void OnContentScrollUpdate(std::unique_ptr<blink::WebGestureEvent> gesture,
-                             const gfx::PointF& normalized_hit_point) override;
-  void OnContentScrollEnd(std::unique_ptr<blink::WebGestureEvent> gesture,
-                          const gfx::PointF& normalized_hit_point) override;
+  void UpdateController(const gfx::Transform& head_pose,
+                        base::TimeTicks current_time);
 
   void SendImmediateExitRequestIfNecessary();
   void HandleControllerInput(const gfx::Point3F& laser_origin,
-                             const gfx::Vector3dF& head_direction);
+                             const gfx::Vector3dF& head_direction,
+                             base::TimeTicks current_time);
   void HandleControllerAppButtonActivity(
       const gfx::Vector3dF& controller_direction);
-  void SendGestureToContent(std::unique_ptr<blink::WebInputEvent> event);
-  void CreateUiSurface();
 
   void OnContentFrameAvailable();
   void OnWebVRFrameAvailable();
@@ -186,6 +159,8 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
   void GetVSync(GetVSyncCallback callback) override;
   void SubmitFrame(int16_t frame_index,
                    const gpu::MailboxHolder& mailbox) override;
+  void SubmitFrameWithTextureHandle(int16_t frame_index,
+                                    mojo::ScopedHandle texture_handle) override;
   void UpdateLayerBounds(int16_t frame_index,
                          const gfx::RectF& left_bounds,
                          const gfx::RectF& right_bounds,
@@ -231,8 +206,6 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
   bool cardboard_ = false;
   gfx::Quaternion controller_quat_;
 
-  int content_tex_css_width_ = 0;
-  int content_tex_css_height_ = 0;
   gfx::Size content_tex_physical_size_ = {0, 0};
   gfx::Size webvr_surface_size_ = {0, 0};
 
@@ -251,9 +224,7 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
   bool is_exiting_ = false;
 
   std::unique_ptr<VrController> controller_;
-
-  int content_id_ = 0;
-  int locked_content_id_ = 0;
+  gvr_keyboard_context* gvr_keyboard_ = nullptr;
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
@@ -296,6 +267,10 @@ class VrShellGl : public device::mojom::VRPresentationProvider,
   bool content_frame_available_ = false;
   bool skips_redraw_when_not_dirty_;
   gfx::Transform last_used_head_pose_;
+
+  bool keyboard_enabled_ = false;
+  bool show_keyboard_ = false;
+  vr::ControllerModel controller_model_;
 
   base::WeakPtrFactory<VrShellGl> weak_ptr_factory_;
 

@@ -93,7 +93,6 @@
 #include "content/renderer/cache_storage/cache_storage_dispatcher.h"
 #include "content/renderer/cache_storage/cache_storage_message_filter.h"
 #include "content/renderer/categorized_worker_pool.h"
-#include "content/renderer/devtools/devtools_agent_filter.h"
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
@@ -331,6 +330,16 @@ void* CreateHistogram(
 void AddHistogramSample(void* hist, int sample) {
   base::Histogram* histogram = static_cast<base::Histogram*>(hist);
   histogram->Add(sample);
+}
+
+bool IsMusHostingViz() {
+#if BUILDFLAG(ENABLE_MUS)
+  const auto* cmdline = base::CommandLine::ForCurrentProcess();
+  return cmdline->GetSwitchValueASCII(switches::kMus) ==
+         switches::kMusHostVizValue;
+#else
+  return false;
+#endif
 }
 
 class FrameFactoryImpl : public mojom::FrameFactory {
@@ -627,11 +636,13 @@ RenderThreadImpl::RenderThreadImpl(
     const InProcessChildThreadParams& params,
     std::unique_ptr<blink::scheduler::RendererScheduler> scheduler,
     const scoped_refptr<base::SingleThreadTaskRunner>& resource_task_queue)
-    : ChildThreadImpl(Options::Builder()
-                          .InBrowserProcess(params)
-                          .AutoStartServiceManagerConnection(false)
-                          .ConnectToBrowser(true)
-                          .Build()),
+    : ChildThreadImpl(
+          Options::Builder()
+              .InBrowserProcess(params)
+              .AutoStartServiceManagerConnection(false)
+              .ConnectToBrowser(true)
+              .IPCTaskRunner(scheduler ? scheduler->IPCTaskRunner() : nullptr)
+              .Build()),
       renderer_scheduler_(std::move(scheduler)),
       categorized_worker_pool_(new CategorizedWorkerPool()),
       renderer_binding_(this),
@@ -688,7 +699,7 @@ void RenderThreadImpl::Init(
 
   gpu_ = ui::Gpu::Create(
       GetConnector(),
-      IsRunningInMash() ? ui::mojom::kServiceName : mojom::kBrowserServiceName,
+      IsMusHostingViz() ? ui::mojom::kServiceName : mojom::kBrowserServiceName,
       GetIOTaskRunner());
 
   viz::mojom::SharedBitmapAllocationNotifierPtr
@@ -718,7 +729,8 @@ void RenderThreadImpl::Init(
   AddFilter(quota_message_filter_->GetFilter());
 
   auto registry = std::make_unique<service_manager::BinderRegistry>();
-  BlinkInterfaceRegistryImpl interface_registry(registry->GetWeakPtr());
+  BlinkInterfaceRegistryImpl interface_registry(
+      registry->GetWeakPtr(), associated_interfaces_.GetWeakPtr());
 
   InitializeWebKit(resource_task_queue, &interface_registry);
   blink_initialized_time_ = base::TimeTicks::Now();
@@ -796,7 +808,7 @@ void RenderThreadImpl::Init(
 // Register exported services:
 
 #if defined(USE_AURA)
-  if (IsRunningInMash()) {
+  if (IsRunningWithMus()) {
     CreateRenderWidgetWindowTreeClientFactory(GetServiceManagerConnection());
   }
 #endif
@@ -949,7 +961,7 @@ void RenderThreadImpl::Init(
   categorized_worker_pool_->Start(num_raster_threads);
 
   discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
-  if (IsRunningInMash()) {
+  if (IsRunningWithMus()) {
 #if defined(USE_AURA)
     GetServiceManagerConnection()->GetConnector()->BindInterface(
         ui::mojom::kServiceName, &manager_ptr);
@@ -993,9 +1005,6 @@ void RenderThreadImpl::Init(
   // redirection experiment concludes https://crbug.com/622400.
   if (!command_line.HasSwitch(switches::kSingleProcess))
     base::SequencedWorkerPool::EnableForProcess();
-
-  EVP_set_buggy_rsa_parser(
-      base::FeatureList::IsEnabled(features::kBuggyRSAParser));
 
   GetConnector()->BindInterface(mojom::kBrowserServiceName,
                                 mojo::MakeRequest(&frame_sink_provider_));
@@ -1123,23 +1132,6 @@ void RenderThreadImpl::RemoveRoute(int32_t routing_id) {
   ChildThreadImpl::GetRouter()->RemoveRoute(routing_id);
 }
 
-void RenderThreadImpl::AddEmbeddedWorkerRoute(int32_t routing_id,
-                                              IPC::Listener* listener) {
-  AddRoute(routing_id, listener);
-  if (devtools_agent_message_filter_.get()) {
-    devtools_agent_message_filter_->AddEmbeddedWorkerRouteOnMainThread(
-        routing_id);
-  }
-}
-
-void RenderThreadImpl::RemoveEmbeddedWorkerRoute(int32_t routing_id) {
-  RemoveRoute(routing_id);
-  if (devtools_agent_message_filter_.get()) {
-    devtools_agent_message_filter_->RemoveEmbeddedWorkerRouteOnMainThread(
-        routing_id);
-  }
-}
-
 void RenderThreadImpl::RegisterPendingFrameCreate(
     const service_manager::BindSourceInfo& browser_info,
     int routing_id,
@@ -1157,8 +1149,7 @@ mojom::StoragePartitionService* RenderThreadImpl::GetStoragePartitionService() {
 
 mojom::RendererHost* RenderThreadImpl::GetRendererHost() {
   if (!renderer_host_) {
-    GetConnector()->BindInterface(mojom::kBrowserServiceName,
-                                  mojo::MakeRequest(&renderer_host_));
+    GetChannel()->GetRemoteAssociatedInterface(&renderer_host_);
   }
   return renderer_host_.get();
 }
@@ -1320,9 +1311,6 @@ void RenderThreadImpl::InitializeWebKit(
   RenderThreadImpl::RegisterSchemes();
 
   RenderMediaClient::Initialize();
-
-  devtools_agent_message_filter_ = new DevToolsAgentFilter();
-  AddFilter(devtools_agent_message_filter_.get());
 
   if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden()) {
     ScheduleIdleHandler(kLongIdleHandlerDelayMs);
@@ -1756,6 +1744,18 @@ void RenderThreadImpl::OnChannelError() {
   ChildThreadImpl::OnChannelError();
 }
 
+void RenderThreadImpl::OnProcessFinalRelease() {
+  if (on_channel_error_called())
+    return;
+  // The child process shutdown sequence is a request response based mechanism,
+  // where we send out an initial feeler request to the child process host
+  // instance in the browser to verify if it's ok to shutdown the child process.
+  // The browser then sends back a response if it's ok to shutdown. This avoids
+  // race conditions if the process refcount is 0 but there's an IPC message
+  // inflight that would addref it.
+  GetRendererHost()->ShutdownRequest();
+}
+
 bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
   for (auto& observer : observers_) {
     if (observer.OnControlMessageReceived(msg))
@@ -1986,13 +1986,7 @@ void RenderThreadImpl::RecordPurgeAndSuspendMemoryGrowthMetrics(
 }
 
 void RenderThreadImpl::CompositingModeFallbackToSoftware() {
-  if (gpu_channel_) {
-    // TODO(danakj): Tell all clients of the compositor. We should send a more
-    // scoped message than this.
-    gpu_channel_->DestroyChannel();
-    gpu_channel_ = nullptr;
-  }
-
+  gpu_->LoseChannel();
   is_gpu_compositing_disabled_ = true;
 }
 
@@ -2000,21 +1994,11 @@ scoped_refptr<gpu::GpuChannelHost> RenderThreadImpl::EstablishGpuChannelSync(
     bool* connection_error) {
   TRACE_EVENT0("gpu", "RenderThreadImpl::EstablishGpuChannelSync");
 
-  if (gpu_channel_) {
-    // Do nothing if we already have a GPU channel or are already
-    // establishing one.
-    if (!gpu_channel_->IsLost())
-      return gpu_channel_;
-
-    // Recreate the channel if it has been lost.
-    gpu_channel_->DestroyChannel();
-    gpu_channel_ = nullptr;
-  }
-
-  gpu_channel_ = gpu_->EstablishGpuChannelSync(connection_error);
-  if (gpu_channel_)
-    GetContentClient()->SetGpuInfo(gpu_channel_->gpu_info());
-  return gpu_channel_;
+  scoped_refptr<gpu::GpuChannelHost> gpu_channel =
+      gpu_->EstablishGpuChannelSync(connection_error);
+  if (gpu_channel)
+    GetContentClient()->SetGpuInfo(gpu_channel->gpu_info());
+  return gpu_channel;
 }
 
 void RenderThreadImpl::RequestNewLayerTreeFrameSink(
@@ -2022,9 +2006,15 @@ void RenderThreadImpl::RequestNewLayerTreeFrameSink(
     scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue,
     const GURL& url,
     const LayerTreeFrameSinkCallback& callback) {
+  // Misconfigured bots (eg. crbug.com/780757) could run layout tests on a
+  // machine where gpu compositing doesn't work. Don't crash in that case.
+  if (layout_test_mode() && is_gpu_compositing_disabled_) {
+    LOG(FATAL) << "Layout tests require gpu compositing, but it is disabled.";
+    return;
+  }
+
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-
   viz::ClientLayerTreeFrameSink::InitParams params;
   params.enable_surface_synchronization =
       command_line.HasSwitch(switches::kEnableSurfaceSynchronization);
@@ -2042,7 +2032,7 @@ void RenderThreadImpl::RequestNewLayerTreeFrameSink(
   }
 
 #if defined(USE_AURA)
-  if (IsRunningInMash()) {
+  if (IsMusHostingViz()) {
     if (!RendererWindowTreeClient::Get(routing_id)) {
       callback.Run(nullptr);
       return;
@@ -2200,13 +2190,8 @@ RenderThreadImpl::CreateMediaStreamCenter(
   std::unique_ptr<blink::WebMediaStreamCenter> media_stream_center;
 #if BUILDFLAG(ENABLE_WEBRTC)
   if (!media_stream_center) {
-    media_stream_center =
-        GetContentClient()->renderer()->OverrideCreateWebMediaStreamCenter(
-            client);
-    if (!media_stream_center) {
-      media_stream_center = std::make_unique<MediaStreamCenter>(
-          client, GetPeerConnectionDependencyFactory());
-    }
+    media_stream_center = std::make_unique<MediaStreamCenter>(
+        client, GetPeerConnectionDependencyFactory());
   }
 #endif
   return media_stream_center;
@@ -2233,11 +2218,7 @@ mojom::RenderMessageFilter* RenderThreadImpl::render_message_filter() {
 }
 
 gpu::GpuChannelHost* RenderThreadImpl::GetGpuChannel() {
-  if (!gpu_channel_)
-    return nullptr;
-  if (gpu_channel_->IsLost())
-    return nullptr;
-  return gpu_channel_.get();
+  return gpu_->GetGpuChannel().get();
 }
 
 void RenderThreadImpl::CreateView(mojom::CreateViewParamsPtr params) {
@@ -2266,8 +2247,10 @@ void RenderThreadImpl::CreateFrame(mojom::CreateFrameParamsPtr params) {
   base::debug::SetCrashKeyValue("newframe_replicated_origin",
                                 params->replication_state.origin.Serialize());
   CompositorDependencies* compositor_deps = this;
+  service_manager::mojom::InterfaceProviderPtr interface_provider(
+      std::move(params->interface_provider));
   RenderFrameImpl::CreateFrame(
-      params->routing_id, std::move(params->interface_provider),
+      params->routing_id, std::move(interface_provider),
       params->proxy_routing_id, params->opener_routing_id,
       params->parent_routing_id, params->previous_sibling_routing_id,
       params->devtools_frame_token, params->replication_state, compositor_deps,

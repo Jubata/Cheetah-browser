@@ -217,11 +217,7 @@ bool BrowserAccessibilityAndroid::IsDismissable() const {
 }
 
 bool BrowserAccessibilityAndroid::IsEditableText() const {
-  // TODO(dmazzoni): Use utility function in ax_role_properties, and
-  // handle different types of combo boxes correctly.
-  return GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-         GetRole() == ui::AX_ROLE_SEARCH_BOX ||
-         GetRole() == ui::AX_ROLE_COMBO_BOX;
+  return ui::IsEditField(GetRole());
 }
 
 bool BrowserAccessibilityAndroid::IsEnabled() const {
@@ -303,10 +299,8 @@ bool BrowserAccessibilityAndroid::IsVisibleToUser() const {
 }
 
 bool BrowserAccessibilityAndroid::IsInterestingOnAndroid() const {
-  // The root is not interesting if it doesn't have a title, even
-  // though it's focusable.
   if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA && GetText().empty())
-    return false;
+    return true;
 
   // Focusable nodes are always interesting. Note that IsFocusable()
   // already skips over things like iframes and child frames that are
@@ -525,8 +519,11 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
     case ui::AX_ROLE_COLUMN:
       // No role description.
       break;
-    case ui::AX_ROLE_COMBO_BOX:
-      message_id = IDS_AX_ROLE_COMBO_BOX;
+    case ui::AX_ROLE_COMBO_BOX_GROUPING:
+      // No role descripotion.
+      break;
+    case ui::AX_ROLE_COMBO_BOX_MENU_BUTTON:
+      // No role descripotion.
       break;
     case ui::AX_ROLE_COMPLEMENTARY:
       message_id = IDS_AX_ROLE_COMPLEMENTARY;
@@ -795,6 +792,9 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
       message_id = IDS_AX_ROLE_DESCRIPTION_TERM;
       break;
     case ui::AX_ROLE_TEXT_FIELD:
+      // No role description.
+      break;
+    case ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX:
       // No role description.
       break;
     case ui::AX_ROLE_TIME:
@@ -1400,9 +1400,9 @@ bool BrowserAccessibilityAndroid::ShouldExposeValueAsName() const {
     return true;
 
   switch (GetRole()) {
-    case ui::AX_ROLE_COMBO_BOX:
     case ui::AX_ROLE_POP_UP_BUTTON:
     case ui::AX_ROLE_TEXT_FIELD:
+    case ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX:
       return true;
     default:
       break;

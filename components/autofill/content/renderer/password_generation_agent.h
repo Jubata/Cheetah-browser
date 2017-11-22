@@ -65,6 +65,9 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
   // Called when new form controls are inserted.
   void OnDynamicFormsSeen();
 
+  // Called right before PasswordAutofillAgent filled |password_element|.
+  void OnFieldAutofilled(const blink::WebInputElement& password_element);
+
   // The length that a password can be before the UI is hidden.
   static const size_t kMaximumOfferSize = 5;
 
@@ -109,8 +112,9 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
   void DetermineGenerationElement();
 
   // Helper function which takes care of the form processing and collecting the
-  // information which is required to show the generation popup.
-  void SetUpUserTriggeredGeneration();
+  // information which is required to show the generation popup. Returns true if
+  // all required information is collected.
+  bool SetUpUserTriggeredGeneration();
 
   // Show password generation UI anchored at |generation_element_|.
   void ShowGenerationPopup();

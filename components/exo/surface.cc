@@ -208,12 +208,15 @@ Surface::~Surface() {
 
   // Call all frame callbacks with a null frame time to indicate that they
   // have been cancelled.
-  for (const auto& frame_callback : pending_frame_callbacks_)
+  frame_callbacks_.splice(frame_callbacks_.end(), pending_frame_callbacks_);
+  for (const auto& frame_callback : frame_callbacks_)
     frame_callback.Run(base::TimeTicks());
 
   // Call all presentation callbacks with a null presentation time to indicate
   // that they have been cancelled.
-  for (const auto& presentation_callback : pending_presentation_callbacks_)
+  presentation_callbacks_.splice(presentation_callbacks_.end(),
+                                 pending_presentation_callbacks_);
+  for (const auto& presentation_callback : presentation_callbacks_)
     presentation_callback.Run(base::TimeTicks(), base::TimeDelta(), 0);
 
   WMHelper::GetInstance()->ResetDragDropDelegate(window_.get());
@@ -384,6 +387,11 @@ void Surface::PlaceSubSurfaceBelow(Surface* sub_surface, Surface* sibling) {
   sub_surfaces_changed_ = true;
 }
 
+void Surface::OnSubSurfaceCommit() {
+  if (delegate_)
+    delegate_->OnSurfaceCommit();
+}
+
 void Surface::SetViewport(const gfx::Size& viewport) {
   TRACE_EVENT1("exo", "Surface::SetViewport", "viewport", viewport.ToString());
 
@@ -429,13 +437,14 @@ void Surface::Commit() {
   needs_commit_surface_ = true;
   if (delegate_)
     delegate_->OnSurfaceCommit();
+  else
+    CommitSurfaceHierarchy(false);
 }
 
-gfx::Rect Surface::CommitSurfaceHierarchy(
-    std::list<FrameCallback>* frame_callbacks,
-    std::list<PresentationCallback>* presentation_callbacks) {
-  if (needs_commit_surface_) {
+void Surface::CommitSurfaceHierarchy(bool synchronized) {
+  if (needs_commit_surface_ && (synchronized || !IsSynchronized())) {
     needs_commit_surface_ = false;
+    synchronized = true;
 
     // TODO(penghuang): Make the damage more precise for sub surface changes.
     // https://crbug.com/779704
@@ -480,11 +489,12 @@ gfx::Rect Surface::CommitSurfaceHierarchy(
     if (needs_update_buffer_transform)
       UpdateBufferTransform();
 
-    // Move pending frame callbacks to the end of frame_callbacks.
-    frame_callbacks->splice(frame_callbacks->end(), pending_frame_callbacks_);
+    // Move pending frame callbacks to the end of |frame_callbacks_|.
+    frame_callbacks_.splice(frame_callbacks_.end(), pending_frame_callbacks_);
 
-    // Move pending presentation callbacks to the end of presentation_callbacks.
-    presentation_callbacks->splice(presentation_callbacks->end(),
+    // Move pending presentation callbacks to the end of
+    // |presentation_callbacks_|.
+    presentation_callbacks_.splice(presentation_callbacks_.end(),
                                    pending_presentation_callbacks_);
 
     UpdateContentSize();
@@ -524,21 +534,34 @@ gfx::Rect Surface::CommitSurfaceHierarchy(
     pending_damage_.setEmpty();
   }
 
-  gfx::Rect bounds(content_size_);
+  surface_hierarchy_content_bounds_ = gfx::Rect(content_size_);
 
-  // The top most sub-surface is at the front of the RenderPass's quad_list,
-  // so we need composite sub-surface in reversed order.
   for (const auto& sub_surface_entry : base::Reversed(sub_surfaces_)) {
     auto* sub_surface = sub_surface_entry.first;
     gfx::Point origin = sub_surface_entry.second;
     // Synchronously commit all pending state of the sub-surface and its
     // descendants.
-    bounds.Union(sub_surface->CommitSurfaceHierarchy(frame_callbacks,
-                                                     presentation_callbacks) +
-                 origin.OffsetFromOrigin());
+    sub_surface->CommitSurfaceHierarchy(synchronized);
+    surface_hierarchy_content_bounds_.Union(
+        sub_surface->surface_hierarchy_content_bounds() +
+        origin.OffsetFromOrigin());
   }
+}
 
-  return bounds;
+void Surface::AppendSurfaceHierarchyCallbacks(
+    std::list<FrameCallback>* frame_callbacks,
+    std::list<PresentationCallback>* presentation_callbacks) {
+  // Move frame callbacks to the end of |frame_callbacks|.
+  frame_callbacks->splice(frame_callbacks->end(), frame_callbacks_);
+  // Move presentation callbacks to the end of |presentation_callbacks|.
+  presentation_callbacks->splice(presentation_callbacks->end(),
+                                 presentation_callbacks_);
+
+  for (const auto& sub_surface_entry : base::Reversed(sub_surfaces_)) {
+    auto* sub_surface = sub_surface_entry.first;
+    sub_surface->AppendSurfaceHierarchyCallbacks(frame_callbacks,
+                                                 presentation_callbacks);
+  }
 }
 
 void Surface::AppendSurfaceHierarchyContentsToFrame(
@@ -701,7 +724,9 @@ Surface::BufferAttachment& Surface::BufferAttachment::operator=(
   if (buffer_)
     buffer_->OnDetach();
   buffer_ = other.buffer_;
+  size_ = other.size_;
   other.buffer_ = base::WeakPtr<Buffer>();
+  other.size_ = gfx::Size();
   return *this;
 }
 
@@ -713,9 +738,16 @@ const base::WeakPtr<Buffer>& Surface::BufferAttachment::buffer() const {
   return buffer_;
 }
 
+const gfx::Size& Surface::BufferAttachment::size() const {
+  return size_;
+}
+
 void Surface::BufferAttachment::Reset(base::WeakPtr<Buffer> buffer) {
-  if (buffer)
+  size_ = gfx::Size();
+  if (buffer) {
     buffer->OnAttach();
+    size_ = buffer->GetSize();
+  }
   if (buffer_)
     buffer_->OnDetach();
   buffer_ = buffer;
@@ -734,7 +766,7 @@ void Surface::UpdateResource(LayerTreeFrameSinkHolder* frame_sink_holder) {
       current_resource_.id = 0;
       // Use the buffer's size, so the AppendContentsToFrame() will append
       // a SolidColorDrawQuad with the buffer's size.
-      current_resource_.size = current_buffer_.buffer()->GetSize();
+      current_resource_.size = current_buffer_.size();
       current_resource_has_alpha_ = false;
     }
   } else {
@@ -775,9 +807,17 @@ void Surface::AppendContentsToFrame(const gfx::Point& origin,
   // Surface bounds are in DIPs, but |damage_rect| and |output_rect| are in
   // pixels, so we need to scale by the |device_scale_factor|.
   gfx::Rect damage_rect = gfx::SkIRectToRect(damage_.getBounds());
-  damage_rect.Offset(origin.x(), origin.y());
-  render_pass->damage_rect.Union(
-      gfx::ConvertRectToPixel(device_scale_factor, damage_rect));
+  if (!damage_rect.IsEmpty()) {
+    // Outset damage by 1 DIP to as damage is in surface coordinate space and
+    // client might not be aware of |device_scale_factor| and the
+    // scaling/filtering it requires.
+    damage_rect.Inset(-1, -1);
+    damage_rect.Offset(origin.x(), origin.y());
+    damage_rect.Intersect(output_rect);
+    render_pass->damage_rect.Union(
+        gfx::ConvertRectToPixel(device_scale_factor, damage_rect));
+  }
+
   render_pass->output_rect.Union(
       gfx::ConvertRectToPixel(device_scale_factor, output_rect));
 
@@ -860,11 +900,10 @@ void Surface::UpdateContentSize() {
         << ") most be expressible using integers when viewport is not set";
     content_size = gfx::ToCeiledSize(state_.crop.size());
   } else {
-    auto size = current_buffer_.buffer() ? current_buffer_.buffer()->GetSize()
-                                         : gfx::Size();
-    content_size = gfx::ToCeiledSize(gfx::ScaleSize(
-        gfx::SizeF(ToTransformedSize(size, state_.buffer_transform)),
-        1.0f / state_.buffer_scale));
+    content_size = gfx::ToCeiledSize(
+        gfx::ScaleSize(gfx::SizeF(ToTransformedSize(current_buffer_.size(),
+                                                    state_.buffer_transform)),
+                       1.0f / state_.buffer_scale));
   }
 
   // Enable/disable sub-surface based on if it has contents.

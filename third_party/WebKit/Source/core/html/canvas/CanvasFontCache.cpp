@@ -71,7 +71,7 @@ bool CanvasFontCache::GetFontUsingDefaultStyle(const String& font_string,
   }
 
   // Addition to LRU list taken care of inside parseFont
-  MutableStylePropertySet* parsed_style = ParseFont(font_string);
+  MutableCSSPropertyValueSet* parsed_style = ParseFont(font_string);
   if (!parsed_style)
     return false;
 
@@ -84,8 +84,9 @@ bool CanvasFontCache::GetFontUsingDefaultStyle(const String& font_string,
   return true;
 }
 
-MutableStylePropertySet* CanvasFontCache::ParseFont(const String& font_string) {
-  MutableStylePropertySet* parsed_style;
+MutableCSSPropertyValueSet* CanvasFontCache::ParseFont(
+    const String& font_string) {
+  MutableCSSPropertyValueSet* parsed_style;
   MutableStylePropertyMap::iterator i = fetched_fonts_.find(font_string);
   if (i != fetched_fonts_.end()) {
     DCHECK(font_lru_list_.Contains(font_string));
@@ -93,8 +94,9 @@ MutableStylePropertySet* CanvasFontCache::ParseFont(const String& font_string) {
     font_lru_list_.erase(font_string);
     font_lru_list_.insert(font_string);
   } else {
-    parsed_style = MutableStylePropertySet::Create(kHTMLStandardMode);
-    CSSParser::ParseValue(parsed_style, CSSPropertyFont, font_string, true);
+    parsed_style = MutableCSSPropertyValueSet::Create(kHTMLStandardMode);
+    CSSParser::ParseValue(parsed_style, CSSPropertyFont, font_string, true,
+                          document_->SecureContextMode());
     if (parsed_style->IsEmpty())
       return nullptr;
     // According to

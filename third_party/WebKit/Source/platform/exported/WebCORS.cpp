@@ -30,6 +30,7 @@
 #include "base/strings/stringprintf.h"
 #include "net/http/http_util.h"
 #include "platform/loader/fetch/FetchUtils.h"
+#include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/network/http_names.h"
 #include "platform/weborigin/KURL.h"
@@ -197,7 +198,7 @@ base::Optional<CORSError> CheckAccess(
   if (allow_origin_header_value == "*") {
     // A wildcard Access-Control-Allow-Origin can not be used if credentials are
     // to be sent, even with Access-Control-Allow-Credentials set to true.
-    if (!FetchUtils::ShouldTreatCredentialsModeAsInclude(credentials_mode))
+    if (credentials_mode != network::mojom::FetchCredentialsMode::kInclude)
       return base::nullopt;
     // TODO(hintzed): Is the following a sound substitute for
     // blink::ResourceResponse::IsHTTP()?
@@ -217,7 +218,7 @@ base::Optional<CORSError> CheckAccess(
     return CORSError::kAllowOriginMismatch;
   }
 
-  if (FetchUtils::ShouldTreatCredentialsModeAsInclude(credentials_mode)) {
+  if (credentials_mode == network::mojom::FetchCredentialsMode::kInclude) {
     const WebString& allow_credentials_header_value =
         response_header.Get(HTTPNames::Access_Control_Allow_Credentials);
     if (allow_credentials_header_value != "true")
@@ -379,6 +380,11 @@ WebString GetErrorString(const CORSError error,
           : String();
 
   switch (error) {
+    case CORSError::kDisallowedByMode:
+      return String::Format(
+          "Failed to load '%s': Cross origin requests are not allowed by "
+          "request mode.",
+          request_url.GetString().Utf8().data());
     case CORSError::kInvalidResponse:
       return String::Format(
           "%sInvalid response. Origin '%s' is therefore not allowed access.",

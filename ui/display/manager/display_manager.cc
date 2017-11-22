@@ -96,8 +96,7 @@ void SetInternalManagedDisplayModeList(ManagedDisplayInfo* info) {
 
 void MaybeInitInternalDisplay(ManagedDisplayInfo* info) {
   int64_t id = info->id();
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(::switches::kUseFirstDisplayAsInternal)) {
+  if (ForceFirstDisplayInternal()) {
     Display::SetInternalDisplayId(id);
     SetInternalManagedDisplayModeList(info);
   }
@@ -260,12 +259,12 @@ DisplayManager::BeginEndNotifier::~BeginEndNotifier() {
   }
 }
 
-// static
-int64_t DisplayManager::kUnifiedDisplayId = -10;
-
 DisplayManager::DisplayManager(std::unique_ptr<Screen> screen)
     : screen_(std::move(screen)),
       layout_store_(new DisplayLayoutStore),
+      is_multi_mirroring_enabled_(
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
+              ::switches::kEnableMultiMirroring)),
       weak_ptr_factory_(this) {
 #if defined(OS_CHROMEOS)
   configure_displays_ = chromeos::IsRunningAsSystemCompositor();
@@ -363,10 +362,12 @@ DisplayIdList DisplayManager::GetCurrentDisplayIdList() const {
   DisplayIdList display_id_list = CreateDisplayIdList(active_display_list_);
 
   if (IsInSoftwareMirrorMode()) {
-    CHECK_EQ(2u, num_connected_displays());
-    // This comment is to make it easy to distinguish the crash
-    // between two checks.
-    CHECK_EQ(1u, active_display_list_.size());
+    if (!is_multi_mirroring_enabled_) {
+      CHECK_EQ(2u, num_connected_displays());
+      // This comment is to make it easy to distinguish the crash
+      // between two checks.
+      CHECK_EQ(1u, active_display_list_.size());
+    }
 
     DisplayIdList software_mirroring_display_id_list =
         CreateDisplayIdList(software_mirroring_display_list_);
@@ -573,13 +574,7 @@ void DisplayManager::RegisterDisplayProperty(
     float ui_scale,
     const gfx::Insets* overscan_insets,
     const gfx::Size& resolution_in_pixels,
-    float device_scale_factor
-#if defined(OS_CHROMEOS)
-    ,
-    std::map<TouchDeviceIdentifier, TouchCalibrationData>*
-        touch_calibration_data_map
-#endif
-    ) {
+    float device_scale_factor) {
   if (display_info_.find(display_id) == display_info_.end())
     display_info_[display_id] =
         ManagedDisplayInfo(display_id, std::string(), false);
@@ -599,14 +594,7 @@ void DisplayManager::RegisterDisplayProperty(
     display_info_[display_id].set_configured_ui_scale(ui_scale);
   if (overscan_insets)
     display_info_[display_id].SetOverscanInsets(*overscan_insets);
-#if defined(OS_CHROMEOS)
-  if (touch_calibration_data_map) {
-    display_info_[display_id].SetTouchCalibrationDataMap(
-        *touch_calibration_data_map);
-  } else {
-    display_info_[display_id].ClearAllTouchCalibrationData();
-  }
-#endif
+
   if (!resolution_in_pixels.IsEmpty()) {
     DCHECK(!Display::IsInternalDisplayId(display_id));
     // Default refresh rate, until OnNativeDisplaysChanged() updates us with the
@@ -1094,7 +1082,7 @@ bool DisplayManager::IsInHardwareMirrorMode() const {
   return true;
 }
 
-DisplayIdList DisplayManager::GetMirroringDstDisplayIdList() const {
+DisplayIdList DisplayManager::GetMirroringDestinationDisplayIdList() const {
   if (IsInSoftwareMirrorMode())
     return CreateDisplayIdList(software_mirroring_display_list_);
   if (IsInHardwareMirrorMode())
@@ -1124,7 +1112,7 @@ bool DisplayManager::IsInUnifiedMode() const {
 
 void DisplayManager::SetUnifiedDesktopMatrix(
     const UnifiedDesktopLayoutMatrix& matrix) {
-  current_matrix_ = matrix;
+  current_unified_desktop_matrix_ = matrix;
   SetDefaultMultiDisplayModeForCurrentDisplays(UNIFIED);
 }
 
@@ -1188,9 +1176,10 @@ int64_t DisplayManager::GetDisplayIdForUIScaling() const {
 }
 
 void DisplayManager::SetMirrorMode(bool mirror) {
-  // TODO(oshima): Enable mirror mode for 2> displays. crbug.com/589319.
-  if (num_connected_displays() != 2)
+  if ((is_multi_mirroring_enabled_ && num_connected_displays() < 2) ||
+      (!is_multi_mirroring_enabled_ && num_connected_displays() != 2)) {
     return;
+  }
 
 #if defined(OS_CHROMEOS)
   if (configure_displays_) {
@@ -1266,62 +1255,78 @@ void DisplayManager::SetTouchCalibrationData(
     const TouchCalibrationData::CalibrationPointPairQuad& point_pair_quad,
     const gfx::Size& display_bounds,
     const TouchDeviceIdentifier& touch_device_identifier) {
-  // If the touch device identifier is associated with a touch device for the
-  // then do not perform any calibration. We do not want to modify any
-  // calibration information related to the internal display.
-  if (Display::HasInternalDisplay()) {
-    int64_t intenral_display_id = Display::InternalDisplayId();
-    if (GetDisplayInfo(intenral_display_id)
-            .HasTouchDevice(touch_device_identifier)) {
-      return;
-    }
-  }
-  bool update = false;
+  // We do not proceed with setting the calibration and association if the
+  // touch device identified by |touch_device_identifier| is an internal touch
+  // device.
+  if (IsInternalTouchscreenDevice(touch_device_identifier))
+    return;
+
+  // Id of the display the touch device in context is currently associated
+  // with. This display id will be equal to |display_id| if no reassociation is
+  // being performed.
+  int64_t previous_display_id =
+      touch_device_manager_->GetAssociatedDisplay(touch_device_identifier);
+
+  bool update_add_support = false;
+  bool update_remove_support = false;
+
   TouchCalibrationData calibration_data(point_pair_quad, display_bounds);
+  touch_device_manager_->AddTouchCalibrationData(touch_device_identifier,
+                                                 display_id, calibration_data);
 
   DisplayInfoList display_info_list;
   for (const auto& display : active_display_list_) {
     ManagedDisplayInfo info = GetDisplayInfo(display.id());
     if (info.id() == display_id) {
-      info.SetTouchCalibrationData(touch_device_identifier, calibration_data);
-      update = true;
+      info.set_touch_support(Display::TOUCH_SUPPORT_AVAILABLE);
+      update_add_support = true;
+    } else if (info.id() == previous_display_id) {
+      // Since we are reassociating the touch device to another display, we need
+      // to check whether the display it was previous connected to still
+      // supports touch.
+      if (!touch_device_manager_
+               ->GetAssociatedTouchDevicesForDisplay(previous_display_id)
+               .empty()) {
+        info.set_touch_support(Display::TOUCH_SUPPORT_UNAVAILABLE);
+        update_remove_support = true;
+      }
     }
     display_info_list.push_back(info);
   }
-  if (update) {
-    UpdateDisplaysWith(display_info_list);
-  } else {
-    display_info_[display_id].SetTouchCalibrationData(touch_device_identifier,
-                                                      calibration_data);
+
+  // Update the non active displays.
+  if (!update_add_support) {
+    display_info_[display_id].set_touch_support(
+        Display::TOUCH_SUPPORT_AVAILABLE);
   }
+  if (!update_remove_support &&
+      !touch_device_manager_
+           ->GetAssociatedTouchDevicesForDisplay(previous_display_id)
+           .empty()) {
+    display_info_[previous_display_id].set_touch_support(
+        Display::TOUCH_SUPPORT_UNAVAILABLE);
+  }
+  // Update the active displays.
+  if (update_add_support || update_remove_support)
+    UpdateDisplaysWith(display_info_list);
 }
 
 void DisplayManager::ClearTouchCalibrationData(
     int64_t display_id,
     base::Optional<TouchDeviceIdentifier> touch_device_identifier) {
-  bool update = false;
+  if (touch_device_identifier) {
+    touch_device_manager_->ClearTouchCalibrationData(*touch_device_identifier,
+                                                     display_id);
+  } else {
+    touch_device_manager_->ClearAllTouchCalibrationData(display_id);
+  }
+
   DisplayInfoList display_info_list;
   for (const auto& display : active_display_list_) {
     ManagedDisplayInfo info = GetDisplayInfo(display.id());
-    if (info.id() == display_id) {
-      if (touch_device_identifier)
-        info.ClearTouchCalibrationData(*touch_device_identifier);
-      else
-        info.ClearAllTouchCalibrationData();
-      update = true;
-    }
     display_info_list.push_back(info);
   }
-  if (update) {
-    UpdateDisplaysWith(display_info_list);
-  } else {
-    if (touch_device_identifier) {
-      display_info_[display_id].ClearTouchCalibrationData(
-          *touch_device_identifier);
-    } else {
-      display_info_[display_id].ClearAllTouchCalibrationData();
-    }
-  }
+  UpdateDisplaysWith(display_info_list);
 }
 #endif
 
@@ -1438,8 +1443,7 @@ bool DisplayManager::ResetDisplayToDefaultMode(int64_t id) {
 
 void DisplayManager::ResetInternalDisplayZoom() {
   if (IsInUnifiedMode()) {
-    const ManagedDisplayInfo& display_info =
-        GetDisplayInfo(DisplayManager::kUnifiedDisplayId);
+    const ManagedDisplayInfo& display_info = GetDisplayInfo(kUnifiedDisplayId);
     const ManagedDisplayInfo::ManagedDisplayModeList& modes =
         display_info.display_modes();
     auto iter = std::find_if(
@@ -1459,8 +1463,10 @@ void DisplayManager::CreateSoftwareMirroringDisplayInfo(
   // mirrored.
   switch (multi_display_mode_) {
     case MIRRORING: {
-      if (display_info_list->size() != 2)
+      if ((is_multi_mirroring_enabled_ && display_info_list->size() < 2) ||
+          (!is_multi_mirroring_enabled_ && display_info_list->size() != 2)) {
         return;
+      }
 
       int64_t source_id = kInvalidDisplayId;
       if (Display::HasInternalDisplay()) {
@@ -1517,27 +1523,28 @@ void DisplayManager::CreateUnifiedDesktopDisplayInfo(
   if (display_info_list->size() == 1)
     return;
 
-  if (!ValidateMatrix(current_matrix_) ||
-      !ValidateMatrixForDisplayInfoList(*display_info_list, current_matrix_)) {
+  if (!ValidateMatrix(current_unified_desktop_matrix_) ||
+      !ValidateMatrixForDisplayInfoList(*display_info_list,
+                                        current_unified_desktop_matrix_)) {
     // Recreate the default matrix where displays are laid out horizontally from
     // left to right.
-    current_matrix_.clear();
-    current_matrix_.resize(1);
+    current_unified_desktop_matrix_.clear();
+    current_unified_desktop_matrix_.resize(1);
     for (const auto& info : *display_info_list)
-      current_matrix_[0].emplace_back(info.id());
+      current_unified_desktop_matrix_[0].emplace_back(info.id());
   }
 
   software_mirroring_display_list_.clear();
   mirroring_display_id_to_unified_matrix_row_.clear();
   unified_display_rows_heights_.clear();
 
-  const size_t num_rows = current_matrix_.size();
-  const size_t num_columns = current_matrix_[0].size();
+  const size_t num_rows = current_unified_desktop_matrix_.size();
+  const size_t num_columns = current_unified_desktop_matrix_[0].size();
 
   // 1 - Find the maximum height per each row.
   std::vector<int> rows_max_heights;
   rows_max_heights.reserve(num_rows);
-  for (const auto& row : current_matrix_) {
+  for (const auto& row : current_unified_desktop_matrix_) {
     int max_height = std::numeric_limits<int>::min();
     for (const auto& id : row) {
       const ManagedDisplayInfo* info = FindInfoById(*display_info_list, id);
@@ -1564,7 +1571,7 @@ void DisplayManager::CreateUnifiedDesktopDisplayInfo(
   // Calculate the bounds of each row, and the maximum row width.
   int max_total_width = std::numeric_limits<int>::min();
   for (size_t i = 0; i < num_rows; ++i) {
-    const auto& row = current_matrix_[i];
+    const auto& row = current_unified_desktop_matrix_[i];
     const int max_row_height = rows_max_heights[i];
     gfx::Rect this_row_bounds;
     scales[i].resize(num_columns);
@@ -1605,7 +1612,7 @@ void DisplayManager::CreateUnifiedDesktopDisplayInfo(
   modes_param_list.reserve(num_rows * num_columns);
   int internal_display_index = -1;
   for (size_t i = 0; i < num_rows; ++i) {
-    const auto& row = current_matrix_[i];
+    const auto& row = current_unified_desktop_matrix_[i];
     gfx::Rect row_displays_bounds;
     for (size_t j = 0; j < num_columns; ++j) {
       const auto& id = row[j];
@@ -1776,7 +1783,13 @@ Display DisplayManager::CreateDisplayFromDisplayInfoById(int64_t id) {
   new_display.set_rotation(display_info.GetActiveRotation());
   new_display.set_touch_support(display_info.touch_support());
   new_display.set_maximum_cursor_size(display_info.maximum_cursor_size());
+#if defined(OS_CHROMEOS)
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(::switches::kUseMonitorColorSpace))
+    new_display.set_color_space(display_info.color_space());
+#else
   new_display.set_color_space(display_info.color_space());
+#endif
 
   if (internal_display_has_accelerometer_ && Display::IsInternalDisplayId(id)) {
     new_display.set_accelerometer_support(

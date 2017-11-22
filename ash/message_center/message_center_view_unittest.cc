@@ -22,7 +22,7 @@
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
-#include "ui/message_center/views/message_center_controller.h"
+#include "ui/message_center/views/message_view_delegate.h"
 #include "ui/message_center/views/notification_view.h"
 #include "ui/views/animation/bounds_animator_observer.h"
 #include "ui/views/widget/widget.h"
@@ -31,8 +31,8 @@ namespace ash {
 
 using message_center::FakeMessageCenter;
 using message_center::MessageCenter;
-using message_center::MessageCenterController;
-using message_center::MessageCenterTray;
+using message_center::MessageViewDelegate;
+using message_center::UiController;
 using message_center::MessageView;
 using message_center::Notification;
 using message_center::NotificationList;
@@ -64,7 +64,7 @@ class MockNotificationView : public NotificationView {
     virtual void RegisterCall(CallType type) = 0;
   };
 
-  explicit MockNotificationView(MessageCenterController* controller,
+  explicit MockNotificationView(MessageViewDelegate* controller,
                                 const Notification& notification,
                                 Test* test);
   ~MockNotificationView() override;
@@ -79,7 +79,7 @@ class MockNotificationView : public NotificationView {
   DISALLOW_COPY_AND_ASSIGN(MockNotificationView);
 };
 
-MockNotificationView::MockNotificationView(MessageCenterController* controller,
+MockNotificationView::MockNotificationView(MessageViewDelegate* controller,
                                            const Notification& notification,
                                            Test* test)
     : NotificationView(controller, notification), test_(test) {}
@@ -116,10 +116,8 @@ class FakeMessageCenterImpl : public FakeMessageCenter {
     if (type == RemoveType::NON_PINNED)
       remove_all_closable_notification_called_ = true;
   }
-  bool IsLockedState() const override { return locked_; }
   bool remove_all_closable_notification_called_ = false;
   NotificationList::Notifications visible_notifications_;
-  bool locked_ = false;
 };
 
 // This is the class we are testing, but we need to override some functions
@@ -127,7 +125,7 @@ class FakeMessageCenterImpl : public FakeMessageCenter {
 class MockMessageCenterView : public MessageCenterView {
  public:
   MockMessageCenterView(MessageCenter* message_center,
-                        MessageCenterTray* tray,
+                        UiController* ui_controller,
                         int max_height,
                         bool initially_settings_visible);
 
@@ -140,11 +138,11 @@ class MockMessageCenterView : public MessageCenterView {
 };
 
 MockMessageCenterView::MockMessageCenterView(MessageCenter* message_center,
-                                             MessageCenterTray* tray,
+                                             UiController* ui_controller,
                                              int max_height,
                                              bool initially_settings_visible)
     : MessageCenterView(message_center,
-                        tray,
+                        ui_controller,
                         max_height,
                         initially_settings_visible) {}
 
@@ -166,7 +164,7 @@ void MockMessageCenterView::PreferredSizeChanged() {
 
 class MessageCenterViewTest : public AshTestBase,
                               public MockNotificationView::Test,
-                              public MessageCenterController,
+                              public MessageViewDelegate,
                               views::BoundsAnimatorObserver {
  public:
   // Expose the private enum class MessageCenter::Mode for this test.
@@ -193,7 +191,7 @@ class MessageCenterViewTest : public AshTestBase,
   void UpdateNotification(const std::string& notification_id,
                           std::unique_ptr<Notification> notification);
 
-  // Overridden from MessageCenterController
+  // Overridden from MessageViewDelegate
   void ClickOnNotification(const std::string& notification_id) override;
   void RemoveNotification(const std::string& notification_id,
                           bool by_user) override;
@@ -201,6 +199,9 @@ class MessageCenterViewTest : public AshTestBase,
       const Notification& notification) override;
   void ClickOnNotificationButton(const std::string& notification_id,
                                  int button_index) override;
+  void ClickOnNotificationButtonWithReply(const std::string& notification_id,
+                                          int button_index,
+                                          const base::string16& reply) override;
   void ClickOnSettingsButton(const std::string& notification_id) override;
   void UpdateNotificationSize(const std::string& notification_id) override;
 
@@ -343,7 +344,7 @@ int MessageCenterViewTest::GetCallCount(CallType type) {
 }
 
 void MessageCenterViewTest::SetLockedState(bool locked) {
-  GetMessageCenterView()->OnLockedStateChanged(locked);
+  GetMessageCenterView()->OnLockStateChanged(locked);
 }
 
 void MessageCenterViewTest::ClickOnNotification(
@@ -389,6 +390,14 @@ std::unique_ptr<ui::MenuModel> MessageCenterViewTest::CreateMenuModel(
 void MessageCenterViewTest::ClickOnNotificationButton(
     const std::string& notification_id,
     int button_index) {
+  // For this test, this method should not be invoked.
+  NOTREACHED();
+}
+
+void MessageCenterViewTest::ClickOnNotificationButtonWithReply(
+    const std::string& notification_id,
+    int button_index,
+    const base::string16& reply) {
   // For this test, this method should not be invoked.
   NOTREACHED();
 }

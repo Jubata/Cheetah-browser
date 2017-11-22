@@ -7,23 +7,18 @@
       "backgroundColor": "#FFFFFF",
       "paintInvalidations": [
         {
+          "object": "LayoutView #document",
+          "rect": [0, 0, 800, 600],
+          "reason": "background"
+        },
+        {
           "object": "LayoutBlockFlow (positioned) UL id='submenu'",
           "rect": [48, 94, 40, 20],
           "reason": "geometry"
         },
         {
-          "object": "LayoutBlockFlow (positioned) UL id='submenu'",
-          "rect": [48, -156, 40, 20],
-          "reason": "geometry"
-        },
-        {
           "object": "LayoutListMarker (anonymous)",
           "rect": [70, 94, 7, 19],
-          "reason": "geometry"
-        },
-        {
-          "object": "LayoutListMarker (anonymous)",
-          "rect": [70, -156, 7, 19],
           "reason": "geometry"
         },
         {
@@ -35,6 +30,10 @@
     }
   ],
   "objectPaintInvalidations": [
+    {
+      "object": "LayoutView #document",
+      "reason": "background"
+    },
     {
       "object": "LayoutListMarker (anonymous)",
       "reason": "geometry"

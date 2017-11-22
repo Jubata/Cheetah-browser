@@ -201,6 +201,9 @@ const gfx::VectorIcon& AutocompleteMatch::TypeToVectorIcon(Type type) {
     case Type::PHYSICAL_WEB_OVERFLOW:
       return omnibox::kHttpIcon;
 
+    case Type::TAB_SEARCH:
+      return omnibox::kTabIcon;
+
     case Type::SEARCH_WHAT_YOU_TYPED:
     case Type::SEARCH_HISTORY:
     case Type::SEARCH_SUGGEST:

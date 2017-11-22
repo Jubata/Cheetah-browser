@@ -46,8 +46,8 @@
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/ContainerAnnotations.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/LeakAnnotations.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/allocator/Partitions.h"
 #include "public/platform/Platform.h"
 
@@ -639,9 +639,11 @@ void NormalPageArena::AllocatePage() {
       // gets a page and add the rest to the page pool.
       if (!page_memory) {
         bool result = memory->Commit();
-        // If you hit the ASSERT, it will mean that you're hitting
-        // the limit of the number of mmapped regions OS can support
-        // (e.g., /proc/sys/vm/max_map_count in Linux).
+        // If you hit the CHECK, it will mean that you're hitting the limit
+        // of the number of mmapped regions the OS can support
+        // (e.g., /proc/sys/vm/max_map_count in Linux) or on that Windows you
+        // have exceeded the max commit charge across all processes for the
+        // system.
         CHECK(result);
         page_memory = memory;
       } else {
@@ -1560,6 +1562,9 @@ void NormalPage::PopulateObjectStartBitMap() {
   for (Address header_address = start; header_address < PayloadEnd();) {
     HeapObjectHeader* header =
         reinterpret_cast<HeapObjectHeader*>(header_address);
+    // HeapObjectHeaders can be either valid or a FreeListEntry with a zapped
+    // magic value.
+    DCHECK(header->IsValidOrZapped());
     size_t object_offset = header_address - start;
     DCHECK(!(object_offset & kAllocationMask));
     size_t object_start_number = object_offset / kAllocationGranularity;
@@ -1830,7 +1835,7 @@ bool LargeObjectPage::Contains(Address object) {
 
 void HeapDoesNotContainCache::Flush() {
   if (has_entries_) {
-    for (int i = 0; i < kNumberOfEntries; ++i)
+    for (size_t i = 0; i < kNumberOfEntries; ++i)
       entries_[i] = nullptr;
     has_entries_ = false;
   }

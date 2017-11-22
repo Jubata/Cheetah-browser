@@ -355,6 +355,7 @@ component("net") {
     "ssl/ssl_connection_status_flags.h",
     "ssl/ssl_info.cc",
     "ssl/ssl_info.h",
+    "ssl/ssl_private_key.cc",
     "ssl/ssl_private_key.h",
     "ssl/ssl_server_config.cc",
     "ssl/ssl_server_config.h",
@@ -564,6 +565,8 @@ component("net") {
       "cert/internal/trust_store_nss.h",
       "cert/jwk_serializer.cc",
       "cert/jwk_serializer.h",
+      "cert/known_roots.cc",
+      "cert/known_roots.h",
       "cert/known_roots_mac.cc",
       "cert/known_roots_mac.h",
       "cert/known_roots_nss.cc",
@@ -586,6 +589,7 @@ component("net") {
       "cert/nss_cert_database_chromeos.h",
       "cert/nss_profile_filter_chromeos.cc",
       "cert/nss_profile_filter_chromeos.h",
+      "cert/root_cert_list_generated.h",
       "cert/test_keychain_search_list_mac.cc",
       "cert/test_keychain_search_list_mac.h",
       "cert/test_root_certs.cc",
@@ -993,6 +997,7 @@ component("net") {
       "nqe/event_creator.cc",
       "nqe/event_creator.h",
       "nqe/external_estimate_provider.h",
+      "nqe/network_id.cc",
       "nqe/network_id.h",
       "nqe/network_qualities_prefs_manager.cc",
       "nqe/network_qualities_prefs_manager.h",
@@ -1122,6 +1127,8 @@ component("net") {
       "quic/chromium/quic_clock_skew_detector.h",
       "quic/chromium/quic_connection_logger.cc",
       "quic/chromium/quic_connection_logger.h",
+      "quic/chromium/quic_connectivity_probing_manager.cc",
+      "quic/chromium/quic_connectivity_probing_manager.h",
       "quic/chromium/quic_crypto_client_stream_factory.cc",
       "quic/chromium/quic_crypto_client_stream_factory.h",
       "quic/chromium/quic_http_stream.cc",
@@ -1373,6 +1380,12 @@ component("net") {
       "quic/core/quic_write_blocked_list.h",
       "quic/core/spdy_utils.cc",
       "quic/core/spdy_utils.h",
+      "quic/core/tls_client_handshaker.cc",
+      "quic/core/tls_client_handshaker.h",
+      "quic/core/tls_handshaker.cc",
+      "quic/core/tls_handshaker.h",
+      "quic/core/tls_server_handshaker.cc",
+      "quic/core/tls_server_handshaker.h",
       "quic/platform/api/quic_aligned.h",
       "quic/platform/api/quic_bug_tracker.h",
       "quic/platform/api/quic_clock.cc",
@@ -1448,6 +1461,7 @@ component("net") {
       "quic/quartc/quartc_clock_interface.h",
       "quic/quartc/quartc_factory.cc",
       "quic/quartc/quartc_factory.h",
+      "quic/quartc/quartc_factory_interface.cc",
       "quic/quartc/quartc_factory_interface.h",
       "quic/quartc/quartc_packet_writer.cc",
       "quic/quartc/quartc_packet_writer.h",
@@ -1653,8 +1667,6 @@ component("net") {
       "url_request/data_protocol_handler.cc",
       "url_request/data_protocol_handler.h",
       "url_request/http_user_agent_settings.h",
-      "url_request/network_error_logging_delegate.cc",
-      "url_request/network_error_logging_delegate.h",
       "url_request/redirect_info.cc",
       "url_request/redirect_info.h",
       "url_request/redirect_util.cc",
@@ -1738,6 +1750,8 @@ component("net") {
 
     if (enable_reporting) {
       sources += [
+        "network_error_logging/network_error_logging_service.cc",
+        "network_error_logging/network_error_logging_service.h",
         "reporting/reporting_browsing_data_remover.cc",
         "reporting/reporting_browsing_data_remover.h",
         "reporting/reporting_cache.cc",
@@ -1772,6 +1786,8 @@ component("net") {
         "reporting/reporting_service.h",
         "reporting/reporting_uploader.cc",
         "reporting/reporting_uploader.h",
+        "url_request/network_error_logging_delegate.cc",
+        "url_request/network_error_logging_delegate.h",
       ]
     }
 
@@ -3107,6 +3123,10 @@ source_set("quic_test_tools") {
     "quic/test_tools/mock_clock.h",
     "quic/test_tools/mock_crypto_client_stream.cc",
     "quic/test_tools/mock_crypto_client_stream.h",
+    "quic/test_tools/mock_decrypter.cc",
+    "quic/test_tools/mock_decrypter.h",
+    "quic/test_tools/mock_encrypter.cc",
+    "quic/test_tools/mock_encrypter.h",
     "quic/test_tools/mock_quic_client_promised_info.cc",
     "quic/test_tools/mock_quic_client_promised_info.h",
     "quic/test_tools/mock_quic_dispatcher.cc",
@@ -4680,6 +4700,7 @@ test("net_unittests") {
     "cert/internal/verify_name_match_unittest.cc",
     "cert/internal/verify_signed_data_unittest.cc",
     "cert/jwk_serializer_unittest.cc",
+    "cert/known_roots_unittest.cc",
     "cert/merkle_audit_proof_unittest.cc",
     "cert/merkle_tree_leaf_unittest.cc",
     "cert/multi_log_ct_verifier_unittest.cc",
@@ -4794,6 +4815,7 @@ test("net_unittests") {
     "http/http_network_transaction_ssl_unittest.cc",
     "http/http_network_transaction_unittest.cc",
     "http/http_proxy_client_socket_pool_unittest.cc",
+    "http/http_proxy_client_socket_wrapper_unittest.cc",
     "http/http_request_headers_unittest.cc",
     "http/http_response_body_drainer_unittest.cc",
     "http/http_response_headers_unittest.cc",
@@ -4947,6 +4969,7 @@ test("net_unittests") {
     "quic/chromium/quic_chromium_client_stream_test.cc",
     "quic/chromium/quic_chromium_connection_helper_test.cc",
     "quic/chromium/quic_clock_skew_detector_test.cc",
+    "quic/chromium/quic_connectivity_probing_manager_test.cc",
     "quic/chromium/quic_end_to_end_unittest.cc",
     "quic/chromium/quic_http_stream_test.cc",
     "quic/chromium/quic_http_utils_test.cc",
@@ -5017,6 +5040,7 @@ test("net_unittests") {
     "quic/core/quic_framer_test.cc",
     "quic/core/quic_header_list_test.cc",
     "quic/core/quic_headers_stream_test.cc",
+    "quic/core/tls_handshaker_test.cc",
     "quic/test_tools/quic_test_utils_test.cc",
     "quic/test_tools/simulator/quic_endpoint_test.cc",
     "quic/test_tools/simulator/simulator_test.cc",
@@ -5221,6 +5245,7 @@ test("net_unittests") {
 
   if (enable_reporting) {
     sources += [
+      "network_error_logging/network_error_logging_service_unittest.cc",
       "reporting/reporting_browsing_data_remover_unittest.cc",
       "reporting/reporting_cache_unittest.cc",
       "reporting/reporting_delivery_agent_unittest.cc",
@@ -6205,6 +6230,7 @@ fuzzer_test("net_spdy_session_fuzzer") {
     ":test_support",
     "//base",
     "//net",
+    "//net/data/ssl/certificates:generate_fuzzer_cert_includes",
   ]
   dict = "data/fuzzer_dictionaries/net_spdy_session_fuzzer.dict"
   seed_corpus = "data/fuzzer_data/net_spdy_session_fuzzer/"
@@ -6247,8 +6273,8 @@ proto_library("reporting_policy_proto") {
 fuzzer_test("net_reporting_header_parser_fuzzer") {
   sources = [
     "reporting/reporting_header_parser_fuzzer.cc",
-    "reporting/reporting_test_util.h",
     "reporting/reporting_test_util.cc",
+    "reporting/reporting_test_util.h",
   ]
 
   deps = [
@@ -6260,5 +6286,23 @@ fuzzer_test("net_reporting_header_parser_fuzzer") {
     "//testing/libfuzzer/proto:json_proto",
     "//testing/libfuzzer/proto:json_proto_converter",
     "//third_party/libprotobuf-mutator",
+  ]
+}
+
+fuzzer_test("net_quic_stream_factory_fuzzer") {
+  sources = [
+    "quic/chromium/mock_crypto_client_stream_factory.cc",
+    "quic/chromium/mock_crypto_client_stream_factory.h",
+    "quic/chromium/quic_stream_factory_fuzzer.cc",
+    "quic/chromium/test_task_runner.cc",
+    "quic/chromium/test_task_runner.h",
+  ]
+
+  deps = [
+    ":net_fuzzer_test_support",
+    ":quic_test_tools",
+    ":test_support",
+    "//net",
+    "//net/data/ssl/certificates:generate_fuzzer_cert_includes",
   ]
 }

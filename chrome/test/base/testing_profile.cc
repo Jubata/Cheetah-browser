@@ -726,6 +726,12 @@ Profile* TestingProfile::GetOriginalProfile() {
   return this;
 }
 
+const Profile* TestingProfile::GetOriginalProfile() const {
+  if (original_profile_)
+    return original_profile_;
+  return this;
+}
+
 void TestingProfile::SetSupervisedUserId(const std::string& id) {
   supervised_user_id_ = id;
   if (!id.empty())
@@ -779,7 +785,7 @@ void TestingProfile::CreateTestingPrefService() {
   testing_prefs_ = new sync_preferences::TestingPrefServiceSyncable();
   prefs_.reset(testing_prefs_);
   user_prefs::UserPrefs::Set(this, prefs_.get());
-  chrome::RegisterUserProfilePrefs(testing_prefs_->registry());
+  RegisterUserProfilePrefs(testing_prefs_->registry());
 }
 
 void TestingProfile::CreatePrefServiceForSupervisedUser() {
@@ -797,7 +803,7 @@ void TestingProfile::CreatePrefServiceForSupervisedUser() {
       new user_prefs::PrefRegistrySyncable);
 
   prefs_ = factory.CreateSyncable(registry.get());
-  chrome::RegisterUserProfilePrefs(registry.get());
+  RegisterUserProfilePrefs(registry.get());
   user_prefs::UserPrefs::Set(this, prefs_.get());
 }
 

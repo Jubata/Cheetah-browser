@@ -7,15 +7,15 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/time/tick_clock.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/engagement/site_engagement_service.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/resource_coordinator/tab_manager.h"
 #include "chrome/browser/resource_coordinator/tab_manager_stats_collector.h"
+#include "chrome/browser/resource_coordinator/time.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#include "services/resource_coordinator/public/cpp/resource_coordinator_features.h"
 
 using base::TimeTicks;
 using content::WebContents;
@@ -27,7 +27,6 @@ namespace resource_coordinator {
 
 TabManager::WebContentsData::WebContentsData(content::WebContents* web_contents)
     : WebContentsObserver(web_contents),
-      test_tick_clock_(nullptr),
       time_to_purge_(base::TimeDelta::FromMinutes(30)),
       is_purged_(false),
       ukm_source_id_(0) {}
@@ -41,15 +40,9 @@ void TabManager::WebContentsData::DidStartLoading() {
 }
 
 void TabManager::WebContentsData::DidStopLoading() {
-  // We may already be in the stopped state if this is being invoked due to an
-  // iframe loading new content.
-  //
-  // TODO(lpy): switch to the new done signal (network and cpu quiescence) when
-  // available.
-  if (tab_data_.tab_loading_state != TAB_IS_LOADED) {
-    SetTabLoadingState(TAB_IS_LOADED);
-    g_browser_process->GetTabManager()->OnDidStopLoading(web_contents());
-  }
+  if (IsPageAlmostIdleSignalEnabled())
+    return;
+  NotifyTabIsLoaded();
 }
 
 void TabManager::WebContentsData::DidStartNavigation(
@@ -85,7 +78,7 @@ void TabManager::WebContentsData::DidFinishNavigation(
 }
 
 void TabManager::WebContentsData::WasShown() {
-  if (tab_data_.last_inactive_time == base::TimeTicks::UnixEpoch())
+  if (tab_data_.last_inactive_time.is_null())
     return;
   ReportUKMWhenBackgroundTabIsClosedOrForegrounded(true);
 }
@@ -108,14 +101,21 @@ void TabManager::WebContentsData::WebContentsDestroyed() {
 
   ReportUKMWhenTabIsClosed();
 
-  if (!web_contents()->IsVisible() &&
-      tab_data_.last_inactive_time != base::TimeTicks::UnixEpoch()) {
+  if (!web_contents()->IsVisible() && !tab_data_.last_inactive_time.is_null())
     ReportUKMWhenBackgroundTabIsClosedOrForegrounded(false);
-  }
 
   SetTabLoadingState(TAB_IS_NOT_LOADING);
   SetIsInSessionRestore(false);
   g_browser_process->GetTabManager()->OnWebContentsDestroyed(web_contents());
+}
+
+void TabManager::WebContentsData::NotifyTabIsLoaded() {
+  // We may already be in the stopped state if this is being invoked due to an
+  // iframe loading new content.
+  if (tab_data_.tab_loading_state != TAB_IS_LOADED) {
+    SetTabLoadingState(TAB_IS_LOADED);
+    g_browser_process->GetTabManager()->OnTabIsLoaded(web_contents());
+  }
 }
 
 bool TabManager::WebContentsData::IsDiscarded() {
@@ -137,12 +137,7 @@ void TabManager::WebContentsData::SetDiscardState(bool state) {
                                delta, base::TimeDelta::FromSeconds(1),
                                base::TimeDelta::FromDays(1), 100);
 
-    // Record the site engagement score if available.
-    if (tab_data_.engagement_score >= 0.0) {
-      UMA_HISTOGRAM_COUNTS_100("TabManager.Discarding.ReloadedEngagementScore",
-                               tab_data_.engagement_score);
-    }
-    if (tab_data_.last_inactive_time != base::TimeTicks::UnixEpoch()) {
+    if (!tab_data_.last_inactive_time.is_null()) {
       delta = tab_data_.last_reload_time - tab_data_.last_inactive_time;
       UMA_HISTOGRAM_CUSTOM_TIMES("TabManager.Discarding.InactiveToReloadTime",
                                  delta, base::TimeDelta::FromSeconds(1),
@@ -154,18 +149,6 @@ void TabManager::WebContentsData::SetDiscardState(bool state) {
     UMA_HISTOGRAM_CUSTOM_COUNTS("TabManager.Discarding.DiscardCount",
                                 ++discard_count, 1, 1000, 50);
     tab_data_.last_discard_time = NowTicks();
-    // Record the site engagement score if available.
-    if (SiteEngagementService::IsEnabled()) {
-      SiteEngagementService* service = SiteEngagementService::Get(
-          Profile::FromBrowserContext(web_contents()->GetBrowserContext()));
-      if (service) {
-        tab_data_.engagement_score =
-            service->GetScore(web_contents()->GetLastCommittedURL());
-        UMA_HISTOGRAM_COUNTS_100(
-            "TabManager.Discarding.DiscardedEngagementScore",
-            tab_data_.engagement_score);
-      }
-    }
   }
 
   tab_data_.is_discarded = state;
@@ -214,21 +197,7 @@ void TabManager::WebContentsData::CopyState(
     CreateForWebContents(new_contents);
     FromWebContents(new_contents)->tab_data_ =
         FromWebContents(old_contents)->tab_data_;
-    FromWebContents(new_contents)->test_tick_clock_ =
-        FromWebContents(old_contents)->test_tick_clock_;
   }
-}
-
-void TabManager::WebContentsData::set_test_tick_clock(
-    base::TickClock* test_tick_clock) {
-  test_tick_clock_ = test_tick_clock;
-}
-
-TimeTicks TabManager::WebContentsData::NowTicks() const {
-  if (!test_tick_clock_)
-    return TimeTicks::Now();
-
-  return test_tick_clock_->NowTicks();
 }
 
 void TabManager::WebContentsData::ReportUKMWhenTabIsClosed() {
@@ -255,12 +224,6 @@ TabManager::WebContentsData::Data::Data()
     : is_discarded(false),
       discard_count(0),
       is_recently_audible(false),
-      navigation_time(TimeTicks::UnixEpoch()),
-      last_audio_change_time(TimeTicks::UnixEpoch()),
-      last_discard_time(TimeTicks::UnixEpoch()),
-      last_reload_time(TimeTicks::UnixEpoch()),
-      last_inactive_time(TimeTicks::UnixEpoch()),
-      engagement_score(-1.0),
       is_auto_discardable(true),
       tab_loading_state(TAB_IS_NOT_LOADING),
       is_in_session_restore(false),
@@ -273,7 +236,6 @@ bool TabManager::WebContentsData::Data::operator==(const Data& right) const {
          last_discard_time == right.last_discard_time &&
          last_reload_time == right.last_reload_time &&
          last_inactive_time == right.last_inactive_time &&
-         engagement_score == right.engagement_score &&
          tab_loading_state == right.tab_loading_state &&
          is_in_session_restore == right.is_in_session_restore &&
          is_restored_in_foreground == right.is_restored_in_foreground;

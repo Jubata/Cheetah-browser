@@ -10,6 +10,7 @@
 // clang-format off
 #include "V8TestIntegerIndexed.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/IDLTypes.h"
 #include "bindings/core/v8/NativeValueTraitsImpl.h"
@@ -23,7 +24,6 @@
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8ObjectConstructor.h"
 #include "platform/wtf/GetPtr.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -44,7 +44,6 @@ const WrapperTypeInfo V8TestIntegerIndexed::wrapperTypeInfo = {
     WrapperTypeInfo::kWrapperTypeObjectPrototype,
     WrapperTypeInfo::kObjectClassId,
     WrapperTypeInfo::kNotInheritFromActiveScriptWrappable,
-    WrapperTypeInfo::kIndependent,
 };
 #if defined(COMPONENT_BUILD) && defined(WIN32) && defined(__clang__)
 #pragma clang diagnostic pop
@@ -157,14 +156,14 @@ static void forEachMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
   ScriptValue callback;
   ScriptValue thisArg;
-  if (0 < info.Length() && info[0]->IsFunction()) {
+  if (info[0]->IsFunction()) {
     callback = ScriptValue(ScriptState::Current(info.GetIsolate()), info[0]);
   } else {
     exceptionState.ThrowTypeError("The callback provided as parameter 1 is not a function.");
     return;
   }
 
-  thisArg = ScriptValue(ScriptState::Current(info.GetIsolate()), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+  thisArg = ScriptValue(ScriptState::Current(info.GetIsolate()), info[1]);
 
   impl->forEachForBinding(scriptState, ScriptValue(scriptState, info.Holder()), callback, thisArg, exceptionState);
   if (exceptionState.HadException()) {

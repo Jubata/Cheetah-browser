@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.customtabs;
 
 import static org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider.CUSTOM_TABS_UI_TYPE_DEFAULT;
 import static org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider.CUSTOM_TABS_UI_TYPE_INFO_PAGE;
+import static org.chromium.chrome.browser.webapps.WebappActivity.ACTIVITY_TYPE_OTHER;
 
 import android.app.Activity;
 import android.app.PendingIntent;
@@ -80,6 +81,7 @@ import org.chromium.chrome.browser.toolbar.ToolbarControlContainer;
 import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.util.IntentUtils;
 import org.chromium.chrome.browser.util.UrlUtilities;
+import org.chromium.chrome.browser.webapps.WebappInterceptNavigationDelegate;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.WebContents;
@@ -142,14 +144,12 @@ public class CustomTabActivity extends ChromeActivity {
 
     private final CustomTabsConnection mConnection = CustomTabsConnection.getInstance();
 
+    private WebappInterceptNavigationDelegate.CustomTabTimeSpentLogger mWebappTimeSpentLogger;
+
     private static class PageLoadMetricsObserver implements PageLoadMetrics.Observer {
         private final CustomTabsConnection mConnection;
         private final CustomTabsSessionToken mSession;
         private final WebContents mWebContents;
-
-        private int mEffectiveConnectionType; // See net::EffectiveConnectionType.
-        private long mHttpRttMs;
-        private long mTransportRttMs;
 
         public PageLoadMetricsObserver(CustomTabsConnection connection,
                 CustomTabsSessionToken session, Tab tab) {
@@ -163,9 +163,11 @@ public class CustomTabActivity extends ChromeActivity {
                 long httpRttMs, long transportRttMs) {
             if (webContents != mWebContents) return;
 
-            mEffectiveConnectionType = effectiveConnectionType;
-            mHttpRttMs = httpRttMs;
-            mTransportRttMs = transportRttMs;
+            Bundle args = new Bundle();
+            args.putLong(PageLoadMetrics.EFFECTIVE_CONNECTION_TYPE, effectiveConnectionType);
+            args.putLong(PageLoadMetrics.HTTP_RTT, httpRttMs);
+            args.putLong(PageLoadMetrics.TRANSPORT_RTT, transportRttMs);
+            mConnection.notifyPageLoadMetrics(mSession, args);
         }
 
         @Override
@@ -199,9 +201,6 @@ public class CustomTabActivity extends ChromeActivity {
             args.putLong(PageLoadMetrics.REQUEST_START, requestStartMs);
             args.putLong(PageLoadMetrics.RESPONSE_START, sendStartMs);
             args.putLong(PageLoadMetrics.RESPONSE_END, sendEndMs);
-            args.putLong(PageLoadMetrics.EFFECTIVE_CONNECTION_TYPE, mEffectiveConnectionType);
-            args.putLong(PageLoadMetrics.HTTP_RTT, mHttpRttMs);
-            args.putLong(PageLoadMetrics.TRANSPORT_RTT, mTransportRttMs);
             mConnection.notifyPageLoadMetrics(mSession, args);
         }
     }
@@ -681,12 +680,20 @@ public class CustomTabActivity extends ChromeActivity {
             }
         }
         mIsInitialResume = false;
+        mWebappTimeSpentLogger =
+                WebappInterceptNavigationDelegate.CustomTabTimeSpentLogger
+                        .createInstanceAndStartTimer(getIntent().getIntExtra(
+                                CustomTabIntentDataProvider.EXTRA_BROWSER_LAUNCH_SOURCE,
+                                ACTIVITY_TYPE_OTHER));
     }
 
     @Override
     public void onPauseWithNative() {
         super.onPauseWithNative();
         mConnection.notifyNavigationEvent(mSession, CustomTabsCallback.TAB_HIDDEN);
+        if (mWebappTimeSpentLogger != null) {
+            mWebappTimeSpentLogger.onPause();
+        }
     }
 
     @Override

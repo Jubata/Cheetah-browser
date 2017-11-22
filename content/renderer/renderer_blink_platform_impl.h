@@ -20,7 +20,6 @@
 #include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
 #include "content/common/file_utilities.mojom.h"
-#include "content/common/origin_trials/trial_policy_impl.h"
 #include "content/common/possibly_associated_interface_ptr.h"
 #include "content/public/common/url_loader_factory.mojom.h"
 #include "content/renderer/origin_trials/web_trial_token_validator_impl.h"
@@ -39,7 +38,6 @@ namespace scheduler {
 class RendererScheduler;
 class WebThreadBase;
 }
-class TrialPolicy;
 class WebCanvasCaptureHandler;
 class WebGraphicsContext3DProvider;
 class WebMediaPlayer;
@@ -114,6 +112,8 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
   blink::WebThread* CompositorThread() const override;
   std::unique_ptr<blink::WebStorageNamespace> CreateLocalStorageNamespace()
       override;
+  std::unique_ptr<blink::WebStorageNamespace> CreateSessionStorageNamespace(
+      int64_t namespace_id) override;
   blink::Platform::FileHandle DatabaseOpenFile(
       const blink::WebString& vfs_file_name,
       int desired_flags) override;
@@ -217,9 +217,9 @@ class CONTENT_EXPORT RendererBlinkPlatformImpl : public BlinkPlatformImpl {
                     const blink::WebString& sample) override;
   void RecordRapporURL(const char* metric, const blink::WebURL& url) override;
   blink::WebPushProvider* PushProvider() override;
-  std::unique_ptr<blink::WebTrialTokenValidator> TrialTokenValidator() override;
-  std::unique_ptr<blink::TrialPolicy> OriginTrialPolicy() override;
-  blink::WebNotificationManager* GetNotificationManager() override;
+  std::unique_ptr<blink::WebTrialTokenValidator> CreateTrialTokenValidator()
+      override;
+  blink::WebNotificationManager* GetWebNotificationManager() override;
   void DidStartWorkerThread() override;
   void WillStopWorkerThread() override;
   void WorkerContextCreated(const v8::Local<v8::Context>& worker) override;

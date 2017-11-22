@@ -21,12 +21,12 @@
 #ifndef CSSImageValue_h
 #define CSSImageValue_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/css/CSSValue.h"
 #include "platform/CrossOriginAttributeValue.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/weborigin/Referrer.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -68,6 +68,7 @@ class CORE_EXPORT CSSImageValue : public CSSValue {
       CrossOriginAttributeValue = kCrossOriginAttributeNotSet);
 
   const String& Url() const { return absolute_url_; }
+  const String& RelativeUrl() const { return relative_url_; }
 
   const Referrer& GetReferrer() const { return referrer_; }
 

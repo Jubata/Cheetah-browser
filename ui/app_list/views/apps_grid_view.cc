@@ -8,6 +8,8 @@
 #include <set>
 #include <string>
 
+#include "ash/app_list/model/app_list_folder_item.h"
+#include "ash/app_list/model/app_list_item.h"
 #include "base/guid.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
@@ -15,9 +17,8 @@
 #include "build/build_config.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_features.h"
-#include "ui/app_list/app_list_folder_item.h"
-#include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_switches.h"
+#include "ui/app_list/app_list_util.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/pagination_controller.h"
 #include "ui/app_list/views/app_list_drag_and_drop_host.h"
@@ -301,7 +302,6 @@ class AppsGridView::FadeoutLayerDelegate : public ui::LayerDelegate {
         SK_ColorTRANSPARENT));
     canvas->DrawRect(bottom_rect, flags);
   }
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                   float new_device_scale_factor) override {}
 
@@ -328,8 +328,8 @@ AppsGridView::AppsGridView(ContentsView* contents_view,
   layer()->SetFillsBoundsOpaquely(false);
 
   if (is_fullscreen_app_list_enabled_ && !folder_delegate_) {
-    suggestions_container_ = new SuggestionsContainerView(
-        contents_view_, nullptr, &pagination_model_);
+    suggestions_container_ =
+        new SuggestionsContainerView(contents_view_, &pagination_model_);
     AddChildView(suggestions_container_);
     UpdateSuggestions();
 
@@ -706,7 +706,8 @@ AppListItemView* AppsGridView::GetItemViewAt(int index) const {
 
 void AppsGridView::SetTopItemViewsVisible(bool visible) {
   int top_item_count =
-      std::min(static_cast<int>(kNumFolderTopItems), view_model_.view_size());
+      std::min(static_cast<int>(FolderImage::kNumFolderTopItems),
+               view_model_.view_size());
   for (int i = 0; i < top_item_count; ++i)
     GetItemViewAt(i)->icon()->SetVisible(visible);
 }
@@ -825,7 +826,7 @@ gfx::Size AppsGridView::CalculatePreferredSize() const {
         gfx::Size(kAppsGridPreferredWidth, kAppsGridPreferredHeight);
     // Add padding to both side of the apps grid to keep it horizontally
     // centered since we place page switcher on the right side.
-    size.Enlarge(kAppsGridLeftRightPaddingFullscreen * 2, 0);
+    size.Enlarge(kAppsGridLeftRightPadding * 2, 0);
     return size;
   }
 
@@ -865,7 +866,7 @@ void AppsGridView::Layout() {
   if (is_fullscreen_app_list_enabled_) {
     if (fadeout_layer_delegate_)
       fadeout_layer_delegate_->layer()->SetBounds(layer()->bounds());
-    rect.Inset(0, kSearchBoxFullscreenBottomPadding, 0, 0);
+    rect.Inset(0, kSearchBoxBottomPadding, 0, 0);
   }
 
   gfx::Rect indicator_rect(rect);
@@ -929,20 +930,19 @@ void AppsGridView::Layout() {
   page_switcher_view_->SetBoundsRect(rect);
 }
 
-void AppsGridView::UpdateControlVisibility(
-    AppListView::AppListState app_list_state,
-    bool is_in_drag) {
+void AppsGridView::UpdateControlVisibility(AppListViewState app_list_state,
+                                           bool is_in_drag) {
   if (!is_fullscreen_app_list_enabled_)
     return;
 
   const bool fullscreen_apps_in_drag =
-      app_list_state == AppListView::FULLSCREEN_ALL_APPS || is_in_drag;
+      app_list_state == AppListViewState::FULLSCREEN_ALL_APPS || is_in_drag;
   if (all_apps_indicator_)
     all_apps_indicator_->SetVisible(fullscreen_apps_in_drag);
 
   if (expand_arrow_view_) {
     expand_arrow_view_->SetVisible(
-        app_list_state == AppListView::PEEKING ? true : false);
+        app_list_state == AppListViewState::PEEKING ? true : false);
   }
 
   for (int i = 0; i < view_model_.view_size(); ++i) {
@@ -956,16 +956,15 @@ void AppsGridView::UpdateControlVisibility(
 bool AppsGridView::OnKeyPressed(const ui::KeyEvent& event) {
   if (is_app_list_focus_enabled_) {
     // Let the FocusManager handle Left/Right keys.
-    if (event.key_code() != ui::VKEY_UP && event.key_code() != ui::VKEY_DOWN)
+    if (!CanProcessUpDownKeyTraversal(event))
       return false;
 
-    AppListView::AppListState state =
-        contents_view_->app_list_view()->app_list_state();
+    AppListViewState state = contents_view_->app_list_view()->app_list_state();
     bool arrow_up = event.key_code() == ui::VKEY_UP;
-    if (state == AppListView::PEEKING)
+    if (state == AppListViewState::PEEKING)
       return HandleFocusMovementInPeekingState(arrow_up);
 
-    DCHECK(state == AppListView::FULLSCREEN_ALL_APPS);
+    DCHECK(state == AppListViewState::FULLSCREEN_ALL_APPS);
     return HandleFocusMovementInFullscreenAllAppsState(arrow_up);
   }
   // TODO(weidongg/766807) Remove everything below when the flag is enabled by
@@ -1703,9 +1702,7 @@ bool AppsGridView::CalculateFolderDropTarget(const gfx::Point& point,
   // Items can only be dropped into non-folders (which have no children) or
   // folders that have fewer than the max allowed items.
   // The OEM folder does not allow drag/drop of other items into it.
-  if (target_item->ChildItemCount() >= (is_fullscreen_app_list_enabled_
-                                            ? kMaxFolderItemsFullscreen
-                                            : kMaxFolderItems) ||
+  if (target_item->ChildItemCount() >= kMaxFolderItems ||
       IsOEMFolderItem(target_item)) {
     return false;
   }
@@ -1986,7 +1983,7 @@ void AppsGridView::UpdateOpacity() {
   int screen_bottom = app_list_view->GetScreenBottom();
   bool should_restore_opacity =
       !app_list_view->is_in_drag() &&
-      (app_list_view->app_list_state() != AppListView::AppListState::CLOSED);
+      (app_list_view->app_list_state() != AppListViewState::CLOSED);
 
   // The opacity of suggested apps is a function of the fractional displacement
   // of the app list from collapsed(0) to peeking(1) state. When the fraction
@@ -2549,7 +2546,7 @@ void AppsGridView::OnListItemAdded(size_t index, AppListItem* item) {
     // Ensure that AppListItems that are added to the AppListItemList are not
     // shown while in PEEKING. The visibility of the app icons will be updated
     // on drag/animation from PEEKING.
-    view->SetVisible(model_->state_fullscreen() != AppListView::PEEKING);
+    view->SetVisible(model_->state_fullscreen() != AppListViewState::PEEKING);
   }
   UpdatePaging();
   UpdatePulsingBlockViews();
@@ -2674,20 +2671,19 @@ int AppsGridView::GetHeightOnTopOfAllAppsTiles(int page) const {
 
   if (page == 0) {
     DCHECK(suggestions_container_ && all_apps_indicator_);
-    return kSearchBoxFullscreenBottomPadding +
+    return kSearchBoxBottomPadding +
            suggestions_container_->GetPreferredSize().height() +
            kSuggestionsAllAppsIndicatorPadding +
            all_apps_indicator_->GetPreferredSize().height() +
            kAllAppsIndicatorBottomPadding - kTileVerticalPadding;
   }
-  return kSearchBoxFullscreenBottomPadding - kTileVerticalPadding;
+  return kSearchBoxBottomPadding - kTileVerticalPadding;
 }
 
 gfx::Rect AppsGridView::GetExpectedTileBounds(const Index& index) const {
   gfx::Rect bounds(GetContentsBounds());
   if (is_fullscreen_app_list_enabled_) {
-    bounds.Offset(kAppsGridLeftRightPaddingFullscreen - kTileHorizontalPadding,
-                  0);
+    bounds.Offset(kAppsGridLeftRightPadding - kTileHorizontalPadding, 0);
   }
   bounds.Inset(0, GetHeightOnTopOfAllAppsTiles(index.page), 0, 0);
   int row = index.slot / cols_;

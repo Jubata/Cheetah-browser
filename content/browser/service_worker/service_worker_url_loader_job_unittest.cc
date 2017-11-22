@@ -93,7 +93,7 @@ class NavigationPreloadLoaderClient final : public mojom::URLLoaderClient {
     // We could call OnResponseStream() here, but for simplicity, don't do
     // anything until OnComplete().
   }
-  void OnComplete(const ResourceRequestCompletionStatus& status) override {
+  void OnComplete(const network::URLLoaderCompletionStatus& status) override {
     blink::mojom::ServiceWorkerStreamCallbackPtr stream_callback;
     auto stream_handle = blink::mojom::ServiceWorkerStreamHandle::New();
     stream_handle->callback_request = mojo::MakeRequest(&stream_callback);
@@ -110,7 +110,7 @@ class NavigationPreloadLoaderClient final : public mojom::URLLoaderClient {
             response_head_.response_type_via_service_worker,
             std::make_unique<ServiceWorkerHeaderMap>(), "" /* blob_uuid */,
             0 /* blob_size */, nullptr /* blob */,
-            blink::kWebServiceWorkerResponseErrorUnknown, base::Time(),
+            blink::mojom::ServiceWorkerResponseError::kUnknown, base::Time(),
             false /* response_is_in_cache_storage */,
             std::string() /* response_cache_storage_cache_name */,
             std::make_unique<
@@ -183,7 +183,7 @@ class MockNetworkURLLoaderFactory final : public mojom::URLLoaderFactory {
                                          MOJO_WRITE_DATA_FLAG_ALL_OR_NONE);
     client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
 
-    ResourceRequestCompletionStatus status;
+    network::URLLoaderCompletionStatus status;
     status.error_code = net::OK;
     client->OnComplete(status);
   }
@@ -307,8 +307,8 @@ class Helper : public EmbeddedWorkerTestHelper {
                 network::mojom::FetchResponseType::kDefault,
                 std::make_unique<ServiceWorkerHeaderMap>(), blob_uuid_,
                 blob_size_, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorUnknown, base::Time(),
-                false /* response_is_in_cache_storage */,
+                blink::mojom::ServiceWorkerResponseError::kUnknown,
+                base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
                     ServiceWorkerHeaderList>() /* cors_exposed_header_names */),
@@ -324,8 +324,8 @@ class Helper : public EmbeddedWorkerTestHelper {
                 network::mojom::FetchResponseType::kDefault,
                 std::make_unique<ServiceWorkerHeaderMap>(), "" /* blob_uuid */,
                 0 /* blob_size */, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorUnknown, base::Time(),
-                false /* response_is_in_cache_storage */,
+                blink::mojom::ServiceWorkerResponseError::kUnknown,
+                base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
                     ServiceWorkerHeaderList>() /* cors_exposed_header_names */),
@@ -348,7 +348,7 @@ class Helper : public EmbeddedWorkerTestHelper {
                 network::mojom::FetchResponseType::kDefault,
                 std::make_unique<ServiceWorkerHeaderMap>(), "" /* blob_uuid */,
                 0 /* blob_size */, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorPromiseRejected,
+                blink::mojom::ServiceWorkerResponseError::kPromiseRejected,
                 base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
@@ -388,8 +388,8 @@ class Helper : public EmbeddedWorkerTestHelper {
                 network::mojom::FetchResponseType::kDefault,
                 std::make_unique<ServiceWorkerHeaderMap>(), "" /* blob_uuid */,
                 0 /* blob_size */, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorUnknown, base::Time(),
-                false /* response_is_in_cache_storage */,
+                blink::mojom::ServiceWorkerResponseError::kUnknown,
+                base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
                     ServiceWorkerHeaderList>() /* cors_exposed_header_names */),
@@ -404,8 +404,8 @@ class Helper : public EmbeddedWorkerTestHelper {
                 std::make_unique<std::vector<GURL>>(), 301, "Moved Permanently",
                 network::mojom::FetchResponseType::kDefault, std::move(headers),
                 "" /* blob_uuid */, 0 /* blob_size */, nullptr /* blob */,
-                blink::kWebServiceWorkerResponseErrorUnknown, base::Time(),
-                false /* response_is_in_cache_storage */,
+                blink::mojom::ServiceWorkerResponseError::kUnknown,
+                base::Time(), false /* response_is_in_cache_storage */,
                 std::string() /* response_cache_storage_cache_name */,
                 std::make_unique<
                     ServiceWorkerHeaderList>() /* cors_exposed_header_names */),

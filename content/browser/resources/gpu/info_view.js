@@ -93,8 +93,6 @@ cr.define('gpu', function() {
         'flash_stage3d_baseline': 'Flash Stage3D Baseline profile',
         'texture_sharing': 'Texture Sharing',
         'video_decode': 'Video Decode',
-        'video_encode': 'Video Encode',
-        'panel_fitting': 'Panel Fitting',
         'rasterization': 'Rasterization',
         'multiple_raster_threads': 'Multiple Raster Threads',
         'native_gpu_memory_buffers': 'Native GpuMemoryBuffers',
@@ -243,6 +241,13 @@ cr.define('gpu', function() {
           this.setTable_('display-info', gpuInfo.displayInfo);
         else
           this.setTable_('display-info', []);
+
+        if (gpuInfo.videoAcceleratorsInfo) {
+          this.setTable_(
+              'video-acceleration-info', gpuInfo.videoAcceleratorsInfo);
+        } else {
+          this.setTable_('video-acceleration-info', []);
+        }
 
         if (gpuInfo.diagnostics) {
           diagnosticsDiv.hidden = false;

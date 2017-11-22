@@ -57,7 +57,9 @@ void FakePowerManagerClient::DecreaseScreenBrightness(bool allow_off) {}
 void FakePowerManagerClient::IncreaseScreenBrightness() {}
 
 void FakePowerManagerClient::SetScreenBrightnessPercent(double percent,
-                                                        bool gradual) {}
+                                                        bool gradual) {
+  screen_brightness_percent_ = percent;
+}
 
 void FakePowerManagerClient::GetScreenBrightnessPercent(
     DBusMethodCallback<double> callback) {
@@ -199,6 +201,12 @@ void FakePowerManagerClient::SendKeyboardBrightnessChanged(
     bool user_initiated) {
   for (auto& observer : observers_)
     observer.KeyboardBrightnessChanged(level, user_initiated);
+}
+
+void FakePowerManagerClient::SendScreenIdleStateChanged(
+    const power_manager::ScreenIdleState& proto) {
+  for (auto& observer : observers_)
+    observer.ScreenIdleStateChanged(proto);
 }
 
 void FakePowerManagerClient::SendPowerButtonEvent(

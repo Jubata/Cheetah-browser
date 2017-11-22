@@ -33,6 +33,7 @@
 #include <string>
 #include <utility>
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/CoreExport.h"
@@ -70,7 +71,6 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/ReferrerPolicy.h"
 #include "platform/wtf/HashSet.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/WebFocusType.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 
@@ -150,6 +150,7 @@ class NthIndexCache;
 class OriginAccessEntry;
 class Page;
 class PendingAnimations;
+class Policy;
 class ProcessingInstruction;
 class PropertyRegistry;
 class QualifiedName;
@@ -283,6 +284,9 @@ class CORE_EXPORT Document : public ContainerNode,
   static Document* Create(const Document&);
   ~Document() override;
 
+  // Support JS introspection of frame policy (e.g. feature policy).
+  Policy* policy();
+
   MediaQueryMatcher& GetMediaQueryMatcher();
 
   void MediaQueryAffectingValueChanged();
@@ -355,8 +359,8 @@ class CORE_EXPORT Document : public ContainerNode,
                            ExceptionState&);
   Element* createElement(const QualifiedName&, CreateElementFlags);
 
-  Element* ElementFromPoint(int x, int y) const;
-  HeapVector<Member<Element>> ElementsFromPoint(int x, int y) const;
+  Element* ElementFromPoint(double x, double y) const;
+  HeapVector<Member<Element>> ElementsFromPoint(double x, double y) const;
   Range* caretRangeFromPoint(int x, int y);
   Element* scrollingElement();
   // When calling from C++ code, use this method. scrollingElement() is
@@ -400,7 +404,7 @@ class CORE_EXPORT Document : public ContainerNode,
   String suborigin() const;
 
   String visibilityState() const;
-  PageVisibilityState GetPageVisibilityState() const;
+  mojom::PageVisibilityState GetPageVisibilityState() const;
   bool hidden() const;
   void DidChangeVisibilityState();
 
@@ -575,9 +579,9 @@ class CORE_EXPORT Document : public ContainerNode,
   LayoutView* GetLayoutView() const { return layout_view_; }
   LayoutViewItem GetLayoutViewItem() const;
 
-  Document& AxObjectCacheOwner() const;
+  Document& AXObjectCacheOwner() const;
   AXObjectCache* ExistingAXObjectCache() const;
-  AXObjectCache* AxObjectCache() const;
+  AXObjectCache* GetOrCreateAXObjectCache() const;
   void ClearAXObjectCache();
 
   // to get visually ordered hebrew and arabic pages right
@@ -708,6 +712,7 @@ class CORE_EXPORT Document : public ContainerNode,
     return compatibility_mode_ == kLimitedQuirksMode;
   }
   bool InNoQuirksMode() const { return compatibility_mode_ == kNoQuirksMode; }
+  bool InLineHeightQuirksMode() const { return !InNoQuirksMode(); }
 
   // https://html.spec.whatwg.org/multipage/dom.html#documentreadystate
   enum DocumentReadyState { kLoading, kInteractive, kComplete };
@@ -1022,15 +1027,19 @@ class CORE_EXPORT Document : public ContainerNode,
   // Returns null if there is no such element.
   HTMLLinkElement* LinkManifest() const;
 
+  // Returns the HTMLLinkElement holding the canonical URL. Returns null if
+  // there is no such element.
+  HTMLLinkElement* LinkCanonical() const;
+
   void UpdateFocusAppearanceLater();
   void CancelFocusAppearanceUpdate();
 
   bool IsDNSPrefetchEnabled() const { return is_dns_prefetch_enabled_; }
   void ParseDNSPrefetchControlHeader(const String&);
 
-  void TasksWereSuspended() final;
-  void TasksWereResumed() final;
-  bool TasksNeedSuspension() final;
+  void TasksWerePaused() final;
+  void TasksWereUnpaused() final;
+  bool TasksNeedPause() final;
 
   void FinishedParsing();
 
@@ -1470,6 +1479,7 @@ class CORE_EXPORT Document : public ContainerNode,
   ShadowCascadeOrder shadow_cascade_order_ = kShadowCascadeNone;
 
   void UpdateTitle(const String&);
+  void DispatchDidReceiveTitle();
   void UpdateFocusAppearanceTimerFired(TimerBase*);
   void UpdateBaseURL();
 

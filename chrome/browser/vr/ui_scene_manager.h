@@ -10,7 +10,8 @@
 #include "chrome/browser/vr/browser_ui_interface.h"
 #include "chrome/browser/vr/color_scheme.h"
 #include "chrome/browser/vr/elements/simple_textured_element.h"
-#include "chrome/browser/vr/ui_interface.h"
+#include "chrome/browser/vr/platform_controller.h"
+#include "chrome/browser/vr/ui_element_renderer.h"
 #include "chrome/browser/vr/ui_unsupported_mode.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -26,7 +27,6 @@ class UiBrowserInterface;
 class UiElement;
 class UiScene;
 class UrlBar;
-class ExitPrompt;
 struct Model;
 struct UiInitialState;
 
@@ -53,8 +53,12 @@ struct UiInitialState;
 //           kScreenCaptureIndicator
 //           kLocationAccessIndicator
 //           kBluetoothConnectedIndicator
-//       kExitPrompt
-//         kExitPromptBackplane
+//       kExitPromptBackplane
+//         kExitPrompt
+//       (unnamed) a toggle element for hiding out of browser mode.
+//         kAudioPermissionPromptBackplane
+//           kAudioPermissounPromptShadow
+//             kAudioPermissionPrompt
 //       kExclusiveScreenToastTransientParent
 //         kExclusiveScreenToast
 //       kCloseButton
@@ -68,11 +72,17 @@ struct UiInitialState;
 //     kScreenDimmer
 //     k2dBrowsingViewportAwareRoot
 //       kExitWarning
-//     kSpeechRecognitionPrompt
-//       kSpeechRecognitionPromptGrowingCircle
-//       kSpeechRecognitionPromptInnerCircle
-//       kSpeechRecognitionPromptMicrophoneIcon
-//       kSpeechRecognitionPromptBackplane
+//     kSpeechRecognitionRoot
+//       kSpeechRecognitionResult
+//         kSpeechRecognitionResultText
+//         kSpeechRecognitionResultCircle
+//         kSpeechRecognitionResultMicrophoneIcon
+//         kSpeechRecognitionResultBackplane
+//       kSpeechRecognitionListening
+//         kSpeechRecognitionListeningGrowingCircle
+//         kSpeechRecognitionListeningInnerCircle
+//         kSpeechRecognitionListeningMicrophoneIcon
+//         kSpeechRecognitionListeningBackplane
 //   kWebVrRoot
 //     kWebVrViewportAwareRoot
 //       kExclusiveScreenToastTransientParent
@@ -114,44 +124,43 @@ class UiSceneManager {
   // BrowserUiInterface support methods.
   void SetFullscreen(bool fullscreen);
   void SetIncognito(bool incognito);
-  void SetToolbarState(const ToolbarState& state);
   void SetWebVrMode(bool web_vr, bool show_toast);
   void SetIsExiting();
-  void SetVideoCapturingIndicator(bool enabled);
-  void SetScreenCapturingIndicator(bool enabled);
-  void SetAudioCapturingIndicator(bool enabled);
-  void SetLocationAccessIndicator(bool enabled);
-  void SetBluetoothConnectedIndicator(bool enabled);
   void SetHistoryButtonsEnabled(bool can_go_back, bool can_go_forward);
-  void SetExitVrPromptEnabled(bool enabled, UiUnsupportedMode reason);
 
-  // UiInterface support methods.
   bool ShouldRenderWebVr();
   void OnGlInitialized(unsigned int content_texture_id,
-                       UiElementRenderer::TextureLocation content_location);
+                       UiElementRenderer::TextureLocation content_location,
+                       SkiaSurfaceProvider* provider);
   void OnAppButtonClicked();
-  void OnAppButtonGesturePerformed(UiInterface::Direction direction);
+  void OnAppButtonGesturePerformed(
+      PlatformController::SwipeDirection direction);
   void OnProjMatrixChanged(const gfx::Transform& proj_matrix);
   void OnWebVrFrameAvailable();
   void OnWebVrTimedOut();
 
   void OnSplashScreenHidden(TransientElementHideReason);
   void OnSecurityIconClickedForTesting();
-  void OnExitPromptChoiceForTesting(bool chose_exit);
+  void OnExitPromptChoiceForTesting(bool chose_exit, UiUnsupportedMode reason);
 
   // TODO(vollick): these should move to the model.
   const ColorScheme& color_scheme() const;
   bool web_vr_mode() const { return web_vr_mode_; }
+  bool web_vr_show_toast() const { return web_vr_show_toast_; }
   bool showing_web_vr_splash_screen() const {
     return showing_web_vr_splash_screen_;
   }
+  bool browsing_mode() const {
+    return !web_vr_mode_ && !showing_web_vr_splash_screen_;
+  }
+  bool fullscreen() const { return fullscreen_; }
 
  private:
   void Create2dBrowsingSubtreeRoots(Model* model);
   void CreateWebVrRoot();
   void CreateScreenDimmer();
   void CreateWebVRExitWarning();
-  void CreateSystemIndicators();
+  void CreateSystemIndicators(Model* model);
   void CreateContentQuad(ContentInputDelegate* delegate);
   void CreateSplashScreen(Model* model);
   void CreateUnderDevelopmentNotice();
@@ -159,21 +168,20 @@ class UiSceneManager {
   void CreateViewportAwareRoot();
   void CreateUrlBar(Model* model);
   void CreateSuggestionList(Model* model);
-  void CreateWebVrUrlToast();
+  void CreateWebVrUrlToast(Model* model);
   void CreateCloseButton();
-  void CreateExitPrompt();
+  void CreateExitPrompt(Model* model);
+  void CreateAudioPermissionPrompt(Model* model);
   void CreateToasts(Model* model);
   void CreateVoiceSearchUiGroup(Model* model);
   void CreateController(Model* model);
 
   void ConfigureScene();
-  void ConfigureExclusiveScreenToast();
-  void ConfigureIndicators();
   void ConfigureBackgroundColor();
   void OnBackButtonClicked();
   void OnSecurityIconClicked();
-  void OnExitPromptChoice(bool chose_exit);
-  void OnExitPromptBackplaneClicked();
+  void OnExitPromptChoice(bool chose_exit, UiUnsupportedMode reason);
+  void OnExitPromptBackplaneClicked(UiUnsupportedMode reason);
   void OnExitRecognizingSpeechClicked();
   void OnCloseButtonClicked();
   void OnUnsupportedMode(UiUnsupportedMode mode);
@@ -193,16 +201,8 @@ class UiSceneManager {
   TransientElement* exclusive_screen_toast_viewport_aware_transient_parent_ =
       nullptr;
   ShowUntilSignalTransientElement* splash_screen_transient_parent_ = nullptr;
-  ExitPrompt* exit_prompt_ = nullptr;
-  UiElement* exit_prompt_backplane_ = nullptr;
-  UiElement* speech_recognition_prompt_backplane_ = nullptr;
   UiElement* exit_warning_ = nullptr;
   ContentElement* main_content_ = nullptr;
-  UiElement* audio_capture_indicator_ = nullptr;
-  UiElement* bluetooth_connected_indicator_ = nullptr;
-  UiElement* video_capture_indicator_ = nullptr;
-  UiElement* screen_capture_indicator_ = nullptr;
-  UiElement* location_access_indicator_ = nullptr;
   UiElement* screen_dimmer_ = nullptr;
   Rect* ceiling_ = nullptr;
   Grid* floor_ = nullptr;
@@ -210,8 +210,6 @@ class UiSceneManager {
   UrlBar* url_bar_ = nullptr;
   TransientElement* webvr_url_toast_transient_parent_ = nullptr;
   WebVrUrlToast* webvr_url_toast_ = nullptr;
-
-  std::vector<UiElement*> system_indicators_;
 
   bool in_cct_;
   bool web_vr_mode_;
@@ -221,23 +219,14 @@ class UiSceneManager {
   // before we hide the splash screen. This is used in the case of WebVR
   // auto-presentation.
   bool showing_web_vr_splash_screen_ = false;
-  bool prompting_to_exit_ = false;
   bool exiting_ = false;
   bool browsing_disabled_ = false;
   bool configuring_scene_ = false;
 
   bool fullscreen_ = false;
   bool incognito_ = false;
-  bool audio_capturing_ = false;
-  bool video_capturing_ = false;
-  bool screen_capturing_ = false;
-  bool location_access_ = false;
-  bool bluetooth_connected_ = false;
-  UiUnsupportedMode exit_vr_prompt_reason_ = UiUnsupportedMode::kCount;
 
   std::vector<Rect*> background_panels_;
-  std::vector<UiElement*> content_elements_;
-  std::vector<UiElement*> control_elements_;
 
   gfx::SizeF last_content_screen_bounds_;
   float last_content_aspect_ratio_ = 0.0f;

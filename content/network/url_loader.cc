@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/files/file.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task_scheduler/post_task.h"
@@ -13,7 +14,10 @@
 #include "base/time/time.h"
 #include "content/common/loader_util.h"
 #include "content/network/network_context.h"
+#include "content/network/network_service_impl.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/resource_request.h"
+#include "content/public/common/resource_request_body.h"
 #include "content/public/common/resource_response.h"
 #include "content/public/common/url_loader_factory.mojom.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
@@ -22,6 +26,7 @@
 #include "net/base/mime_sniffer.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_file_element_reader.h"
+#include "net/cert/symantec_certs.h"
 #include "net/url_request/url_request_context.h"
 #include "services/network/public/cpp/net_adapters.h"
 
@@ -55,6 +60,7 @@ int BuildLoadFlagsForRequest(const ResourceRequest& request,
 // TODO: this duplicates some of PopulateResourceResponse in
 // content/browser/loader/resource_loader.cc
 void PopulateResourceResponse(net::URLRequest* request,
+                              bool is_load_timing_enabled,
                               ResourceResponse* response) {
   response->head.request_time = request->request_time();
   response->head.response_time = request->response_time();
@@ -73,7 +79,19 @@ void PopulateResourceResponse(net::URLRequest* request,
   response->head.effective_connection_type =
       net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN;
 
-  request->GetLoadTimingInfo(&response->head.load_timing);
+  if (is_load_timing_enabled)
+    request->GetLoadTimingInfo(&response->head.load_timing);
+
+  if (request->ssl_info().cert.get()) {
+    response->head.has_major_certificate_errors =
+        net::IsCertStatusError(request->ssl_info().cert_status) &&
+        !net::IsCertStatusMinorError(request->ssl_info().cert_status);
+    response->head.is_legacy_symantec_cert =
+        !response->head.has_major_certificate_errors &&
+        net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
+    response->head.cert_validity_start =
+        request->ssl_info().cert->valid_start();
+  }
 
   response->head.request_start = request->creation_time();
   response->head.response_start = base::TimeTicks::Now();
@@ -123,6 +141,31 @@ class FileElementReader : public net::UploadFileElementReader {
   scoped_refptr<ResourceRequestBody> resource_request_body_;
 
   DISALLOW_COPY_AND_ASSIGN(FileElementReader);
+};
+
+class RawFileElementReader : public net::UploadFileElementReader {
+ public:
+  RawFileElementReader(ResourceRequestBody* resource_request_body,
+                       base::TaskRunner* task_runner,
+                       const ResourceRequestBody::Element& element)
+      : net::UploadFileElementReader(
+            task_runner,
+            // TODO(mmenke): Is duplicating this necessary?
+            element.file().Duplicate(),
+            element.path(),
+            element.offset(),
+            element.length(),
+            element.expected_modification_time()),
+        resource_request_body_(resource_request_body) {
+    DCHECK_EQ(ResourceRequestBody::Element::TYPE_RAW_FILE, element.type());
+  }
+
+  ~RawFileElementReader() override {}
+
+ private:
+  scoped_refptr<ResourceRequestBody> resource_request_body_;
+
+  DISALLOW_COPY_AND_ASSIGN(RawFileElementReader);
 };
 
 // A subclass of net::UploadElementReader to read data pipes.
@@ -232,6 +275,10 @@ std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
         element_readers.push_back(std::make_unique<FileElementReader>(
             body, file_task_runner, element));
         break;
+      case ResourceRequestBody::Element::TYPE_RAW_FILE:
+        element_readers.push_back(std::make_unique<RawFileElementReader>(
+            body, file_task_runner, element));
+        break;
       case ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM:
         CHECK(false) << "Should never be reached";
         break;
@@ -268,9 +315,14 @@ URLLoader::URLLoader(NetworkContext* context,
                      const ResourceRequest& request,
                      bool report_raw_headers,
                      mojom::URLLoaderClientPtr url_loader_client,
-                     const net::NetworkTrafficAnnotationTag& traffic_annotation)
+                     const net::NetworkTrafficAnnotationTag& traffic_annotation,
+                     uint32_t process_id)
     : context_(context),
       options_(options),
+      resource_type_(request.resource_type),
+      is_load_timing_enabled_(request.enable_load_timing),
+      process_id_(process_id),
+      render_frame_id_(request.render_frame_id),
       connected_(true),
       binding_(this, std::move(url_loader_request)),
       url_loader_client_(std::move(url_loader_client)),
@@ -310,6 +362,15 @@ URLLoader::URLLoader(NetworkContext* context,
                               base::Unretained(this)),
           url_request_.get());
     }
+  }
+
+  url_request_->set_initiator(request.request_initiator);
+
+  // TODO(qinmin): network service shouldn't know about resource type, need
+  // to introduce another field to set this.
+  if (request.resource_type == RESOURCE_TYPE_MAIN_FRAME) {
+    url_request_->set_first_party_url_policy(
+        net::URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
   }
 
   int load_flags = BuildLoadFlagsForRequest(request, false);
@@ -410,7 +471,8 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
   *defer_redirect = true;
 
   scoped_refptr<ResourceResponse> response = new ResourceResponse();
-  PopulateResourceResponse(url_request_.get(), response.get());
+  PopulateResourceResponse(url_request_.get(), is_load_timing_enabled_,
+                           response.get());
   if (report_raw_headers_) {
     response->head.devtools_info = BuildDevToolsInfo(
         *url_request_, raw_request_headers_, raw_response_headers_.get());
@@ -418,6 +480,28 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
     raw_response_headers_ = nullptr;
   }
   url_loader_client_->OnReceiveRedirect(redirect_info, response->head);
+}
+
+void URLLoader::OnAuthRequired(net::URLRequest* unused,
+                               net::AuthChallengeInfo* auth_info) {
+  NOTIMPLEMENTED() << "http://crbug.com/756654";
+  net::URLRequest::Delegate::OnAuthRequired(unused, auth_info);
+}
+
+void URLLoader::OnCertificateRequested(net::URLRequest* unused,
+                                       net::SSLCertRequestInfo* cert_info) {
+  NOTIMPLEMENTED() << "http://crbug.com/756654";
+  net::URLRequest::Delegate::OnCertificateRequested(unused, cert_info);
+}
+
+void URLLoader::OnSSLCertificateError(net::URLRequest* request,
+                                      const net::SSLInfo& ssl_info,
+                                      bool fatal) {
+  context_->network_service()->client()->OnSSLCertificateError(
+      resource_type_, url_request_->url(), process_id_, render_frame_id_,
+      ssl_info, fatal,
+      base::Bind(&URLLoader::OnSSLCertificateErrorResponse,
+                 weak_ptr_factory_.GetWeakPtr(), ssl_info));
 }
 
 void URLLoader::OnResponseStarted(net::URLRequest* url_request, int net_error) {
@@ -435,7 +519,8 @@ void URLLoader::OnResponseStarted(net::URLRequest* url_request, int net_error) {
   }
 
   response_ = new ResourceResponse();
-  PopulateResourceResponse(url_request_.get(), response_.get());
+  PopulateResourceResponse(url_request_.get(), is_load_timing_enabled_,
+                           response_.get());
   if (report_raw_headers_) {
     response_->head.devtools_info = BuildDevToolsInfo(
         *url_request_, raw_request_headers_, raw_response_headers_.get());
@@ -588,17 +673,15 @@ void URLLoader::NotifyCompleted(int error_code) {
   if (consumer_handle_.is_valid())
     SendResponseToClient();
 
-  ResourceRequestCompletionStatus request_complete_data;
-  request_complete_data.error_code = error_code;
-  request_complete_data.exists_in_cache =
-      url_request_->response_info().was_cached;
-  request_complete_data.completion_time = base::TimeTicks::Now();
-  request_complete_data.encoded_data_length =
-      url_request_->GetTotalReceivedBytes();
-  request_complete_data.encoded_body_length = url_request_->GetRawBodyBytes();
-  request_complete_data.decoded_body_length = total_written_bytes_;
+  network::URLLoaderCompletionStatus status;
+  status.error_code = error_code;
+  status.exists_in_cache = url_request_->response_info().was_cached;
+  status.completion_time = base::TimeTicks::Now();
+  status.encoded_data_length = url_request_->GetTotalReceivedBytes();
+  status.encoded_body_length = url_request_->GetRawBodyBytes();
+  status.decoded_body_length = total_written_bytes_;
 
-  url_loader_client_->OnComplete(request_complete_data);
+  url_loader_client_->OnComplete(status);
   DeleteIfNeeded();
 }
 
@@ -695,6 +778,20 @@ void URLLoader::SendUploadProgress(const net::UploadProgress& progress) {
 void URLLoader::OnUploadProgressACK() {
   if (upload_progress_tracker_)
     upload_progress_tracker_->OnAckReceived();
+}
+
+void URLLoader::OnSSLCertificateErrorResponse(const net::SSLInfo& ssl_info,
+                                              int net_error) {
+  // The request can be NULL if it was cancelled by the client.
+  if (!url_request_ || !url_request_->is_pending())
+    return;
+
+  if (net_error == net::OK) {
+    url_request_->ContinueDespiteLastError();
+    return;
+  }
+
+  url_request_->CancelWithSSLError(net_error, ssl_info);
 }
 
 }  // namespace content

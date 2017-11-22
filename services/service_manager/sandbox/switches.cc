@@ -21,6 +21,7 @@ const char kServiceSandboxType[] = "service-sandbox-type";
 // Must be in sync with "sandbox_type" values as used in service manager's
 // manifest.json catalog files.
 const char kNoneSandbox[] = "none";
+const char kNoneSandboxAndElevatedPrivileges[] = "none_and_elevated";
 const char kNetworkSandbox[] = "network";
 const char kPpapiSandbox[] = "ppapi";
 const char kUtilitySandbox[] = "utility";
@@ -62,6 +63,12 @@ const char kGpuSandboxAllowSysVShm[] = "gpu-sandbox-allow-sysv-shm";
 // Makes GPU sandbox failures fatal.
 const char kGpuSandboxFailuresFatal[] = "gpu-sandbox-failures-fatal";
 
+#if defined(OS_WIN)
+// Allows third party modules to inject by disabling the BINARY_SIGNATURE
+// mitigation policy on Win10+. Also has other effects in ELF.
+const char kAllowThirdPartyModules[] = "allow-third-party-modules";
+#endif
+
 // Flags spied upon from other layers.
 const char kGpuProcess[] = "gpu-process";
 const char kPpapiBrokerProcess[] = "ppapi-broker";
@@ -70,6 +77,9 @@ const char kRendererProcess[] = "renderer";
 const char kUtilityProcess[] = "utility";
 const char kDisableGpuSandbox[] = "disable-gpu-sandbox";
 const char kNoSandbox[] = "no-sandbox";
+#if defined(OS_WIN)
+const char kNoSandboxAndElevatedPrivileges[] = "no-sandbox-and-elevated";
+#endif
 const char kEnableSandboxLogging[] = "enable-sandbox-logging";
 
 }  // namespace switches

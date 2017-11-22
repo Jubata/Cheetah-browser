@@ -35,6 +35,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/resource_request_body.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/redirect_info.h"
 #include "url/gurl.h"
@@ -335,7 +336,7 @@ NavigationHandleImpl::GetConnectionInfo() {
   return connection_info_;
 }
 
-base::Optional<net::SSLInfo> NavigationHandleImpl::GetSSLInfo() {
+const base::Optional<net::SSLInfo>& NavigationHandleImpl::GetSSLInfo() {
   return ssl_info_;
 }
 
@@ -373,7 +374,7 @@ const GURL& NavigationHandleImpl::GetPreviousURL() {
 }
 
 net::HostPortPair NavigationHandleImpl::GetSocketAddress() {
-  DCHECK(state_ == DID_COMMIT || state_ == DID_COMMIT_ERROR_PAGE);
+  DCHECK(state_ >= WILL_PROCESS_RESPONSE);
   return socket_address_;
 }
 
@@ -445,6 +446,19 @@ NavigationHandleImpl::CallWillRedirectRequestForTesting(
 }
 
 NavigationThrottle::ThrottleCheckResult
+NavigationHandleImpl::CallWillFailRequestForTesting(
+    base::Optional<net::SSLInfo> ssl_info,
+    bool should_ssl_errors_be_fatal) {
+  NavigationThrottle::ThrottleCheckResult result = NavigationThrottle::DEFER;
+  WillFailRequest(ssl_info, should_ssl_errors_be_fatal,
+                  base::Bind(&UpdateThrottleCheckResult, &result));
+
+  // Reset the callback to ensure it will not be called later.
+  complete_callback_.Reset();
+  return result;
+}
+
+NavigationThrottle::ThrottleCheckResult
 NavigationHandleImpl::CallWillProcessResponseForTesting(
     content::RenderFrameHost* render_frame_host,
     const std::string& raw_response_headers) {
@@ -453,8 +467,8 @@ NavigationHandleImpl::CallWillProcessResponseForTesting(
   NavigationThrottle::ThrottleCheckResult result = NavigationThrottle::DEFER;
   WillProcessResponse(static_cast<RenderFrameHostImpl*>(render_frame_host),
                       headers, net::HttpResponseInfo::CONNECTION_INFO_UNKNOWN,
-                      SSLStatus(), GlobalRequestID(), false, false, false,
-                      base::Closure(),
+                      net::HostPortPair(), SSLStatus(), GlobalRequestID(),
+                      false, false, false, base::Closure(),
                       base::Bind(&UpdateThrottleCheckResult, &result));
 
   // Reset the callback to ensure it will not be called later.
@@ -691,6 +705,9 @@ void NavigationHandleImpl::WillFailRequest(
   complete_callback_ = callback;
   state_ = WILL_FAIL_REQUEST;
 
+  if (ssl_info.has_value())
+    ssl_status_ = SSLStatus(ssl_info.value());
+
   // Notify each throttle of the request.
   base::Closure on_defer_callback_copy = on_defer_callback_for_testing_;
   NavigationThrottle::ThrottleCheckResult result = CheckWillFailRequest();
@@ -711,6 +728,7 @@ void NavigationHandleImpl::WillProcessResponse(
     RenderFrameHostImpl* render_frame_host,
     scoped_refptr<net::HttpResponseHeaders> response_headers,
     net::HttpResponseInfo::ConnectionInfo connection_info,
+    const net::HostPortPair& socket_address,
     const SSLStatus& ssl_status,
     const GlobalRequestID& request_id,
     bool should_replace_current_entry,
@@ -731,6 +749,7 @@ void NavigationHandleImpl::WillProcessResponse(
   is_stream_ = is_stream;
   state_ = WILL_PROCESS_RESPONSE;
   ssl_status_ = ssl_status;
+  socket_address_ = socket_address;
   complete_callback_ = callback;
   transfer_callback_ = transfer_callback;
 
@@ -806,7 +825,6 @@ void NavigationHandleImpl::DidCommitNavigation(
   render_frame_host_ = render_frame_host;
   previous_url_ = previous_url;
   base_url_ = params.base_url;
-  socket_address_ = params.socket_address;
   navigation_type_ = navigation_type;
 
   // For back-forward navigations, record metrics.

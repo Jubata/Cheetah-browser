@@ -26,9 +26,9 @@
 #ifndef GradientGeneratedImage_h
 #define GradientGeneratedImage_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/graphics/GeneratedImage.h"
 #include "platform/graphics/Gradient.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -39,7 +39,7 @@ class PLATFORM_EXPORT GradientGeneratedImage final : public GeneratedImage {
   static scoped_refptr<GradientGeneratedImage> Create(
       scoped_refptr<Gradient> generator,
       const IntSize& size) {
-    return WTF::AdoptRef(
+    return base::AdoptRef(
         new GradientGeneratedImage(std::move(generator), size));
   }
 

@@ -20,7 +20,6 @@ import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.style.StyleSpan;
 
-import org.chromium.base.BuildInfo;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.VisibleForTesting;
@@ -351,8 +350,10 @@ public class NotificationPlatformBridge {
 
         // This flag ensures the broadcast is delivered with foreground priority. It also means the
         // receiver gets a shorter timeout interval before it may be killed, but this is ok because
-        // we schedule a job to handle the intent in NotificationService.Receiver.
-        intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+        // we schedule a job to handle the intent in NotificationService.Receiver on N+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+        }
 
         return PendingIntent.getBroadcast(
                 context, PENDING_INTENT_REQUEST_CODE, intent, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -667,7 +668,7 @@ public class NotificationPlatformBridge {
         // (It's okay to not set a channel on them because web apks don't target O yet.)
         // TODO(crbug.com/700377): Channel ID should be retrieved from cache in native and passed
         // through to here with other notification parameters.
-        String channelId = (forWebApk || !BuildInfo.isAtLeastO())
+        String channelId = (forWebApk || Build.VERSION.SDK_INT < Build.VERSION_CODES.O)
                 ? null
                 : ChromeFeatureList.isEnabled(ChromeFeatureList.SITE_NOTIFICATION_CHANNELS)
                         ? SiteChannelsManager.getInstance().getChannelIdForOrigin(origin)

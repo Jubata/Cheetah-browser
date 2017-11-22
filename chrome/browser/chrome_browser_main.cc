@@ -55,7 +55,9 @@
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
 #include "chrome/browser/component_updater/crl_set_component_installer.h"
+#include "chrome/browser/component_updater/downloadable_strings_component_installer.h"
 #include "chrome/browser/component_updater/file_type_policies_component_installer.h"
+#include "chrome/browser/component_updater/optimization_hints_component_installer.h"
 #include "chrome/browser/component_updater/origin_trials_component_installer.h"
 #include "chrome/browser/component_updater/pepper_flash_component_installer.h"
 #include "chrome/browser/component_updater/recovery_component_installer.h"
@@ -217,7 +219,7 @@
 #include "chrome/browser/downgrade/user_data_downgrade.h"
 #include "chrome/browser/first_run/upgrade_util_win.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
-#include "chrome/browser/ui/views/try_chrome_dialog.h"
+#include "chrome/browser/ui/views/try_chrome_dialog_win/try_chrome_dialog.h"
 #include "chrome/browser/win/browser_util.h"
 #include "chrome/browser/win/chrome_select_file_dialog_factory.h"
 #include "chrome/install_static/install_util.h"
@@ -471,7 +473,7 @@ OSStatus KeychainCallback(SecKeychainEvent keychain_event,
 }
 #endif  // defined(OS_MACOSX)
 
-void RegisterComponentsForUpdate() {
+void RegisterComponentsForUpdate(PrefService* profile_prefs) {
   auto* const cus = g_browser_process->component_updater();
 
   if (base::FeatureList::IsEnabled(features::kImprovedRecoveryComponent))
@@ -502,6 +504,7 @@ void RegisterComponentsForUpdate() {
   whitelist_installer->RegisterComponents();
 
   RegisterSubresourceFilterComponent(cus);
+  RegisterOptimizationHintsComponent(cus, profile_prefs);
 
   base::FilePath path;
   if (PathService::Get(chrome::DIR_USER_DATA, &path)) {
@@ -528,6 +531,10 @@ void RegisterComponentsForUpdate() {
 
 #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
     RegisterSSLErrorAssistantComponent(cus, path);
+#endif
+
+#if BUILDFLAG(ENABLE_DOWNLOADABLE_STRINGS)
+    RegisterDownloadableStringsComponent(cus);
 #endif
   }
 
@@ -948,8 +955,8 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
   {
     TRACE_EVENT0("startup",
       "ChromeBrowserMainParts::PreCreateThreadsImpl:InitBrowswerProcessImpl");
-    browser_process_.reset(new BrowserProcessImpl(local_state_task_runner.get(),
-                                                  parsed_command_line()));
+    browser_process_ =
+        std::make_unique<BrowserProcessImpl>(local_state_task_runner.get());
   }
 
   local_state_ = InitializeLocalState(
@@ -1153,7 +1160,7 @@ int ChromeBrowserMainParts::PreCreateThreadsImpl() {
 
   // ChromeOS needs ui::ResourceBundle::InitSharedInstance to be called before
   // this.
-  browser_process_->PreCreateThreads();
+  browser_process_->PreCreateThreads(parsed_command_line());
 
   // This must occur in PreCreateThreads() because it initializes global state
   // which is then read by all threads without synchronization. It must be after
@@ -1453,11 +1460,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
       break;
 
     case ProcessSingleton::PROCESS_NOTIFIED:
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-      // On POSIX systems, print a message notifying the process is running.
-      printf("%s\n", base::SysWideToNativeMB(base::UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_USED_EXISTING_BROWSER))).c_str());
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
+      printf("%s\n", base::SysWideToNativeMB(
+                         base::UTF16ToWide(l10n_util::GetStringUTF16(
+                             IDS_USED_EXISTING_BROWSER)))
+                         .c_str());
 
       // Having a differentiated return type for testing allows for tests to
       // verify proper handling of some switches. When not testing, stick to
@@ -1615,7 +1621,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
 
     if (!master_prefs_->suppress_first_run_default_browser_prompt) {
       browser_creator_->set_show_main_browser_window(
-          !chrome::ShowFirstRunDefaultBrowserPrompt(profile_));
+          !ShowFirstRunDefaultBrowserPrompt(profile_));
     } else {
       browser_creator_->set_is_default_browser_dialog_suppressed(true);
     }
@@ -1763,7 +1769,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   browser_process_->notification_ui_manager();
 
   if (!parsed_command_line().HasSwitch(switches::kDisableComponentUpdate))
-    RegisterComponentsForUpdate();
+    RegisterComponentsForUpdate(profile_->GetPrefs());
 
 #if defined(OS_ANDROID)
   variations::VariationsService* variations_service =

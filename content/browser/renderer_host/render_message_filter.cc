@@ -21,6 +21,7 @@
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/cache_storage/cache_storage_cache.h"
@@ -86,6 +87,8 @@
 #include "base/threading/platform_thread.h"
 #endif
 
+using blink::mojom::CacheStorageError;
+
 namespace content {
 namespace {
 
@@ -110,9 +113,8 @@ void ResizeHelperPostMsgToUIThread(int render_process_id,
 }
 #endif
 
-void NoOpCacheStorageErrorCallback(
-    std::unique_ptr<CacheStorageCacheHandle> cache_handle,
-    CacheStorageError error) {}
+void NoOpCacheStorageErrorCallback(CacheStorageCacheHandle cache_handle,
+                                   CacheStorageError error) {}
 
 }  // namespace
 
@@ -163,11 +165,6 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SetThreadPriority,
                         OnSetThreadPriority)
 #endif
-    IPC_MESSAGE_HANDLER(RenderProcessHostMsg_DidGenerateCacheableMetadata,
-                        OnCacheableMetadataAvailable)
-    IPC_MESSAGE_HANDLER(
-        RenderProcessHostMsg_DidGenerateCacheableMetadataInCacheStorage,
-        OnCacheableMetadataAvailableForCacheStorage)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(RenderProcessHostMsg_LoadFont, OnLoadFont)
 #endif
@@ -266,10 +263,16 @@ void RenderMessageFilter::OnSetThreadPriority(base::PlatformThreadId ns_tid,
 }
 #endif
 
-void RenderMessageFilter::OnCacheableMetadataAvailable(
+void RenderMessageFilter::DidGenerateCacheableMetadata(
     const GURL& url,
     base::Time expected_response_time,
-    const std::vector<char>& data) {
+    const std::vector<uint8_t>& data) {
+  if (!url.SchemeIsHTTPOrHTTPS()) {
+    bad_message::ReceivedBadMessage(
+        this, bad_message::RMF_BAD_URL_CACHEABLE_METADATA);
+    return;
+  }
+
   net::HttpCache* cache = request_context_->GetURLRequestContext()->
       http_transaction_factory()->GetCache();
   if (!cache)
@@ -288,10 +291,10 @@ void RenderMessageFilter::OnCacheableMetadataAvailable(
                        data.size());
 }
 
-void RenderMessageFilter::OnCacheableMetadataAvailableForCacheStorage(
+void RenderMessageFilter::DidGenerateCacheableMetadataInCacheStorage(
     const GURL& url,
     base::Time expected_response_time,
-    const std::vector<char>& data,
+    const std::vector<uint8_t>& data,
     const url::Origin& cache_storage_origin,
     const std::string& cache_storage_cache_name) {
   scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(data.size()));
@@ -310,13 +313,11 @@ void RenderMessageFilter::OnCacheStorageOpenCallback(
     base::Time expected_response_time,
     scoped_refptr<net::IOBuffer> buf,
     int buf_len,
-    std::unique_ptr<CacheStorageCacheHandle> cache_handle,
+    CacheStorageCacheHandle cache_handle,
     CacheStorageError error) {
-  if (error != CACHE_STORAGE_OK || !cache_handle || !cache_handle->value())
+  if (error != CacheStorageError::kSuccess || !cache_handle.value())
     return;
-  CacheStorageCache* cache = cache_handle->value();
-  if (!cache)
-    return;
+  CacheStorageCache* cache = cache_handle.value();
   cache->WriteSideData(base::BindOnce(&NoOpCacheStorageErrorCallback,
                                       base::Passed(std::move(cache_handle))),
                        url, expected_response_time, buf, buf_len);

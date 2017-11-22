@@ -3,17 +3,14 @@
 // found in the LICENSE file.
 
 #include "base/allocator/features.h"
-#include "base/allocator/partition_allocator/partition_alloc.h"
 #include "base/json/json_reader.h"
-#include "base/memory/ref_counted_memory.h"
 #include "base/run_loop.h"
-#include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/trace_event/trace_buffer.h"
-#include "base/trace_event/trace_config_memory_test_util.h"
 #include "base/trace_event/trace_log.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiling_host/profiling_process_host.h"
+#include "chrome/browser/profiling_host/profiling_test_driver.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
@@ -21,7 +18,6 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/tracing_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -31,6 +27,8 @@
 // Some builds don't support the allocator shim in which case the memory long
 // won't function.
 #if BUILDFLAG(USE_ALLOCATOR_SHIM)
+
+namespace profiling {
 
 namespace {
 
@@ -46,8 +44,9 @@ constexpr int kPartitionAllocSize = 8 * 23;
 constexpr int kPartitionAllocCount = 107;
 static const char* kPartitionAllocTypeName = "kPartitionAllocTypeName";
 
-bool HasProcessWithName(base::Value* dump_json, std::string name) {
+int NumProcessesWithName(base::Value* dump_json, std::string name) {
   base::Value* events = dump_json->FindKey("traceEvents");
+  int num_found = 0;
   for (base::Value& event : events->GetList()) {
     const base::Value* found_name =
         event.FindKeyOfType("name", base::Value::Type::STRING);
@@ -65,9 +64,10 @@ bool HasProcessWithName(base::Value* dump_json, std::string name) {
       continue;
     if (found_process_name->GetString() != name)
       continue;
-    return true;
+    num_found++;
   }
-  return false;
+
+  return num_found;
 }
 
 base::Value* FindHeapsV2(base::ProcessId pid, base::Value* dump_json) {
@@ -161,6 +161,8 @@ void ValidateDump(base::Value* heaps_v2,
   }
 }
 
+}  // namespace
+
 class MemlogBrowserTest : public InProcessBrowserTest,
                           public testing::WithParamInterface<const char*> {
  protected:
@@ -171,6 +173,13 @@ class MemlogBrowserTest : public InProcessBrowserTest,
   }
 
   void SetUp() override {
+    // Force the renderer to be sampled in RendererSampling mode for
+    // deterministic tests.
+    if (GetParam() == switches::kMemlogModeRendererSampling) {
+      profiling::ProfilingProcessHost::GetInstance()
+          ->SetRendererSamplingAlwaysProfileForTest();
+    }
+
     partition_allocator_.init();
     InProcessBrowserTest::SetUp();
   }
@@ -189,9 +198,8 @@ class MemlogBrowserTest : public InProcessBrowserTest,
     }
 
     for (int i = 0; i < kPartitionAllocCount; ++i) {
-      leaks_.push_back(static_cast<char*>(
-          PartitionAllocGeneric(partition_allocator_.root(),
-                                kPartitionAllocSize, kPartitionAllocTypeName)));
+      leaks_.push_back(static_cast<char*>(partition_allocator_.root()->Alloc(
+          kPartitionAllocSize, kPartitionAllocTypeName)));
     }
 
     for (int i = 0; i < kBrowserAllocCount; ++i) {
@@ -212,16 +220,25 @@ class MemlogBrowserTest : public InProcessBrowserTest,
     SCOPED_TRACE("Validating Browser Allocations");
     base::Value* heaps_v2 =
         FindHeapsV2(base::Process::Current().Pid(), dump_json);
-    ASSERT_NO_FATAL_FAILURE(
-        ValidateDump(heaps_v2, kBrowserAllocSize * kBrowserAllocCount,
-                     kBrowserAllocCount, "malloc", nullptr));
-    ASSERT_NO_FATAL_FAILURE(ValidateDump(heaps_v2, total_variadic_allocations_,
-                                         kBrowserAllocCount, "malloc",
-                                         nullptr));
-    ASSERT_NO_FATAL_FAILURE(ValidateDump(
-        heaps_v2, kPartitionAllocSize * kPartitionAllocCount,
-        kPartitionAllocCount, "partition_alloc", kPartitionAllocTypeName));
-    EXPECT_TRUE(HasProcessWithName(dump_json, "Browser"));
+
+    if (GetParam() == switches::kMemlogModeAll ||
+        GetParam() == switches::kMemlogModeBrowser ||
+        GetParam() == switches::kMemlogModeMinimal) {
+      ASSERT_TRUE(heaps_v2);
+      ASSERT_NO_FATAL_FAILURE(
+          ValidateDump(heaps_v2, kBrowserAllocSize * kBrowserAllocCount,
+                       kBrowserAllocCount, "malloc", nullptr));
+      ASSERT_NO_FATAL_FAILURE(
+          ValidateDump(heaps_v2, total_variadic_allocations_,
+                       kBrowserAllocCount, "malloc", nullptr));
+      ASSERT_NO_FATAL_FAILURE(ValidateDump(
+          heaps_v2, kPartitionAllocSize * kPartitionAllocCount,
+          kPartitionAllocCount, "partition_alloc", kPartitionAllocTypeName));
+    } else {
+      ASSERT_FALSE(heaps_v2) << "There should be no heap dump for the browser.";
+    }
+
+    EXPECT_EQ(1, NumProcessesWithName(dump_json, "Browser"));
   }
 
   void ValidateRendererAllocations(base::Value* dump_json) {
@@ -233,7 +250,8 @@ class MemlogBrowserTest : public InProcessBrowserTest,
                                                        ->GetProcess()
                                                        ->GetHandle());
     base::Value* heaps_v2 = FindHeapsV2(renderer_pid, dump_json);
-    if (GetParam() == switches::kMemlogModeAll) {
+    if (GetParam() == switches::kMemlogModeAll ||
+        GetParam() == switches::kMemlogModeRendererSampling) {
       ASSERT_TRUE(heaps_v2);
 
       // ValidateDump doesn't always succeed for the renderer, since we don't do
@@ -245,7 +263,13 @@ class MemlogBrowserTest : public InProcessBrowserTest,
       ASSERT_FALSE(heaps_v2)
           << "There should be no heap dump for the renderer.";
     }
-    EXPECT_TRUE(HasProcessWithName(dump_json, "Renderer"));
+
+    // RendererSampling guarantees only 1 renderer is ever sampled at a time.
+    if (GetParam() == switches::kMemlogModeRendererSampling) {
+      EXPECT_EQ(1, NumProcessesWithName(dump_json, "Renderer"));
+    } else {
+      EXPECT_GT(NumProcessesWithName(dump_json, "Renderer"), 0);
+    }
   }
 
  private:
@@ -329,6 +353,7 @@ IN_PROC_BROWSER_TEST_P(MemlogBrowserTest, EndToEnd) {
 
   MakeTestAllocations();
 
+  // Attempt to dump a browser process.
   {
     base::FilePath browser_dumpfile_path =
         temp_dir.GetPath().Append(FILE_PATH_LITERAL("browserdump.json.gz"));
@@ -336,11 +361,18 @@ IN_PROC_BROWSER_TEST_P(MemlogBrowserTest, EndToEnd) {
 
     std::unique_ptr<base::Value> dump_json =
         ReadDumpFile(browser_dumpfile_path);
-    ASSERT_TRUE(dump_json);
-    ValidateBrowserAllocations(dump_json.get());
-    EXPECT_FALSE(HasProcessWithName(dump_json.get(), "Renderer"));
+    if (GetParam() == switches::kMemlogModeAll ||
+        GetParam() == switches::kMemlogModeBrowser ||
+        GetParam() == switches::kMemlogModeMinimal) {
+      ASSERT_TRUE(dump_json);
+      EXPECT_EQ(0, NumProcessesWithName(dump_json.get(), "Renderer"));
+      ValidateBrowserAllocations(dump_json.get());
+    } else {
+      ASSERT_FALSE(dump_json) << "Browser process unexpectedly profiled.";
+    }
   }
 
+  // Attempt to dump a renderer process.
   {
     base::ProcessId renderer_pid = base::GetProcId(browser()
                                                        ->tab_strip_model()
@@ -353,85 +385,58 @@ IN_PROC_BROWSER_TEST_P(MemlogBrowserTest, EndToEnd) {
     DumpProcess(renderer_pid, renderer_dumpfile_path);
     std::unique_ptr<base::Value> dump_json =
         ReadDumpFile(renderer_dumpfile_path);
-    if (GetParam() == switches::kMemlogModeAll) {
+
+    if (GetParam() == switches::kMemlogModeAll ||
+        GetParam() == switches::kMemlogModeRendererSampling) {
       ASSERT_TRUE(dump_json);
       ValidateRendererAllocations(dump_json.get());
-      EXPECT_FALSE(HasProcessWithName(dump_json.get(), "Browser"));
+      EXPECT_EQ(0, NumProcessesWithName(dump_json.get(), "Browser"));
     } else {
-      ASSERT_FALSE(dump_json)
-          << "Renderer should not be dumpable unless kMemlogModeAll!";
+      ASSERT_FALSE(dump_json) << "Renderer process unexpectedly profiled.";
     }
   }
+
+  // Attempt to dump a gpu process.
+  // TODO(ajwong): Implement this.  http://crbug.com/780955
 }
 
-IN_PROC_BROWSER_TEST_P(MemlogBrowserTest, EndToEndTracing) {
-  if (!GetParam()) {
-    // Test that nothing has been started if the flag is not passed. Then early
-    // exit.
-    ASSERT_FALSE(profiling::ProfilingProcessHost::has_started());
-    return;
-  } else {
-    ASSERT_TRUE(profiling::ProfilingProcessHost::has_started());
-  }
+// Ensure invocations via TracingController can generate a valid JSON file with
+// expected data.
+IN_PROC_BROWSER_TEST_P(MemlogBrowserTest, TracingControllerEndToEnd) {
+  profiling::ProfilingTestDriver driver;
+  profiling::ProfilingTestDriver::Options options;
+  options.mode =
+      GetParam()
+          ? profiling::ProfilingProcessHost::ConvertStringToMode(GetParam())
+          : profiling::ProfilingProcessHost::Mode::kNone;
+  options.profiling_already_started = true;
 
-  MakeTestAllocations();
-
-  base::RunLoop run_loop;
-  scoped_refptr<base::RefCountedString> result;
-
-  // Once the ProfilingProcessHost has dumped to the trace, stop the trace and
-  // collate the results into |result|, then quit the nested run loop.
-  auto finish_sink_callback = base::Bind(
-      [](scoped_refptr<base::RefCountedString>* result, base::Closure finished,
-         std::unique_ptr<const base::DictionaryValue> metadata,
-         base::RefCountedString* in) {
-        *result = in;
-        std::move(finished).Run();
-      },
-      &result, run_loop.QuitClosure());
-  scoped_refptr<content::TracingController::TraceDataEndpoint> sink =
-      content::TracingController::CreateStringEndpoint(
-          std::move(finish_sink_callback));
-  base::OnceClosure stop_tracing_closure = base::BindOnce(
-      base::IgnoreResult<bool (content::TracingController::*)(
-          const scoped_refptr<content::TracingController::TraceDataEndpoint>&)>(
-          &content::TracingController::StopTracing),
-      base::Unretained(content::TracingController::GetInstance()), sink);
-  base::OnceClosure stop_tracing_ui_thread_closure =
-      base::BindOnce(base::IgnoreResult(&base::TaskRunner::PostTask),
-                     base::ThreadTaskRunnerHandle::Get(), FROM_HERE,
-                     std::move(stop_tracing_closure));
-  profiling::ProfilingProcessHost::GetInstance()
-      ->SetDumpProcessForTracingCallback(
-          std::move(stop_tracing_ui_thread_closure));
-
-  // Spin a nested RunLoop until the heap dump has been added to the trace.
-  content::TracingController::GetInstance()->StartTracing(
-      base::trace_event::TraceConfig(
-          base::trace_event::TraceConfigMemoryTestUtil::
-              GetTraceConfig_PeriodicTriggers(100000, 100000)),
-      base::Closure());
-  run_loop.Run();
-
-  std::unique_ptr<base::Value> dump_json =
-      base::JSONReader::Read(result->data());
-  ASSERT_TRUE(dump_json);
-  ValidateBrowserAllocations(dump_json.get());
-  ValidateRendererAllocations(dump_json.get());
+  EXPECT_TRUE(driver.RunTest(options));
 }
 
 // TODO(ajwong): Test what happens if profiling process crashes.
+// http://crbug.com/780955
 
 INSTANTIATE_TEST_CASE_P(NoMemlog,
                         MemlogBrowserTest,
                         ::testing::Values(static_cast<const char*>(nullptr)));
-INSTANTIATE_TEST_CASE_P(BrowserOnly,
+INSTANTIATE_TEST_CASE_P(Minimal,
                         MemlogBrowserTest,
                         ::testing::Values(switches::kMemlogModeMinimal));
 INSTANTIATE_TEST_CASE_P(AllProcesses,
                         MemlogBrowserTest,
                         ::testing::Values(switches::kMemlogModeAll));
+INSTANTIATE_TEST_CASE_P(BrowserOnly,
+                        MemlogBrowserTest,
+                        ::testing::Values(switches::kMemlogModeBrowser));
+INSTANTIATE_TEST_CASE_P(GpuOnly,
+                        MemlogBrowserTest,
+                        ::testing::Values(switches::kMemlogModeGpu));
+INSTANTIATE_TEST_CASE_P(
+    RendererSampling,
+    MemlogBrowserTest,
+    ::testing::Values(switches::kMemlogModeRendererSampling));
 
-}  // namespace
+}  // namespace profiling
 
 #endif  // BUILDFLAG(USE_ALLOCATOR_SHIM)

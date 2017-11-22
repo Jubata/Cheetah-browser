@@ -9,11 +9,11 @@
 #include "core/dom/ModuleMap.h"
 #include "core/dom/ModuleScript.h"
 #include "core/dom/ScriptModuleResolverImpl.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/loader/modulescript/ModuleScriptFetchRequest.h"
 #include "core/loader/modulescript/ModuleScriptLoaderRegistry.h"
 #include "core/loader/modulescript/ModuleTreeLinkerRegistry.h"
 #include "platform/WebTaskRunner.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -58,10 +58,6 @@ void ModulatorImplBase::FetchTree(const ModuleScriptFetchRequest& request,
   // its argument.
   DCHECK(request.GetReferrer().IsNull());
 
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   tree_linker_registry_->Fetch(request, this, client);
 
   // Step 2. When the internal module script graph fetching procedure
@@ -80,10 +76,6 @@ void ModulatorImplBase::FetchDescendantsForInlineScript(
 void ModulatorImplBase::FetchSingle(const ModuleScriptFetchRequest& request,
                                     ModuleGraphLevel level,
                                     SingleModuleClient* client) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   map_->FetchSingleModuleScript(request, level, client);
 }
 
@@ -91,10 +83,6 @@ void ModulatorImplBase::FetchNewSingleModule(
     const ModuleScriptFetchRequest& request,
     ModuleGraphLevel level,
     ModuleScriptLoaderClient* client) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   loader_registry_->Fetch(request, level, this, client);
 }
 
@@ -132,10 +120,8 @@ ModuleImportMeta ModulatorImplBase::HostGetImportMetaProperties(
 ScriptModule ModulatorImplBase::CompileModule(
     const String& provided_source,
     const String& url_str,
+    const ScriptFetchOptions& options,
     AccessControlStatus access_control_status,
-    network::mojom::FetchCredentialsMode credentials_mode,
-    const String& nonce,
-    ParserDisposition parser_state,
     const TextPosition& position,
     ExceptionState& exception_state) {
   // Implements Steps 3-5 of
@@ -154,8 +140,8 @@ ScriptModule ModulatorImplBase::CompileModule(
   // Step 5. Let result be ParseModule(script source, realm, script).
   ScriptState::Scope scope(script_state_.get());
   return ScriptModule::Compile(script_state_->GetIsolate(), script_source,
-                               url_str, access_control_status, credentials_mode,
-                               nonce, parser_state, position, exception_state);
+                               url_str, options, access_control_status,
+                               position, exception_state);
 }
 
 ScriptValue ModulatorImplBase::InstantiateModule(ScriptModule script_module) {
@@ -208,10 +194,6 @@ ScriptValue ModulatorImplBase::ExecuteModule(
     const ModuleScript* module_script,
     CaptureEvalErrorFlag capture_error) {
   // https://html.spec.whatwg.org/#run-a-module-script
-
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
 
   // Step 1. "If rethrow errors is not given, let it be false." [spec text]
 

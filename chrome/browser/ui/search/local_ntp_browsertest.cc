@@ -11,6 +11,7 @@
 #include "base/i18n/base_i18n_switches.h"
 #include "base/json/string_escape.h"
 #include "base/memory/ptr_util.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/optional.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -50,6 +51,7 @@
 #include "components/search_engines/template_url_service.h"
 #include "components/search_provider_logos/logo_service.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
@@ -57,6 +59,7 @@
 #include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/WebKit/public/platform/web_feature.mojom.h"
 #include "ui/base/resource/resource_bundle.h"
 
 using search_provider_logos::EncodedLogo;
@@ -65,6 +68,7 @@ using search_provider_logos::LogoCallbacks;
 using search_provider_logos::LogoCallbackReason;
 using search_provider_logos::LogoObserver;
 using search_provider_logos::LogoService;
+using search_provider_logos::LogoType;
 using testing::_;
 using testing::DoAll;
 using testing::Eq;
@@ -425,6 +429,56 @@ IN_PROC_BROWSER_TEST_F(LocalNTPTest, FrenchGoogleNTPLoadsWithoutError) {
   EXPECT_TRUE(console_observer.message().empty()) << console_observer.message();
 }
 
+// Tests that blink::UseCounter do not track feature usage for NTP activities.
+IN_PROC_BROWSER_TEST_F(LocalNTPTest, ShouldNotTrackBlinkUseCounterForNTP) {
+  base::HistogramTester histogram_tester;
+  const char kFeaturesHistogramName[] = "Blink.UseCounter.Features";
+
+  // Set up a test server, so we have some arbitrary non-NTP URL to navigate to.
+  net::EmbeddedTestServer test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  test_server.ServeFilesFromSourceDirectory("chrome/test/data");
+  ASSERT_TRUE(test_server.Start());
+  const GURL other_url = test_server.GetURL("/simple.html");
+
+  // Open an NTP.
+  content::WebContents* active_tab =
+      OpenNewTab(browser(), GURL(chrome::kChromeUINewTabURL));
+  ASSERT_TRUE(search::IsInstantNTP(active_tab));
+  // Expect no PageVisits count.
+  EXPECT_EQ(nullptr,
+            base::StatisticsRecorder::FindHistogram(kFeaturesHistogramName));
+  // Navigate somewhere else in the same tab.
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), other_url, WindowOpenDisposition::CURRENT_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  ASSERT_FALSE(search::IsInstantNTP(active_tab));
+  // Navigate back to NTP.
+  content::TestNavigationObserver back_observer(active_tab);
+  chrome::GoBack(browser(), WindowOpenDisposition::CURRENT_TAB);
+  back_observer.Wait();
+  ASSERT_TRUE(search::IsInstantNTP(active_tab));
+  // There should be exactly 1 count of PageVisits.
+  histogram_tester.ExpectBucketCount(
+      kFeaturesHistogramName,
+      static_cast<int32_t>(blink::mojom::WebFeature::kPageVisits), 1);
+
+  // Navigate forward to the non-NTP page.
+  content::TestNavigationObserver fwd_observer(active_tab);
+  chrome::GoForward(browser(), WindowOpenDisposition::CURRENT_TAB);
+  fwd_observer.Wait();
+  ASSERT_FALSE(search::IsInstantNTP(active_tab));
+  // Navigate to a new NTP instance.
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), GURL(chrome::kChromeUINewTabURL),
+      WindowOpenDisposition::CURRENT_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  ASSERT_TRUE(search::IsInstantNTP(active_tab));
+  // There should be 2 counts of PageVisits.
+  histogram_tester.ExpectBucketCount(
+      kFeaturesHistogramName,
+      static_cast<int32_t>(blink::mojom::WebFeature::kPageVisits), 2);
+}
+
 class LocalNTPRTLTest : public LocalNTPTest {
  public:
   LocalNTPRTLTest() {}
@@ -547,13 +601,11 @@ namespace {
 // Returns the RenderFrameHost corresponding to the most visited iframe in the
 // given |tab|. |tab| must correspond to an NTP.
 content::RenderFrameHost* GetMostVisitedIframe(content::WebContents* tab) {
-  CHECK_EQ(2u, tab->GetAllFrames().size());
   for (content::RenderFrameHost* frame : tab->GetAllFrames()) {
-    if (frame != tab->GetMainFrame()) {
+    if (frame->GetFrameName() == "mv-single") {
       return frame;
     }
   }
-  NOTREACHED();
   return nullptr;
 }
 
@@ -869,20 +921,36 @@ class LocalNTPDoodleTest : public InProcessBrowserTest {
         LogoServiceFactory::GetForProfile(browser()->profile()));
   }
 
-  base::Optional<double> GetComputedOpacity(content::WebContents* tab,
-                                            const std::string& id) {
+  base::Optional<std::string> GetComputedStyle(content::WebContents* tab,
+                                               const std::string& id,
+                                               const std::string& css_name) {
     std::string css_value;
-    double double_value;
     if (instant_test_utils::GetStringFromJS(
             tab,
             base::StringPrintf(
-                "getComputedStyle(document.getElementById(%s)).opacity",
-                base::GetQuotedJSONString(id).c_str()),
-            &css_value) &&
-        base::StringToDouble(css_value, &double_value)) {
+                "getComputedStyle(document.getElementById(%s))[%s]",
+                base::GetQuotedJSONString(id).c_str(),
+                base::GetQuotedJSONString(css_name).c_str()),
+            &css_value)) {
+      return css_value;
+    }
+    return base::nullopt;
+  }
+
+  base::Optional<double> GetComputedOpacity(content::WebContents* tab,
+                                            const std::string& id) {
+    auto css_value = GetComputedStyle(tab, id, "opacity");
+    double double_value;
+    if ((css_value != base::nullopt) &&
+        base::StringToDouble(*css_value, &double_value)) {
       return double_value;
     }
     return base::nullopt;
+  }
+
+  base::Optional<std::string> GetComputedDisplay(content::WebContents* tab,
+                                                 const std::string& id) {
+    return GetComputedStyle(tab, id, "display");
   }
 
   // Gets $(id)[property]. Coerces to string.
@@ -1043,6 +1111,10 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest, ShouldShowDoodleWhenCached) {
 
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("block"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("none"));
   EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-image", "title"),
               Eq<std::string>("Chromium"));
   // TODO(sfiera): check href by clicking on button.
@@ -1058,8 +1130,40 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest, ShouldShowDoodleWhenCached) {
   histograms.ExpectTotalCount("NewTabPage.LogoShownTime2", 1);
 }
 
+IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest, ShouldShowInteractiveLogo) {
+  EncodedLogo cached_logo;
+  cached_logo.encoded_image = MakeRefPtr(std::string());
+  cached_logo.metadata.mime_type = "image/png";
+  cached_logo.metadata.type = LogoType::INTERACTIVE;
+  cached_logo.metadata.full_page_url =
+      GURL("https://www.chromium.org/interactive");
+  cached_logo.metadata.alt_text = "alt text";
+
+  EXPECT_CALL(*logo_service(), GetLogoPtr(_))
+      .WillRepeatedly(DoAll(
+          ReturnCachedLogo(LogoCallbackReason::DETERMINED, cached_logo),
+          ReturnFreshLogo(LogoCallbackReason::REVALIDATED, base::nullopt)));
+
+  // Open a new blank tab, then go to NTP.
+  content::WebContents* active_tab = OpenNewTab(browser(), GURL("about:blank"));
+  base::HistogramTester histograms;
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
+
+  EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
+  EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("none"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("block"));
+
+  EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-iframe", "src"),
+              Eq<std::string>("https://www.chromium.org/interactive"));
+  EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-iframe", "title"),
+              Eq<std::string>("alt text"));
+}
+
 IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
-                       ShouldFadeDoodleToDefaultWhenFetched) {
+                       ShouldFadeSimpleDoodleToDefaultWhenFetched) {
   EncodedLogo cached_logo;
   cached_logo.encoded_image = MakeRefPtr(kCachedB64);
   cached_logo.metadata.mime_type = "image/png";
@@ -1094,7 +1198,7 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
 }
 
 IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
-                       ShouldFadeDefaultToDoodleWhenFetched) {
+                       ShouldFadeDefaultToSimpleDoodleWhenFetched) {
   EncodedLogo fresh_logo;
   fresh_logo.encoded_image = MakeRefPtr(kFreshB64);
   fresh_logo.metadata.mime_type = "image/png";
@@ -1117,6 +1221,10 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
   WaitForFadeIn(active_tab, "logo-doodle");
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("block"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("none"));
   EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-image", "title"),
               Eq<std::string>("Chromium"));
   // TODO(sfiera): check href by clicking on button.
@@ -1132,7 +1240,71 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
 }
 
 IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
-                       ShouldFadeDoodleToDoodleWhenFetched) {
+                       ShouldFadeDefaultToInteractiveDoodleWhenFetched) {
+  EncodedLogo fresh_logo;
+  fresh_logo.encoded_image = MakeRefPtr(std::string());
+  fresh_logo.metadata.mime_type = "image/png";
+  fresh_logo.metadata.type = LogoType::INTERACTIVE;
+  fresh_logo.metadata.full_page_url =
+      GURL("https://www.chromium.org/interactive");
+  fresh_logo.metadata.alt_text = "alt text";
+
+  EXPECT_CALL(*logo_service(), GetLogoPtr(_))
+      .WillOnce(
+          DoAll(ReturnCachedLogo(LogoCallbackReason::DETERMINED, base::nullopt),
+                ReturnFreshLogo(LogoCallbackReason::DETERMINED, fresh_logo)))
+      .WillRepeatedly(DoAll(
+          ReturnCachedLogo(LogoCallbackReason::DETERMINED, fresh_logo),
+          ReturnFreshLogo(LogoCallbackReason::REVALIDATED, base::nullopt)));
+
+  // Open a new blank tab, then go to NTP.
+  content::WebContents* active_tab = OpenNewTab(browser(), GURL("about:blank"));
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
+
+  WaitForFadeIn(active_tab, "logo-doodle");
+  EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
+  EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("none"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("block"));
+  EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-iframe", "src"),
+              Eq<std::string>("https://www.chromium.org/interactive"));
+}
+
+IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest, ShouldNotFadeFromInteractiveDoodle) {
+  EncodedLogo cached_logo;
+  cached_logo.encoded_image = MakeRefPtr(std::string());
+  cached_logo.metadata.mime_type = "image/png";
+  cached_logo.metadata.type = LogoType::INTERACTIVE;
+  cached_logo.metadata.full_page_url =
+      GURL("https://www.chromium.org/interactive");
+  cached_logo.metadata.alt_text = "alt text";
+
+  EXPECT_CALL(*logo_service(), GetLogoPtr(_))
+      .WillOnce(
+          DoAll(ReturnCachedLogo(LogoCallbackReason::DETERMINED, cached_logo),
+                ReturnFreshLogo(LogoCallbackReason::DETERMINED, base::nullopt)))
+      .WillRepeatedly(DoAll(
+          ReturnCachedLogo(LogoCallbackReason::DETERMINED, base::nullopt),
+          ReturnFreshLogo(LogoCallbackReason::REVALIDATED, base::nullopt)));
+
+  // Open a new blank tab, then go to NTP.
+  content::WebContents* active_tab = OpenNewTab(browser(), GURL("about:blank"));
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
+
+  EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
+  EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("none"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("block"));
+  EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-iframe", "src"),
+              Eq<std::string>("https://www.chromium.org/interactive"));
+}
+
+IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
+                       ShouldFadeSimpleDoodleToSimpleDoodleWhenFetched) {
   EncodedLogo cached_logo;
   cached_logo.encoded_image = MakeRefPtr(kCachedB64);
   cached_logo.metadata.mime_type = "image/png";
@@ -1161,6 +1333,10 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest,
   WaitForFadeIn(active_tab, "logo-doodle");
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("block"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("none"));
   EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-image", "src"),
               Eq<std::string>("data:image/png;base64,fresh+++"));
   EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-image", "title"),
@@ -1209,6 +1385,10 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest, ShouldUpdateMetadataWhenChanged) {
 
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("block"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("none"));
 
   EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-image", "title"),
               Eq<std::string>("fresh alt text"));
@@ -1229,8 +1409,8 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest, ShouldAnimateLogoWhenClicked) {
   EncodedLogo cached_logo;
   cached_logo.encoded_image = MakeRefPtr(kCachedB64);
   cached_logo.metadata.mime_type = "image/png";
-  cached_logo.metadata.animated_url =
-      GURL("https://www.chromium.org/animated.gif");
+  cached_logo.metadata.type = LogoType::ANIMATED;
+  cached_logo.metadata.animated_url = GURL("data:image/png;base64,cached++");
   cached_logo.metadata.on_click_url = GURL("https://www.chromium.org/");
   cached_logo.metadata.alt_text = "alt text";
 
@@ -1246,6 +1426,10 @@ IN_PROC_BROWSER_TEST_F(LocalNTPDoodleTest, ShouldAnimateLogoWhenClicked) {
 
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-default"), Eq(0.0));
   EXPECT_THAT(GetComputedOpacity(active_tab, "logo-doodle"), Eq(1.0));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-button"),
+              Eq<std::string>("block"));
+  EXPECT_THAT(GetComputedDisplay(active_tab, "logo-doodle-iframe"),
+              Eq<std::string>("none"));
 
   EXPECT_THAT(GetElementProperty(active_tab, "logo-doodle-image", "src"),
               Eq<std::string>("data:image/png;base64,cached++"));

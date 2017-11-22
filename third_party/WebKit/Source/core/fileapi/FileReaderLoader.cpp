@@ -31,6 +31,7 @@
 #include "core/fileapi/FileReaderLoader.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
@@ -46,7 +47,6 @@
 #include "platform/loader/fetch/TextResourceDecoderOptions.h"
 #include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/Base64.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -70,6 +70,11 @@ FileReaderLoader::~FileReaderLoader() {
 void FileReaderLoader::Start(ExecutionContext* execution_context,
                              scoped_refptr<BlobDataHandle> blob_data) {
   DCHECK(execution_context);
+#if DCHECK_IS_ON()
+  DCHECK(!started_loading_) << "FileReaderLoader can only be used once";
+  started_loading_ = true;
+#endif  // DCHECK_IS_ON()
+
   // The blob is read by routing through the request handling layer given a
   // temporary public url.
   url_for_reading_ =
@@ -185,7 +190,7 @@ void FileReaderLoader::DidReceiveResponse(
     }
 
     if (initial_buffer_length < 0)
-      raw_data_ = WTF::MakeUnique<ArrayBufferBuilder>();
+      raw_data_ = std::make_unique<ArrayBufferBuilder>();
     else
       raw_data_ = WTF::WrapUnique(
           new ArrayBufferBuilder(static_cast<unsigned>(initial_buffer_length)));

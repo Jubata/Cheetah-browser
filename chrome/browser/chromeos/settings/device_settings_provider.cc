@@ -47,30 +47,34 @@ namespace {
 const char* const kKnownSettings[] = {
     kAccountsPrefAllowGuest,
     kAccountsPrefAllowNewUser,
-    kAccountsPrefDeviceLocalAccounts,
     kAccountsPrefDeviceLocalAccountAutoLoginBailoutEnabled,
     kAccountsPrefDeviceLocalAccountAutoLoginDelay,
     kAccountsPrefDeviceLocalAccountAutoLoginId,
     kAccountsPrefDeviceLocalAccountPromptForNetworkWhenOffline,
+    kAccountsPrefDeviceLocalAccounts,
     kAccountsPrefEphemeralUsersEnabled,
+    kAccountsPrefLoginScreenDomainAutoComplete,
     kAccountsPrefShowUserNamesOnSignIn,
     kAccountsPrefSupervisedUsersEnabled,
     kAccountsPrefTransferSAMLCookies,
     kAccountsPrefUsers,
-    kAccountsPrefLoginScreenDomainAutoComplete,
     kAllowBluetooth,
-    kAllowRedeemChromeOsRegistrationOffers,
     kAllowedConnectionTypesForUpdate,
+    kAllowRedeemChromeOsRegistrationOffers,
     kAttestationForContentProtectionEnabled,
     kCastReceiverName,
     kDeviceAttestationEnabled,
     kDeviceDisabled,
     kDeviceDisabledMessage,
+    kDeviceEnrollmentIdNeeded,
     kDeviceLoginScreenAppInstallList,
+    kDeviceLoginScreenInputMethods,
+    kDeviceLoginScreenLocales,
+    kDeviceOffHours,
     kDeviceOwner,
-    kDevicePrintersConfigurations,
     kDevicePrintersAccessMode,
     kDevicePrintersBlacklist,
+    kDevicePrintersConfigurations,
     kDevicePrintersWhitelist,
     kDeviceQuirksDownloadEnabled,
     kDeviceWallpaperImage,
@@ -80,6 +84,7 @@ const char* const kKnownSettings[] = {
     kHeartbeatFrequency,
     kLoginAuthenticationBehavior,
     kLoginVideoCaptureAllowedUrls,
+    kMinimumRequiredChromeVersion,
     kPolicyMissingMitigationMode,
     kRebootOnShutdown,
     kReleaseChannel,
@@ -103,14 +108,10 @@ const char* const kKnownSettings[] = {
     kSystemTimezonePolicy,
     kSystemUse24HourClock,
     kTargetVersionPrefix,
+    kTPMFirmwareUpdateSettings,
+    kUnaffiliatedArcAllowed,
     kUpdateDisabled,
     kVariationsRestrictParameter,
-    kDeviceLoginScreenLocales,
-    kDeviceLoginScreenInputMethods,
-    kDeviceOffHours,
-    kTPMFirmwareUpdateSettings,
-    kMinimumRequiredChromeVersion,
-    kCastReceiverName,
 };
 
 void DecodeLoginPolicies(
@@ -603,6 +604,25 @@ void DecodeGenericPolicies(
     if (container.has_name()) {
       new_values_cache->SetValue(
           kCastReceiverName, base::MakeUnique<base::Value>(container.name()));
+    }
+  }
+
+  if (policy.has_forced_reenrollment()) {
+    const em::ForcedReenrollmentProto& container(policy.forced_reenrollment());
+    if (container.has_enrollment_id_needed()) {
+      new_values_cache->SetValue(
+          kDeviceEnrollmentIdNeeded,
+          base::MakeUnique<base::Value>(container.enrollment_id_needed()));
+    }
+  }
+
+  if (policy.has_unaffiliated_arc_allowed()) {
+    const em::UnaffiliatedArcAllowedProto& container(
+        policy.unaffiliated_arc_allowed());
+    if (container.has_unaffiliated_arc_allowed()) {
+      new_values_cache->SetValue(
+          kUnaffiliatedArcAllowed,
+          base::MakeUnique<base::Value>(container.unaffiliated_arc_allowed()));
     }
   }
 }

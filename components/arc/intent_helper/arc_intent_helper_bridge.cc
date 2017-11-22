@@ -12,13 +12,14 @@
 #include "ash/wallpaper/wallpaper_controller.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string_util.h"
 #include "components/arc/arc_bridge_service.h"
 #include "components/arc/arc_browser_context_keyed_service_factory_base.h"
 #include "components/arc/arc_service_manager.h"
 #include "components/arc/audio/arc_audio_bridge.h"
 #include "components/url_formatter/url_fixer.h"
 #include "ui/base/layout.h"
-#include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace arc {
 namespace {
@@ -58,15 +59,50 @@ class ArcIntentHelperBridgeFactory
   ~ArcIntentHelperBridgeFactory() override = default;
 };
 
+// Base URL for the Chrome settings pages.
+constexpr char kSettingsPageBaseUrl[] = "chrome://settings";
+
+// TODO(yusukes): Properly fix b/68953603 and remove the constant.
+constexpr const char* kWhitelistedUrls[] = {
+    "about:blank", "chrome://downloads", "chrome://history",
+    "chrome://settings",
+};
+
+// TODO(yusukes): Properly fix b/68953603 and remove the constant.
+constexpr const char* kWhitelistedSettingsPaths[] = {
+    "accounts",
+    "appearance",
+    "autofill",
+    "bluetoothDevices",
+    "changePicture",
+    "clearBrowserData",
+    "cloudPrinters",
+    "cupsPrinters",
+    "dateTime",
+    "display",
+    "downloads",
+    "help",
+    "keyboard-overlay",
+    "languages",
+    "lockScreen",
+    "manageAccessibility",
+    "networks?type=VPN",
+    "onStartup",
+    "passwords",
+    "pointer-overlay",
+    "power",
+    "privacy",
+    "reset",
+    "search",
+    "storage",
+    "syncSetup",
+};
+
 }  // namespace
 
 // static
 const char ArcIntentHelperBridge::kArcIntentHelperPackageName[] =
     "org.chromium.arc.intent_helper";
-
-// static
-const char ArcIntentHelperBridge::kMultideviceSettingsUrl[] =
-    "chrome://settings/multidevice";
 
 // static
 ArcIntentHelperBridge* ArcIntentHelperBridge::GetForBrowserContext(
@@ -77,6 +113,12 @@ ArcIntentHelperBridge* ArcIntentHelperBridge::GetForBrowserContext(
 // static
 KeyedServiceBaseFactory* ArcIntentHelperBridge::GetFactory() {
   return ArcIntentHelperBridgeFactory::GetInstance();
+}
+
+// static
+std::string ArcIntentHelperBridge::AppendStringToIntentHelperPackageName(
+    const std::string& to_append) {
+  return base::JoinString({kArcIntentHelperPackageName, to_append}, ".");
 }
 
 ArcIntentHelperBridge::ArcIntentHelperBridge(content::BrowserContext* context,
@@ -93,7 +135,7 @@ ArcIntentHelperBridge::~ArcIntentHelperBridge() {
   arc_bridge_service_->intent_helper()->RemoveObserver(this);
 }
 
-void ArcIntentHelperBridge::OnInstanceReady() {
+void ArcIntentHelperBridge::OnConnectionReady() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto* instance =
       ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->intent_helper(), Init);
@@ -103,7 +145,7 @@ void ArcIntentHelperBridge::OnInstanceReady() {
   instance->Init(std::move(host_proxy));
 }
 
-void ArcIntentHelperBridge::OnInstanceClosed() {
+void ArcIntentHelperBridge::OnConnectionClosed() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 }
 
@@ -129,14 +171,54 @@ void ArcIntentHelperBridge::OnOpenUrl(const std::string& url) {
   // for example.
   const GURL gurl(url_formatter::FixupURL(url, std::string()));
   // Disallow opening chrome:// URLs.
-  if (!gurl.is_valid() || gurl.SchemeIs(kChromeUIScheme))
+  if (!gurl.is_valid() || !IsWhitelistedChromeUrl(gurl))
     return;
   open_url_delegate_->OpenUrl(gurl);
 }
 
-void ArcIntentHelperBridge::OnOpenChromeSettingsMultideviceUrl() {
+void ArcIntentHelperBridge::OnOpenChromeSettings(mojom::SettingsPage page) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  open_url_delegate_->OpenUrl(GURL(kMultideviceSettingsUrl));
+
+  // Mapping from the mojom enum values to the URL components.
+  const char* sub_url = nullptr;
+  switch (page) {
+    case mojom::SettingsPage::MULTIDEVICE:
+      sub_url = "multidevice";
+      break;
+    case mojom::SettingsPage::MAIN:
+      sub_url = "";
+      break;
+    case mojom::SettingsPage::POWER:
+      sub_url = "power";
+      break;
+    case mojom::SettingsPage::BLUETOOTH:
+      sub_url = "bluetoothDevices";
+      break;
+    case mojom::SettingsPage::DATETIME:
+      sub_url = "dateTime";
+      break;
+    case mojom::SettingsPage::DISPLAY:
+      sub_url = "display";
+      break;
+    case mojom::SettingsPage::WIFI:
+      sub_url = "networks/?type=WiFi";
+      break;
+    case mojom::SettingsPage::LANGUAGE:
+      sub_url = "languages";
+      break;
+    case mojom::SettingsPage::PRIVACY:
+      sub_url = "privacy";
+      break;
+    case mojom::SettingsPage::HELP:
+      sub_url = "help";
+      break;
+  }
+
+  if (!sub_url) {
+    LOG(ERROR) << "Invalid settings page: " << page;
+    return;
+  }
+  open_url_delegate_->OpenUrl(GURL(kSettingsPageBaseUrl).Resolve(sub_url));
 }
 
 void ArcIntentHelperBridge::OpenWallpaperPicker() {
@@ -224,6 +306,20 @@ void ArcIntentHelperBridge::OnIntentFiltersUpdated(
 void ArcIntentHelperBridge::SetOpenUrlDelegateForTesting(
     std::unique_ptr<OpenUrlDelegate> open_url_delegate) {
   open_url_delegate_ = std::move(open_url_delegate);
+}
+
+bool ArcIntentHelperBridge::IsWhitelistedChromeUrl(const GURL& url) {
+  if (!url.SchemeIs(kChromeUIScheme) && !url.SchemeIs(url::kAboutScheme))
+    return true;
+
+  if (whitelisted_urls_.empty()) {
+    whitelisted_urls_.insert(std::begin(kWhitelistedUrls),
+                             std::end(kWhitelistedUrls));
+    const std::string prefix = "chrome://settings/";
+    for (const char* path : kWhitelistedSettingsPaths)
+      whitelisted_urls_.insert(GURL(prefix + path));
+  }
+  return whitelisted_urls_.count(url) > 0;
 }
 
 }  // namespace arc

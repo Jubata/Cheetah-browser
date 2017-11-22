@@ -96,6 +96,7 @@ class CONTENT_EXPORT BlinkPlatformImpl : public blink::Platform {
       const blink::WebString& value1,
       const blink::WebString& value2) override;
   void SuddenTerminationChanged(bool enabled) override {}
+  bool IsRendererSideResourceSchedulerEnabled() const final;
   std::unique_ptr<blink::WebGestureCurve> CreateFlingAnimationCurve(
       blink::WebGestureDevice device_source,
       const blink::WebFloatPoint& velocity,
@@ -111,15 +112,6 @@ class CONTENT_EXPORT BlinkPlatformImpl : public blink::Platform {
   blink::WebString DomKeyStringFromEnum(int dom_key) override;
   int DomKeyEnumFromString(const blink::WebString& key_string) override;
   bool IsDomKeyForModifier(int dom_key) override;
-
-  std::unique_ptr<blink::WebFeaturePolicy> CreateFeaturePolicy(
-      const blink::WebFeaturePolicy* parentPolicy,
-      const blink::WebParsedFeaturePolicy& containerPolicy,
-      const blink::WebParsedFeaturePolicy& policyHeader,
-      const blink::WebSecurityOrigin& origin) override;
-  std::unique_ptr<blink::WebFeaturePolicy> DuplicateFeaturePolicyWithOrigin(
-      const blink::WebFeaturePolicy& policy,
-      const blink::WebSecurityOrigin& new_origin) override;
 
   void WaitUntilWebThreadTLSUpdate(blink::scheduler::WebThreadBase* thread);
 

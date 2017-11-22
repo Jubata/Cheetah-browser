@@ -253,6 +253,7 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   static void UnregisterContentsLayer(WebLayer*);
 
   IntRect InterestRect();
+  void PaintRecursively();
   void Paint(const IntRect* interest_rect,
              GraphicsContext::DisabledMode = GraphicsContext::kNothingDisabled);
 
@@ -261,8 +262,6 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
       cc::Layer*) override;
   void didUpdateMainThreadScrollingReasons() override;
   void didChangeScrollbarsHidden(bool) override;
-  void DidChangeLayerOpacity(float, float) override {}
-  void DidChangeLayerTransform() override {}
 
   PaintController& GetPaintController() const;
 
@@ -304,6 +303,8 @@ class PLATFORM_EXPORT GraphicsLayer : public cc::LayerClient,
   void PaintContents(WebDisplayItemList*,
                      PaintingControlSetting = kPaintDefaultBehavior) final;
   size_t ApproximateUnsharedMemoryUsage() const final;
+
+  void PaintRecursivelyInternal();
 
   // Returns true if PaintController::paintArtifact() changed and needs commit.
   bool PaintWithoutCommit(
@@ -439,7 +440,7 @@ class PLATFORM_EXPORT ScopedSetNeedsDisplayInRectForTrackingOnly {
 
 }  // namespace blink
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
 // Outside the blink namespace for ease of invocation from gdb.
 void PLATFORM_EXPORT showGraphicsLayerTree(const blink::GraphicsLayer*);
 void PLATFORM_EXPORT showGraphicsLayers(const blink::GraphicsLayer*);

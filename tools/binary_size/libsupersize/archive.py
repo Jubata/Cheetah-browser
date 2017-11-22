@@ -27,7 +27,7 @@ import linker_map_parser
 import models
 import ninja_parser
 import nm
-import paths
+import path_util
 
 
 # Effect of _MAX_SAME_NAME_ALIAS_COUNT (as of Oct 2017, with min_pss = max):
@@ -77,8 +77,8 @@ def _UnmangleRemainingSymbols(raw_symbols, tool_prefix):
     return
 
   logging.info('Unmangling %d names', len(to_process))
-  proc = subprocess.Popen([tool_prefix + 'c++filt'], stdin=subprocess.PIPE,
-                          stdout=subprocess.PIPE)
+  proc = subprocess.Popen([path_util.GetCppFiltPath(tool_prefix)],
+                          stdin=subprocess.PIPE, stdout=subprocess.PIPE)
   stdout = proc.communicate('\n'.join(s.full_name for s in to_process))[0]
   assert proc.returncode == 0
 
@@ -487,6 +487,7 @@ def _AddNmAliases(raw_symbols, names_by_address):
   logging.debug('Creating alias list')
   replacements = []
   num_new_symbols = 0
+  missing_names = collections.defaultdict(list)
   for i, s in enumerate(raw_symbols):
     # Don't alias padding-only symbols (e.g. ** symbol gap)
     if s.size_without_padding == 0:
@@ -494,11 +495,19 @@ def _AddNmAliases(raw_symbols, names_by_address):
     name_list = names_by_address.get(s.address)
     if name_list:
       if s.full_name not in name_list:
+        missing_names[s.full_name].append(s.address)
         logging.warning('Name missing from aliases: %s %s', s.full_name,
                         name_list)
         continue
       replacements.append((i, name_list))
       num_new_symbols += len(name_list) - 1
+
+  if missing_names and logging.getLogger().isEnabledFor(logging.INFO):
+    for address, names in names_by_address.iteritems():
+      for name in names:
+        if name in missing_names:
+          logging.info('Missing name %s is at address %x instead of [%s]' %
+              (name, address, ','.join('%x' % a for a in missing_names[name])))
 
   if float(num_new_symbols) / len(raw_symbols) < .05:
     logging.warning('Number of aliases is oddly low (%.0f%%). It should '
@@ -554,7 +563,7 @@ def CreateMetadata(map_path, elf_path, apk_path, tool_prefix, output_directory):
     timestamp_obj = datetime.datetime.utcfromtimestamp(os.path.getmtime(
         elf_path))
     timestamp = calendar.timegm(timestamp_obj.timetuple())
-    relative_tool_prefix = paths.ToSrcRootRelative(tool_prefix)
+    relative_tool_prefix = path_util.ToSrcRootRelative(tool_prefix)
 
     metadata = {
         models.METADATA_GIT_REVISION: git_rev,
@@ -644,8 +653,9 @@ def CreateSizeInfo(map_path, elf_path, tool_prefix, output_directory,
     bulk_analyzer.AnalyzePaths(missed_object_paths)
     bulk_analyzer.SortPaths()
     if track_string_literals:
-      merge_string_syms = [
-          s for s in raw_symbols if s.full_name == '** merge strings']
+      merge_string_syms = [s for s in raw_symbols if
+                           s.full_name == '** merge strings' or
+                           s.full_name == '** lld merge strings']
       # More likely for there to be a bug in supersize than an ELF to not have a
       # single string literal.
       assert merge_string_syms
@@ -733,7 +743,7 @@ def _DetectGitRevision(directory):
 
 
 def BuildIdFromElf(elf_path, tool_prefix):
-  args = [tool_prefix + 'readelf', '-n', elf_path]
+  args = [path_util.GetReadElfPath(tool_prefix), '-n', elf_path]
   stdout = subprocess.check_output(args)
   match = re.search(r'Build ID: (\w+)', stdout)
   assert match, 'Build ID not found from running: ' + ' '.join(args)
@@ -741,7 +751,7 @@ def BuildIdFromElf(elf_path, tool_prefix):
 
 
 def _SectionSizesFromElf(elf_path, tool_prefix):
-  args = [tool_prefix + 'readelf', '-S', '--wide', elf_path]
+  args = [path_util.GetReadElfPath(tool_prefix), '-S', '--wide', elf_path]
   stdout = subprocess.check_output(args)
   section_sizes = {}
   # Matches  [ 2] .hash HASH 00000000006681f0 0001f0 003154 04   A  3   0  8
@@ -752,7 +762,7 @@ def _SectionSizesFromElf(elf_path, tool_prefix):
 
 
 def _ArchFromElf(elf_path, tool_prefix):
-  args = [tool_prefix + 'readelf', '-h', elf_path]
+  args = [path_util.GetReadElfPath(tool_prefix), '-h', elf_path]
   stdout = subprocess.check_output(args)
   machine = re.search('Machine:\s*(.+)', stdout).group(1)
   if machine == 'Intel 80386':
@@ -777,6 +787,11 @@ def _ParseGnArgs(args_path):
         continue
       args[parts[0].strip()] = parts[1].strip()
   return ["%s=%s" % x for x in sorted(args.iteritems())]
+
+
+def _DetectLinkerName(map_path):
+  with _OpenMaybeGz(map_path) as map_file:
+    return linker_map_parser.DetectLinkerNameFromMapFileHeader(next(map_file))
 
 
 def _ElfInfoFromApk(apk_path, apk_so_path, tool_prefix):
@@ -826,9 +841,9 @@ def Run(args, parser):
   any_input = apk_path or elf_path or map_path
   if not any_input:
     parser.error('Most pass at least one of --apk-file, --elf-file, --map-file')
-  lazy_paths = paths.LazyPaths(tool_prefix=args.tool_prefix,
-                               output_directory=args.output_directory,
-                               any_path_within_output_directory=any_input)
+  output_directory_finder = path_util.OutputDirectoryFinder(
+      value=args.output_directory,
+      any_path_within_output_directory=any_input)
   if apk_path:
     with zipfile.ZipFile(apk_path) as z:
       lib_infos = [f for f in z.infolist()
@@ -838,9 +853,9 @@ def Run(args, parser):
     #     secondary architectures.
     apk_so_path = max(lib_infos, key=lambda x:x.file_size).filename
     logging.debug('Sub-apk path=%s', apk_so_path)
-    if not elf_path and lazy_paths.output_directory:
+    if not elf_path and output_directory_finder.Tentative():
       elf_path = os.path.join(
-          lazy_paths.output_directory, 'lib.unstripped',
+          output_directory_finder.Tentative(), 'lib.unstripped',
           os.path.basename(apk_so_path.replace('crazy.', '')))
       logging.debug('Detected --elf-file=%s', elf_path)
 
@@ -856,10 +871,15 @@ def Run(args, parser):
                    'is_official_build=true, or use --map-file to point me a '
                    'linker map file.')
 
-  tool_prefix = lazy_paths.VerifyToolPrefix()
+  linker_name = _DetectLinkerName(map_path)
+  tool_prefix_finder = path_util.ToolPrefixFinder(
+      value=args.tool_prefix,
+      output_directory_finder=output_directory_finder,
+      linker_name=linker_name)
+  tool_prefix = tool_prefix_finder.Finalized()
   output_directory = None
   if not args.no_source_paths:
-    output_directory = lazy_paths.VerifyOutputDirectory()
+    output_directory = output_directory_finder.Finalized()
 
   metadata = CreateMetadata(map_path, elf_path, apk_path, tool_prefix,
                             output_directory)

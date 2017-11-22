@@ -9,6 +9,7 @@
 
 #include <memory>
 
+#include "base/containers/flat_set.h"
 #include "base/memory/ref_counted_memory.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image.h"
@@ -20,22 +21,27 @@ struct FallbackIconStyle;
 
 typedef int64_t FaviconID;
 
-// Defines the icon types. They are also stored in icon_type field of favicons
-// table.
+// Defines the icon types.
+//
+// IMPORTANT: these values must stay in sync with the FaviconType enum in
+// tools/metrics/histograms/enum.xml.
 //
 // The values of the IconTypes are used to select the priority in which favicon
 // data is returned in HistoryBackend and ThumbnailDatabase.
 //
 // A Java counterpart will be generated for this enum.
 // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.favicon
-enum IconType {
-  INVALID_ICON = 0x0,
-  FAVICON = 1 << 0,
-  TOUCH_ICON = 1 << 1,
-  TOUCH_PRECOMPOSED_ICON = 1 << 2,
-  WEB_MANIFEST_ICON = 1 << 3,
-  ICON_TYPE_MAX = WEB_MANIFEST_ICON
+enum class IconType {
+  kInvalid = 0,
+  kFavicon,
+  kTouchIcon,
+  kTouchPrecomposedIcon,
+  kWebManifestIcon,
+  kMax = kWebManifestIcon,
+  kCount
 };
+
+using IconTypeSet = base::flat_set<IconType>;
 
 // Defines a gfx::Image of size desired_size_in_dip composed of image
 // representations for each of the desired scale factors.
@@ -161,10 +167,6 @@ enum class GoogleFaviconServerRequestStatus {
   // Insert new values here.
   COUNT
 };
-
-// Returns a value corresponding to the UMA enum values for FaviconType in
-// histograms/enums.xml.
-int GetUmaFaviconType(IconType icon_type);
 
 }  // namespace favicon_base
 

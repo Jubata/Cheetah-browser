@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/user_activity/user_activity_detector.h"
@@ -145,9 +144,12 @@ MultipleDisplayState DisplayChangeObserver::GetStateForDisplayIds(
   UpdateInternalDisplay(display_states);
   if (display_states.size() == 1)
     return MULTIPLE_DISPLAY_STATE_SINGLE;
-  if (display_states.size() > 2) {
-    // TODO(weidongg/607844) Remove this once multi-display mirroring is
-    // implemented.
+  if (!display_manager_->is_multi_mirroring_enabled() &&
+      display_states.size() > 2) {
+    // TODO(weidongg/774795): Remove this condition when multi-mirroring is
+    // enabled by default.
+    // When multi-mirroring is disabled, mirroring across 3+ displays are not
+    // supported, so default to EXTENDED.
     return MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED;
   }
   DisplayIdList list =
@@ -218,12 +220,11 @@ void DisplayChangeObserver::OnTouchscreenDeviceConfigurationChanged() {
 
 void DisplayChangeObserver::UpdateInternalDisplay(
     const DisplayConfigurator::DisplayStateList& display_states) {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  bool use_first_display_as_internal =
-      command_line->HasSwitch(::switches::kUseFirstDisplayAsInternal);
+  bool force_first_display_internal = ForceFirstDisplayInternal();
+
   for (auto* state : display_states) {
     if (state->type() == DISPLAY_CONNECTION_TYPE_INTERNAL ||
-        (use_first_display_as_internal &&
+        (force_first_display_internal &&
          (!Display::HasInternalDisplay() ||
           state->display_id() == Display::InternalDisplayId()))) {
       if (Display::HasInternalDisplay())

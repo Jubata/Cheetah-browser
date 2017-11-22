@@ -9,6 +9,7 @@
 #include "core/dom/events/EventTarget.h"
 #include "modules/vr/latest/VRFrameRequestCallbackCollection.h"
 #include "platform/bindings/TraceWrapperMember.h"
+#include "platform/geometry/DoubleSize.h"
 #include "platform/heap/Handle.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "platform/wtf/Forward.h"
@@ -18,6 +19,7 @@ namespace blink {
 class V8VRFrameRequestCallback;
 class VRDevice;
 class VRFrameOfReferenceOptions;
+class VRLayer;
 class VRView;
 
 class VRSession final : public EventTargetWithInlineData {
@@ -36,6 +38,9 @@ class VRSession final : public EventTargetWithInlineData {
   void setDepthNear(double value);
   double depthFar() const { return depth_far_; }
   void setDepthFar(double value);
+
+  VRLayer* baseLayer() const { return base_layer_; }
+  void setBaseLayer(VRLayer* value);
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(blur);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(focus);
@@ -56,6 +61,15 @@ class VRSession final : public EventTargetWithInlineData {
   // when the presentation service connection is closed.
   void ForceEnd();
 
+  // Describes the default scalar to be applied to the ideal framebuffer
+  // dimensions when the developer does not specify one. Should be a value that
+  // provides a good balance between quality and performance.
+  double DefaultFramebufferScale() const { return 1.0; }
+
+  // Describes the ideal dimensions of layer framebuffers, preferrably defined
+  // as the size which gives 1:1 pixel ratio at the center of the user's view.
+  DoubleSize IdealFramebufferSize() const;
+
   // EventTarget overrides.
   ExecutionContext* GetExecutionContext() const override;
   const AtomicString& InterfaceName() const override;
@@ -72,6 +86,7 @@ class VRSession final : public EventTargetWithInlineData {
  private:
   const Member<VRDevice> device_;
   const bool exclusive_;
+  Member<VRLayer> base_layer_;
   HeapVector<Member<VRView>> views_;
 
   VRFrameRequestCallbackCollection callback_collection_;

@@ -85,9 +85,9 @@
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/AutoReset.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/MathExtras.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/CString.h"
 #include "public/platform/Platform.h"
 #include "public/platform/TaskType.h"
@@ -441,7 +441,7 @@ void HTMLMediaElement::OnMediaControlsEnabledChange(Document* document) {
 HTMLMediaElement::HTMLMediaElement(const QualifiedName& tag_name,
                                    Document& document)
     : HTMLElement(tag_name, document),
-      SuspendableObject(&document),
+      PausableObject(&document),
       load_timer_(document.GetTaskRunner(TaskType::kUnthrottled),
                   this,
                   &HTMLMediaElement::LoadTimerFired),
@@ -590,7 +590,7 @@ void HTMLMediaElement::DidMoveToNewDocument(Document& old_document) {
   // load event from within the destructor.
   old_document.DecrementLoadEventDelayCount();
 
-  SuspendableObject::DidMoveToNewExecutionContext(&GetDocument());
+  PausableObject::DidMoveToNewExecutionContext(&GetDocument());
   HTMLElement::DidMoveToNewDocument(old_document);
 }
 
@@ -2141,25 +2141,19 @@ void HTMLMediaElement::setPlaybackRate(double rate,
                                        ExceptionState& exception_state) {
   BLINK_MEDIA_LOG << "setPlaybackRate(" << (void*)this << ", " << rate << ")";
 
-  // TODO(apacible): While visible clamping is currently experimental, do NOT
-  // clamp the values of |playback_rate_| in |this|. Instead, clamp these
-  // values in WebMediaPlayerImpl until .
   if (rate != 0.0 && (rate < kMinRate || rate > kMaxRate)) {
     UseCounter::Count(GetDocument(),
                       WebFeature::kHTMLMediaElementMediaPlaybackRateOutOfRange);
 
-    // Experimental: crbug/747082.
     // When the proposed playbackRate is unsupported, throw a NotSupportedError
     // DOMException and don't update the value.
-    if (RuntimeEnabledFeatures::PreloadDefaultIsMetadataEnabled()) {
-      exception_state.ThrowDOMException(
-          kNotSupportedError, "The provided playback rate (" +
-                                  String::Number(rate) + ") is not in the " +
-                                  "supported playback range.");
+    exception_state.ThrowDOMException(
+        kNotSupportedError, "The provided playback rate (" +
+                                String::Number(rate) + ") is not in the " +
+                                "supported playback range.");
 
-      // Do not update |playback_rate_|.
-      return;
-    }
+    // Do not update |playback_rate_|.
+    return;
   }
 
   if (playback_rate_ != rate) {
@@ -2213,7 +2207,7 @@ WebMediaPlayer::Preload HTMLMediaElement::PreloadType() const {
   // If the source scheme is requires network, force preload to 'none' on Data
   // Saver and for low end devices.
   if (GetDocument().GetSettings() &&
-      (GetDocument().GetSettings()->GetDataSaverEnabled() ||
+      (GetNetworkStateNotifier().SaveDataEnabled() ||
        GetDocument().GetSettings()->GetForcePreloadNoneForMediaElements()) &&
       (current_src_.Protocol() != "blob" && current_src_.Protocol() != "data" &&
        current_src_.Protocol() != "file")) {
@@ -3871,7 +3865,7 @@ void HTMLMediaElement::Trace(blink::Visitor* visitor) {
       this);
   Supplementable<HTMLMediaElement>::Trace(visitor);
   HTMLElement::Trace(visitor);
-  SuspendableObject::Trace(visitor);
+  PausableObject::Trace(visitor);
 }
 
 void HTMLMediaElement::TraceWrappers(

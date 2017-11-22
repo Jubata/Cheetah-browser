@@ -12,7 +12,6 @@
 #include "base/task_scheduler/post_task.h"
 #include "base/trace_event/trace_event.h"
 #include "chrome/browser/android/mojo/chrome_interface_registrar_android.h"
-#include "chrome/browser/android/oom_intervention/near_oom_monitor.h"
 #include "chrome/browser/android/preferences/clipboard_android.h"
 #include "chrome/browser/android/seccomp_support_detector.h"
 #include "chrome/browser/browser_process.h"
@@ -78,10 +77,7 @@ int ChromeBrowserMainPartsAndroid::PreCreateThreads() {
     PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dump_dir);
     breakpad::CrashDumpObserver::GetInstance()->RegisterClient(
         base::MakeUnique<breakpad::ChildProcessCrashObserver>(
-            crash_dump_dir, kAndroidMinidumpDescriptor,
-            base::Bind(
-                &metrics::StabilityMetricsHelper::IncreaseRendererCrashCount,
-                g_browser_process->local_state())));
+            crash_dump_dir, kAndroidMinidumpDescriptor));
   }
 
   return result_code;
@@ -98,7 +94,7 @@ void ChromeBrowserMainPartsAndroid::PostProfileInit() {
 
   // Start watching the preferences that need to be backed up backup using
   // Android backup, so that we create a new backup if they change.
-  backup_watcher_.reset(new chrome::android::ChromeBackupWatcher(profile()));
+  backup_watcher_.reset(new android::ChromeBackupWatcher(profile()));
 }
 
 void ChromeBrowserMainPartsAndroid::PreEarlyInitialization() {
@@ -136,10 +132,6 @@ void ChromeBrowserMainPartsAndroid::PostBrowserStart() {
   base::PostDelayedTaskWithTraits(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::BACKGROUND},
       base::Bind(&ReportSeccompSupport), base::TimeDelta::FromMinutes(1));
-
-  NearOomMonitor* monitor = NearOomMonitor::GetInstance();
-  if (monitor)
-    monitor->Start();
 
   RegisterChromeJavaMojoInterfaces();
 }

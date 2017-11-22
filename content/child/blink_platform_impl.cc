@@ -39,8 +39,8 @@
 #include "content/app/strings/grit/content_strings.h"
 #include "content/child/child_thread_impl.h"
 #include "content/child/content_child_helpers.h"
-#include "content/child/feature_policy/feature_policy_platform.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
 #include "net/base/net_errors.h"
@@ -593,6 +593,10 @@ WebString BlinkPlatformImpl::QueryLocalizedString(WebLocalizedString::Name name,
       GetContentClient()->GetLocalizedString(message_id), values, nullptr));
 }
 
+bool BlinkPlatformImpl::IsRendererSideResourceSchedulerEnabled() const {
+  return base::FeatureList::IsEnabled(features::kRendererSideResourceScheduler);
+}
+
 std::unique_ptr<blink::WebGestureCurve>
 BlinkPlatformImpl::CreateFlingAnimationCurve(
     blink::WebGestureDevice device_source,
@@ -732,26 +736,6 @@ int BlinkPlatformImpl::DomKeyEnumFromString(const WebString& key_string) {
 bool BlinkPlatformImpl::IsDomKeyForModifier(int dom_key) {
   return ui::KeycodeConverter::IsDomKeyForModifier(
       static_cast<ui::DomKey>(dom_key));
-}
-
-std::unique_ptr<blink::WebFeaturePolicy> BlinkPlatformImpl::CreateFeaturePolicy(
-    const blink::WebFeaturePolicy* parent_policy,
-    const blink::WebParsedFeaturePolicy& container_policy,
-    const blink::WebParsedFeaturePolicy& policy_header,
-    const blink::WebSecurityOrigin& origin) {
-  std::unique_ptr<FeaturePolicy> policy = FeaturePolicy::CreateFromParentPolicy(
-      static_cast<const FeaturePolicy*>(parent_policy),
-      FeaturePolicyHeaderFromWeb(container_policy), url::Origin(origin));
-  policy->SetHeaderPolicy(FeaturePolicyHeaderFromWeb(policy_header));
-  return std::move(policy);
-}
-
-std::unique_ptr<blink::WebFeaturePolicy>
-BlinkPlatformImpl::DuplicateFeaturePolicyWithOrigin(
-    const blink::WebFeaturePolicy& policy,
-    const blink::WebSecurityOrigin& new_origin) {
-  return FeaturePolicy::CreateFromPolicyWithOrigin(
-      static_cast<const FeaturePolicy&>(policy), url::Origin(new_origin));
 }
 
 scoped_refptr<base::SingleThreadTaskRunner> BlinkPlatformImpl::GetIOTaskRunner()

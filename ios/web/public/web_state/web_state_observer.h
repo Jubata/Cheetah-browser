@@ -15,11 +15,10 @@
 namespace web {
 
 struct FaviconURL;
+struct FormActivityParams;
 class NavigationContext;
 struct LoadCommittedDetails;
 class WebState;
-class TestWebState;
-class WebStateImpl;
 
 enum class PageLoadCompletionStatus : bool { SUCCESS = 0, FAILURE = 1 };
 
@@ -27,10 +26,7 @@ enum class PageLoadCompletionStatus : bool { SUCCESS = 0, FAILURE = 1 };
 // load events from WebState.
 class WebStateObserver {
  public:
-  // Returns the web state associated with this observer.
-  // TODO(crbug.com/775684): this is deprecated. Remove once all observer
-  // have been converted to manage the registration with WebState directly.
-  WebState* web_state() const { return web_state_; }
+  virtual ~WebStateObserver();
 
   // These methods are invoked every time the WebState changes visibility.
   virtual void WasShown(WebState* web_state) {}
@@ -51,6 +47,9 @@ class WebStateObserver {
   // This corresponds to one NavigationManager item being created
   // (in the case of new navigations) or renavigated to (for back/forward
   // navigations).
+  // DEPRECATED. Use |DidFinishNavigation| to listen for
+  // "navigation item committed" signals.
+  // TODO(crbug.com/720786): Remove this method.
   virtual void NavigationItemCommitted(
       WebState* web_state,
       const LoadCommittedDetails& load_details) {}
@@ -67,7 +66,7 @@ class WebStateObserver {
   // change. To filter these out, use NavigationContext::IsSameDocument().
   //
   // More than one navigation can be ongoing in the same frame at the same
-  // time. Each will get its own NavigationHandle.
+  // time. Each will get its own NavigationContext.
   //
   // There is no guarantee that DidFinishNavigation() will be called for any
   // particular navigation before DidStartNavigation is called on the next.
@@ -94,18 +93,28 @@ class WebStateObserver {
   virtual void DidFinishNavigation(WebState* web_state,
                                    NavigationContext* navigation_context) {}
 
-  // Called when the current page has started loading.
+  // Called when the current WebState has started or stopped loading. This is
+  // not correlated with the document load phase of the main frame, but rather
+  // represents the load of the web page as a whole. Clients should present
+  // network activity indicator UI to the user when DidStartLoading is called
+  // and UI when DidStopLoading is called. DidStartLoading is a different event
+  // than DidStartNavigation and clients shold not assume that these two
+  // callbacks always called in pair or in a specific order (same true for
+  // DidFinishNavigation/DidFinishLoading). "Navigation" is about fetching the
+  // new document content and committing it as a new document, and "Loading"
+  // continues well after that. "Loading" callbacks are not called for fragment
+  // change navigations, but called for other same-document navigations
+  // (crbug.com/767092).
   virtual void DidStartLoading(WebState* web_state) {}
-
-  // Called when the current page has stopped loading.
   virtual void DidStopLoading(WebState* web_state) {}
 
-  // Called when the current page is loaded.
+  // Called when the current page has finished the loading of the main frame
+  // document. DidStopLoading relates to the general loading state of the
+  // WebState, but PageLoaded is correlated with the main frame document load
+  // phase. Unlike DidStopLoading, this callback is not called when the load
+  // is aborted.
   virtual void PageLoaded(WebState* web_state,
                           PageLoadCompletionStatus load_completion_status) {}
-
-  // Called when the interstitial is dismissed by the user.
-  virtual void InterstitialDismissed(WebState* web_state) {}
 
   // Notifies the observer that the page has made some progress loading.
   // |progress| is a value between 0.0 (nothing loaded) to 1.0 (page fully
@@ -129,14 +138,10 @@ class WebStateObserver {
                                  const std::string& form_name,
                                  bool user_initiated) {}
 
-  // Called when the user is typing on a form field, with |error| indicating if
-  // there is any error when parsing the form field information.
+  // Called when the user is typing on a form field, with |params.input_missing|
+  // indicating if there is any error when parsing the form field information.
   virtual void FormActivityRegistered(WebState* web_state,
-                                      const std::string& form_name,
-                                      const std::string& field_name,
-                                      const std::string& type,
-                                      const std::string& value,
-                                      bool input_missing) {}
+                                      const FormActivityParams& params) {}
 
   // Invoked when new favicon URL candidates are received.
   virtual void FaviconUrlUpdated(WebState* web_state,
@@ -151,39 +156,9 @@ class WebStateObserver {
   virtual void WebStateDestroyed(WebState* web_state) {}
 
  protected:
-  // Use this constructor when the object wants to observe a WebState for
-  // part of its lifetime.  It can register directly with WebState as an
-  // observer using AddObserver/RemoveObserver methods.
   WebStateObserver();
 
-  // Use this constructor when the object is tied to a single WebState for
-  // its entire lifetime.
-  // TODO(crbug.com/775684): this is deprecated. Remove once all observer
-  // have been converted to manage the registration with WebState directly.
-  explicit WebStateObserver(WebState* web_state);
-
-  virtual ~WebStateObserver();
-
-  // Start observing a different WebState; used with the default constructor.
-  // TODO(crbug.com/775684): this is deprecated. Remove once all observer
-  // have been converted to manage the registration with WebState directly.
-  void Observe(WebState* web_state);
-
  private:
-  // TODO(crbug.com/775684): this is deprecated. Remove once all observer
-  // have been converted to manage the registration with WebState directly.
-  friend class WebStateImpl;
-  friend class TestWebState;
-
-  // Stops observing the current web state.
-  // TODO(crbug.com/775684): this is deprecated. Remove once all observer
-  // have been converted to manage the registration with WebState directly.
-  void ResetWebState();
-
-  // TODO(crbug.com/775684): this is deprecated. Remove once all observer
-  // have been converted to manage the registration with WebState directly.
-  WebState* web_state_ = nullptr;
-
   DISALLOW_COPY_AND_ASSIGN(WebStateObserver);
 };
 

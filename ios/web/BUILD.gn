@@ -24,6 +24,7 @@ source_set("web") {
     "//ios/web/navigation:core",
     "//ios/web/net",
     "//ios/web/public",
+    "//ios/web/public/download",
     "//ios/web/web_state",
     "//ios/web/web_state:error_translation_util",
     "//ios/web/web_state:navigation_context",
@@ -40,6 +41,7 @@ source_set("web") {
     ":navigation_resources",
     ":resources",
     "//base",
+    "//ios/web/download",
     "//ios/web/interstitials",
     "//ios/web/navigation",
     "//ios/web/net",
@@ -166,6 +168,7 @@ test("ios_web_unittests") {
     ":ios_web_web_state_unittests",
     ":ios_web_webui_unittests",
     "//ios/testing:http_server_bundle_data",
+    "//ios/web/download:download_unittests",
   ]
 
   assert_no_deps = ios_assert_no_deps
@@ -266,6 +269,7 @@ source_set("ios_web_net_unittests") {
     "//base/test:test_support",
     "//components/url_formatter",
     "//ios/net",
+    "//ios/net:test_support",
     "//ios/testing:ios_test_support",
     "//ios/testing:ocmock_support",
     "//ios/web/navigation",
@@ -290,6 +294,7 @@ source_set("ios_web_net_unittests") {
     "net/cert_host_pair_unittest.cc",
     "net/cert_policy_unittest.cc",
     "net/cookies/wk_cookie_util_unittest.mm",
+    "net/cookies/wk_http_system_cookie_store_unittest.mm",
     "net/crw_cert_verification_controller_unittest.mm",
     "net/crw_ssl_status_updater_unittest.mm",
     "net/request_group_util_unittest.mm",
@@ -322,6 +327,7 @@ source_set("ios_web_public_unittests") {
     "//base/test:test_support",
     "//components/url_formatter",
     "//ios/net",
+    "//ios/net:ios_net_unittests",
     "//ios/testing:ios_test_support",
     "//ios/testing:ocmock_support",
     "//ios/web/public",
@@ -344,6 +350,7 @@ source_set("ios_web_public_unittests") {
     "public/origin_util_unittest.mm",
     "public/referrer_util_unittest.cc",
     "public/serializable_user_data_manager_unittest.mm",
+    "public/ssl_status_unittest.cc",
     "public/user_agent_unittest.mm",
     "public/web_state/page_viewport_state_unittest.mm",
   ]
@@ -474,7 +481,6 @@ source_set("ios_web_web_state_ui_unittests") {
 
   sources = [
     "web_state/ui/crw_web_controller_container_view_unittest.mm",
-    "web_state/ui/crw_web_controller_observer_unittest.mm",
     "web_state/ui/crw_web_controller_unittest.mm",
     "web_state/ui/crw_web_view_scroll_view_proxy_unittest.mm",
     "web_state/ui/crw_wk_navigation_states_unittest.mm",
@@ -527,6 +533,7 @@ test("ios_web_inttests") {
     "//ios/testing:http_server_bundle_data",
     "//ios/testing:ios_test_support",
     "//ios/web:resources_grit",
+    "//ios/web/download:download_inttests",
     "//ios/web/navigation:core",
     "//ios/web/public/test",
     "//ios/web/public/test/fakes",
@@ -550,7 +557,7 @@ test("ios_web_inttests") {
     "test/run_all_unittests.cc",
     "web_state/favicon_callbacks_inttest.mm",
     "web_state/http_auth_inttest.mm",
-    "web_state/navigation_callbacks_inttest.mm",
+    "web_state/navigation_and_load_callbacks_inttest.mm",
     "webui/web_ui_mojo_inttest.mm",
   ]
 
@@ -583,6 +590,7 @@ js_compile_bundle("web_bundle") {
     "web_state/js/resources/form.js",
     "web_state/js/resources/legacy.js",
     "web_state/js/resources/message.js",
+    "web_state/js/resources/navigation.js",
     "web_state/js/resources/scroll_workaround.js",
     "web_state/js/resources/web_bundle.js",
   ]
@@ -590,10 +598,10 @@ js_compile_bundle("web_bundle") {
 
 js_compile_bundle("nav_bundle") {
   visibility = [ ":js_resources" ]
-  closure_entry_point = "__crWeb.navigation"
+  closure_entry_point = "__crWeb.legacynavigation"
 
   sources = [
-    "web_state/js/resources/navigation.js",
+    "web_state/js/resources/legacy_navigation.js",
   ]
 }
 

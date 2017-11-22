@@ -31,7 +31,7 @@
 #include "public/platform/WebMediaConstraints.h"
 
 #include <math.h>
-#include "platform/wtf/RefPtr.h"
+#include "base/memory/scoped_refptr.h"
 #include "platform/wtf/ThreadSafeRefCounted.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "platform/wtf/text/WTFString.h"
@@ -97,13 +97,13 @@ class WebMediaConstraintsPrivate final
 scoped_refptr<WebMediaConstraintsPrivate> WebMediaConstraintsPrivate::Create() {
   WebMediaTrackConstraintSet basic;
   WebVector<WebMediaTrackConstraintSet> advanced;
-  return WTF::AdoptRef(new WebMediaConstraintsPrivate(basic, advanced));
+  return base::AdoptRef(new WebMediaConstraintsPrivate(basic, advanced));
 }
 
 scoped_refptr<WebMediaConstraintsPrivate> WebMediaConstraintsPrivate::Create(
     const WebMediaTrackConstraintSet& basic,
     const WebVector<WebMediaTrackConstraintSet>& advanced) {
-  return WTF::AdoptRef(new WebMediaConstraintsPrivate(basic, advanced));
+  return base::AdoptRef(new WebMediaConstraintsPrivate(basic, advanced));
 }
 
 WebMediaConstraintsPrivate::WebMediaConstraintsPrivate(

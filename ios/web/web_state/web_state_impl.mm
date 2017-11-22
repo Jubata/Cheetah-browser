@@ -113,8 +113,6 @@ WebStateImpl::~WebStateImpl() {
 
   for (auto& observer : observers_)
     observer.WebStateDestroyed(this);
-  for (auto& observer : observers_)
-    observer.ResetWebState();
   for (auto& observer : policy_deciders_)
     observer.WebStateDestroyed();
   for (auto& observer : policy_deciders_)
@@ -180,11 +178,6 @@ void WebStateImpl::SetWebController(CRWWebController* web_controller) {
 void WebStateImpl::OnTitleChanged() {
   for (auto& observer : observers_)
     observer.TitleWasSet(this);
-}
-
-void WebStateImpl::OnVisibleSecurityStateChange() {
-  for (auto& observer : observers_)
-    observer.DidChangeVisibleSecurityState(this);
 }
 
 void WebStateImpl::OnDialogSuppressed() {
@@ -261,14 +254,9 @@ void WebStateImpl::OnPageLoaded(const GURL& url, bool load_success) {
     observer.PageLoaded(this, load_completion_status);
 }
 
-void WebStateImpl::OnFormActivityRegistered(const std::string& form_name,
-                                            const std::string& field_name,
-                                            const std::string& type,
-                                            const std::string& value,
-                                            bool input_missing) {
+void WebStateImpl::OnFormActivityRegistered(const FormActivityParams& params) {
   for (auto& observer : observers_) {
-    observer.FormActivityRegistered(this, form_name, field_name, type, value,
-                                    input_missing);
+    observer.FormActivityRegistered(this, params);
   }
 }
 
@@ -350,14 +338,6 @@ bool WebStateImpl::IsShowingWebInterstitial() const {
 
 WebInterstitial* WebStateImpl::GetWebInterstitial() const {
   return interstitial_;
-}
-
-void WebStateImpl::OnPasswordInputShownOnHttp() {
-  [web_controller_ didShowPasswordInputOnHTTP];
-}
-
-void WebStateImpl::OnCreditCardInputShownOnHttp() {
-  [web_controller_ didShowCreditCardInputOnHTTP];
 }
 
 net::HttpResponseHeaders* WebStateImpl::GetHttpResponseHeaders() const {
@@ -540,6 +520,11 @@ WebStateInterfaceProvider* WebStateImpl::GetWebStateInterfaceProvider() {
   return web_state_interface_provider_.get();
 }
 
+void WebStateImpl::DidChangeVisibleSecurityState() {
+  for (auto& observer : observers_)
+    observer.DidChangeVisibleSecurityState(this);
+}
+
 void WebStateImpl::BindInterfaceRequestFromMainFrame(
     const std::string& interface_name,
     mojo::ScopedMessagePipeHandle interface_pipe) {
@@ -707,6 +692,10 @@ bool WebStateImpl::HasOpener() const {
   return created_with_opener_;
 }
 
+void WebStateImpl::SetHasOpener(bool has_opener) {
+  created_with_opener_ = has_opener;
+}
+
 void WebStateImpl::TakeSnapshot(const SnapshotCallback& callback,
                                 CGSize target_size) const {
   UIView* view = [web_controller_ view];
@@ -746,8 +735,6 @@ void WebStateImpl::ClearTransientContent() {
     interstitial->DontProceed();
     // Don't access |interstitial| after calling |DontProceed()|, as it triggers
     // deletion.
-    for (auto& observer : observers_)
-      observer.InterstitialDismissed(this);
   }
   [web_controller_ clearTransientContentView];
 }

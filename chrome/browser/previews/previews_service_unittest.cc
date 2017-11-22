@@ -18,9 +18,10 @@
 #include "base/single_thread_task_runner.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
+#include "components/previews/content/previews_io_data.h"
+#include "components/previews/content/previews_optimization_guide.h"
+#include "components/previews/content/previews_ui_service.h"
 #include "components/previews/core/previews_features.h"
-#include "components/previews/core/previews_io_data.h"
-#include "components/previews/core/previews_ui_service.h"
 #include "components/variations/variations_associated_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -42,6 +43,7 @@ class TestPreviewsIOData : public previews::PreviewsIOData {
   void Initialize(
       base::WeakPtr<previews::PreviewsUIService> previews_ui_service,
       std::unique_ptr<previews::PreviewsOptOutStore> previews_opt_out_store,
+      std::unique_ptr<previews::PreviewsOptimizationGuide> previews_opt_guide,
       const previews::PreviewsIsEnabledCallback& is_enabled_callback) override {
     enabled_callback_ = is_enabled_callback;
   }
@@ -68,6 +70,7 @@ class PreviewsServiceTest : public testing::Test {
     service_ = base::MakeUnique<PreviewsService>();
     base::FilePath file_path;
     service_->Initialize(io_data_.get(),
+                         nullptr /* optimization_guide_service */,
                          content::BrowserThread::GetTaskRunnerForThread(
                              content::BrowserThread::UI),
                          file_path);

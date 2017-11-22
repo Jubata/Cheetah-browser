@@ -208,7 +208,6 @@ dev_list="\
   rpm
   ruby
   subversion
-  ttf-dejavu-core
   wdiff
   x11-utils
   xcompmgr
@@ -348,8 +347,7 @@ case $distro_codename in
   # All necessary ARM packages are available on the default repos on
   # Debian 9 and later.
   *)
-    arm_list="binutils-aarch64-linux-gnu
-              libc6-dev-armhf-cross
+    arm_list="libc6-dev-armhf-cross
               linux-libc-dev-armhf-cross
               ${GPP_ARM_PACKAGE}"
     ;;
@@ -471,11 +469,6 @@ fi
 if package_exists xfonts-mathml; then
   dev_list="${dev_list} xfonts-mathml"
 fi
-if package_exists fonts-indic; then
-  dev_list="${dev_list} fonts-indic"
-else
-  dev_list="${dev_list} ttf-indic-fonts"
-fi
 if package_exists php7.1-cgi; then
   dev_list="${dev_list} php7.1-cgi libapache2-mod-php7.1"
 elif package_exists php7.0-cgi; then
@@ -496,6 +489,20 @@ fi
 # installing them.
 if package_exists appmenu-gtk; then
   lib_list="$lib_list appmenu-gtk"
+fi
+
+# Cross-toolchain strip is needed for building the sysroots.
+if package_exists binutils-arm-linux-gnueabihf; then
+  dev_list="${dev_list} binutils-arm-linux-gnueabihf"
+fi
+if package_exists binutils-aarch64-linux-gnu; then
+  dev_list="${dev_list} binutils-aarch64-linux-gnu"
+fi
+if package_exists binutils-mipsel-linux-gnu; then
+  dev_list="${dev_list} binutils-mipsel-linux-gnu"
+fi
+if package_exists binutils-mips64el-linux-gnuabi64; then
+  dev_list="${dev_list} binutils-mips64el-linux-gnuabi64"
 fi
 
 # When cross building for arm/Android on 64-bit systems the host binaries

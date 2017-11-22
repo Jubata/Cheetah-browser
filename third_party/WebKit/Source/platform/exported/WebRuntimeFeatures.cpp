@@ -192,10 +192,6 @@ void WebRuntimeFeatures::EnableModernMediaControls(bool enable) {
   RuntimeEnabledFeatures::SetModernMediaControlsEnabled(enable);
 }
 
-void WebRuntimeFeatures::EnableModuleScripts(bool enable) {
-  RuntimeEnabledFeatures::SetModuleScriptsEnabled(enable);
-}
-
 void WebRuntimeFeatures::EnableModuleScriptsDynamicImport(bool enable) {
   RuntimeEnabledFeatures::SetModuleScriptsDynamicImportEnabled(enable);
 }
@@ -484,6 +480,10 @@ void WebRuntimeFeatures::EnableWorkStealingInScriptRunner(bool enable) {
 
 void WebRuntimeFeatures::EnableStopLoadingInBackgroundAndroid(bool enable) {
   RuntimeEnabledFeatures::SetStopLoadingInBackgroundAndroidEnabled(enable);
+}
+
+void WebRuntimeFeatures::EnablePWAFullCodeCache(bool enable) {
+  RuntimeEnabledFeatures::SetPWAFullCodeCacheEnabled(enable);
 }
 
 }  // namespace blink

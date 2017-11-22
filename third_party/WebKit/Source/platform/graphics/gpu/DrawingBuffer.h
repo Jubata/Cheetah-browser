@@ -115,6 +115,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
 
   static scoped_refptr<DrawingBuffer> Create(
       std::unique_ptr<WebGraphicsContext3DProvider>,
+      bool using_gpu_compositing,
       Client*,
       const IntSize&,
       bool premultiplied_alpha,
@@ -195,9 +196,9 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   WebGraphicsContext3DProvider* ContextProvider();
 
   // cc::TextureLayerClient implementation.
-  bool PrepareTextureMailbox(viz::TextureMailbox* out_mailbox,
-                             std::unique_ptr<viz::SingleReleaseCallback>*
-                                 out_release_callback) override;
+  bool PrepareTransferableResource(viz::TransferableResource* out_resource,
+                                   std::unique_ptr<viz::SingleReleaseCallback>*
+                                       out_release_callback) override;
 
   // Returns a StaticBitmapImage backed by a texture containing the current
   // contents of the front buffer. This is done without any pixel copies. The
@@ -246,6 +247,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
 
  protected:  // For unittests
   DrawingBuffer(std::unique_ptr<WebGraphicsContext3DProvider>,
+                bool using_gpu_compositing,
                 std::unique_ptr<Extensions3DUtil>,
                 Client*,
                 bool discard_framebuffer_supported,
@@ -359,21 +361,21 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // Resolves m_multisampleFBO into m_fbo, if multisampling.
   void ResolveIfNeeded();
 
-  bool PrepareTextureMailboxInternal(
-      viz::TextureMailbox* out_mailbox,
+  bool PrepareTransferableResourceInternal(
+      viz::TransferableResource* out_resource,
       std::unique_ptr<viz::SingleReleaseCallback>* out_release_callback,
       bool force_gpu_result);
 
-  // Helper functions to be called only by prepareTextureMailboxInternal.
-  bool FinishPrepareTextureMailboxGpu(
-      viz::TextureMailbox* out_mailbox,
+  // Helper functions to be called only by PrepareTransferableResourceInternal.
+  bool FinishPrepareTransferableResourceGpu(
+      viz::TransferableResource* out_resource,
       std::unique_ptr<viz::SingleReleaseCallback>* out_release_callback);
-  bool FinishPrepareTextureMailboxSoftware(
-      viz::TextureMailbox* out_mailbox,
+  bool FinishPrepareTransferableResourceSoftware(
+      viz::TransferableResource* out_resource,
       std::unique_ptr<viz::SingleReleaseCallback>* out_release_callback);
 
   // Callbacks for mailboxes given to the compositor from
-  // finishPrepareTextureMailboxGpu and finishPrepareTextureMailboxSoftware.
+  // FinishPrepareTransferableResource{Gpu,Software}.
   void MailboxReleasedGpu(scoped_refptr<ColorBuffer>,
                           const gpu::SyncToken&,
                           bool lost_resource);
@@ -392,7 +394,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
 
   // Updates the current size of the buffer, ensuring that
   // s_currentResourceUsePixels is updated.
-  void SetSize(const IntSize& size);
+  void SetSize(const IntSize&);
 
   // This is the order of bytes to use when doing a readback.
   enum ReadbackOrder { kReadbackRGBA, kReadbackSkia };
@@ -461,7 +463,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // channel.
   bool have_alpha_channel_ = false;
   const bool premultiplied_alpha_;
-  const bool software_rendering_;
+  const bool using_gpu_compositing_;
   bool has_implicit_stencil_buffer_ = false;
   bool storage_texture_supported_ = false;
 
@@ -492,7 +494,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   scoped_refptr<ColorBuffer> back_color_buffer_;
 
   // The ColorBuffer that was most recently presented to the compositor by
-  // prepareTextureMailboxInternal.
+  // PrepareTransferableResourceInternal.
   scoped_refptr<ColorBuffer> front_color_buffer_;
 
   // True if our contents have been modified since the last presentation of this
@@ -521,6 +523,8 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   };
 
   AntialiasingMode anti_aliasing_mode_ = kNone;
+
+  bool use_half_float_storage_ = false;
 
   int max_texture_size_ = 0;
   int sample_count_ = 0;

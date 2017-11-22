@@ -15,6 +15,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
+#include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/navigator.h"
@@ -24,7 +25,7 @@
 #include "content/common/site_isolation_policy.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/browser_side_navigation_policy.h"
-#include "third_party/WebKit/public/web/WebSandboxFlags.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 
 namespace content {
 
@@ -339,7 +340,7 @@ void FrameTreeNode::SetFrameName(const std::string& name,
 }
 
 void FrameTreeNode::SetFeaturePolicyHeader(
-    const ParsedFeaturePolicyHeader& parsed_header) {
+    const blink::ParsedFeaturePolicy& parsed_header) {
   replication_state_.feature_policy_header = parsed_header;
 }
 
@@ -368,7 +369,7 @@ void FrameTreeNode::SetInsecureRequestPolicy(
   replication_state_.insecure_request_policy = policy;
 }
 
-void FrameTreeNode::SetPendingFramePolicy(FramePolicy frame_policy) {
+void FrameTreeNode::SetPendingFramePolicy(blink::FramePolicy frame_policy) {
   pending_frame_policy_.sandbox_flags = frame_policy.sandbox_flags;
 
   if (parent()) {
@@ -477,6 +478,9 @@ void FrameTreeNode::ResetNavigationRequest(bool keep_state,
   CHECK(IsBrowserSideNavigationEnabled());
   if (!navigation_request_)
     return;
+
+  RenderFrameDevToolsAgentHost::OnResetNavigationRequest(
+      navigation_request_.get());
 
   // The renderer should be informed if the caller allows to do so and the
   // navigation came from a BeginNavigation IPC.

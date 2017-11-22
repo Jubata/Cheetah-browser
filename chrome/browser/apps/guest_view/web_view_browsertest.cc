@@ -51,6 +51,7 @@
 #include "components/guest_view/browser/guest_view_manager_delegate.h"
 #include "components/guest_view/browser/guest_view_manager_factory.h"
 #include "components/guest_view/browser/test_guest_view_manager.h"
+#include "components/viz/common/switches.h"
 #include "content/public/browser/ax_event_notification_details.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/interstitial_page.h"
@@ -903,6 +904,16 @@ class WebViewDPITest : public WebViewTest {
 };
 INSTANTIATE_TEST_CASE_P(WebViewTests, WebViewDPITest, testing::Bool());
 
+class WebViewSurfaceSynchronizationTest : public WebViewTest {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    WebViewTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableSurfaceSynchronization);
+  }
+};
+INSTANTIATE_TEST_CASE_P(WebViewTests,
+                        WebViewSurfaceSynchronizationTest,
+                        testing::Bool());
+
 class WebViewWithZoomForDSFTest : public WebViewTest {
  protected:
   void SetUpCommandLine(base::CommandLine* command_line) override {
@@ -1152,6 +1163,25 @@ IN_PROC_BROWSER_TEST_P(WebViewTest, AddRemoveWebView_AddRemoveWebView) {
 IN_PROC_BROWSER_TEST_P(WebViewSizeTest, AutoSize) {
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/autosize"))
       << message_;
+}
+
+IN_PROC_BROWSER_TEST_P(WebViewSurfaceSynchronizationTest, AutoSize) {
+  ASSERT_TRUE(RunPlatformAppTest("platform_apps/web_view/autosize"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_P(WebViewSurfaceSynchronizationTest, AutoSizeHeight) {
+  TestHelper("testAutosizeHeight", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_P(WebViewSurfaceSynchronizationTest,
+                       AutosizeBeforeNavigation) {
+  TestHelper("testAutosizeBeforeNavigation", "web_view/shim", NO_TEST_SERVER);
+}
+
+IN_PROC_BROWSER_TEST_P(WebViewSurfaceSynchronizationTest,
+                       AutosizeRemoveAttributes) {
+  TestHelper("testAutosizeRemoveAttributes", "web_view/shim", NO_TEST_SERVER);
 }
 
 // Test for http://crbug.com/419611.
@@ -3918,6 +3948,111 @@ IN_PROC_BROWSER_TEST_P(WebViewGuestScrollTest,
 
     waiter.WaitForScrollChange(gfx::Vector2dF());
   }
+}
+
+// Tests scroll latching behaviour with WebViews.
+// Only applicable with OOPIF-based guests when scroll latching is enabled.
+// We can move these tests to a more general fixture once the features
+// have landed (crbug.com/533069 and crbug.com/526463).
+class WebViewGuestScrollLatchingTest : public WebViewTestBase {
+ protected:
+  WebViewGuestScrollLatchingTest() {}
+  ~WebViewGuestScrollLatchingTest() override {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    WebViewTestBase::SetUpCommandLine(command_line);
+    feature_list_.InitWithFeatures(
+        {features::kTouchpadAndWheelScrollLatching, features::kAsyncWheelEvents,
+         features::kGuestViewCrossProcessFrames},
+        {});
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebViewGuestScrollLatchingTest);
+};
+
+// Test that when we bubble scroll from a guest, the guest does not also
+// consume the scroll.
+IN_PROC_BROWSER_TEST_F(WebViewGuestScrollLatchingTest,
+                       ScrollLatchingPreservedInGuests) {
+  LoadAppWithGuest("web_view/scrollable_embedder_and_guest");
+
+  content::WebContents* embedder_contents = GetEmbedderWebContents();
+
+  std::vector<content::WebContents*> guest_web_contents_list;
+  GetGuestViewManager()->WaitForNumGuestsCreated(1u);
+  GetGuestViewManager()->GetGuestWebContentsList(&guest_web_contents_list);
+  ASSERT_EQ(1u, guest_web_contents_list.size());
+
+  content::WebContents* guest_contents = guest_web_contents_list[0];
+  content::RenderWidgetHostView* guest_host_view =
+      guest_contents->GetRenderWidgetHostView();
+
+  content::RenderWidgetHostView* embedder_host_view =
+      embedder_contents->GetRenderWidgetHostView();
+  ASSERT_EQ(gfx::Vector2dF(), guest_host_view->GetLastScrollOffset());
+  ASSERT_EQ(gfx::Vector2dF(), embedder_host_view->GetLastScrollOffset());
+
+  gfx::Point guest_scroll_location(1, 1);
+  gfx::Point guest_scroll_location_in_root =
+      guest_host_view->TransformPointToRootCoordSpace(guest_scroll_location);
+
+  // When the guest is already scrolled to the top, scroll up so that we bubble
+  // scroll.
+  blink::WebGestureEvent scroll_begin(
+      blink::WebGestureEvent::kGestureScrollBegin,
+      blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::kTimeStampForTesting);
+  scroll_begin.source_device = blink::kWebGestureDeviceTouchpad;
+  scroll_begin.x = guest_scroll_location.x();
+  scroll_begin.y = guest_scroll_location.y();
+  scroll_begin.global_x = guest_scroll_location_in_root.x();
+  scroll_begin.global_y = guest_scroll_location_in_root.y();
+  scroll_begin.data.scroll_begin.delta_x_hint = 0;
+  scroll_begin.data.scroll_begin.delta_y_hint = 5;
+  content::SimulateGestureEvent(guest_contents, scroll_begin,
+                                ui::LatencyInfo(ui::SourceEventType::WHEEL));
+
+  content::InputEventAckWaiter update_waiter(
+      guest_contents->GetRenderViewHost()->GetWidget(),
+      base::BindRepeating([](content::InputEventAckSource,
+                             content::InputEventAckState state,
+                             const blink::WebInputEvent& event) {
+        return event.GetType() ==
+                   blink::WebGestureEvent::kGestureScrollUpdate &&
+               state != content::INPUT_EVENT_ACK_STATE_CONSUMED;
+      }));
+
+  blink::WebGestureEvent scroll_update(
+      blink::WebGestureEvent::kGestureScrollUpdate,
+      blink::WebInputEvent::kNoModifiers,
+      blink::WebInputEvent::kTimeStampForTesting);
+  scroll_update.source_device = scroll_begin.source_device;
+  scroll_update.x = scroll_begin.x;
+  scroll_update.y = scroll_begin.y;
+  scroll_update.global_x = scroll_begin.global_x;
+  scroll_update.global_y = scroll_begin.global_y;
+  scroll_update.data.scroll_update.delta_x =
+      scroll_begin.data.scroll_begin.delta_x_hint;
+  scroll_update.data.scroll_update.delta_y =
+      scroll_begin.data.scroll_begin.delta_y_hint;
+  content::SimulateGestureEvent(guest_contents, scroll_update,
+                                ui::LatencyInfo(ui::SourceEventType::WHEEL));
+  update_waiter.Wait();
+  update_waiter.Reset();
+
+  ASSERT_EQ(gfx::Vector2dF(), guest_host_view->GetLastScrollOffset());
+
+  // Now we switch directions and scroll down. The guest can scroll in this
+  // direction, but since we're bubbling, the guest should not consume this.
+  scroll_update.data.scroll_update.delta_y = -5;
+  content::SimulateGestureEvent(guest_contents, scroll_update,
+                                ui::LatencyInfo(ui::SourceEventType::WHEEL));
+  update_waiter.Wait();
+
+  EXPECT_EQ(gfx::Vector2dF(), guest_host_view->GetLastScrollOffset());
 }
 
 INSTANTIATE_TEST_CASE_P(WebViewScrollBubbling,

@@ -11,9 +11,10 @@
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "base/macros.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/message_center/notifier_settings.h"
+#include "ui/message_center/notifier_id.h"
 #include "ui/views/controls/scroll_view.h"
 
 namespace ash {
@@ -36,7 +37,7 @@ class TestAshMessageCenterClient : public mojom::AshMessageCenterClient {
 
   mojom::AshMessageCenterClientAssociatedPtrInfo CreateInterfacePtr() {
     mojom::AshMessageCenterClientAssociatedPtr ptr;
-    binding_.Bind(mojo::MakeIsolatedRequest(&ptr));
+    binding_.Bind(mojo::MakeRequestAssociatedWithDedicatedPipe(&ptr));
     return ptr.PassInterface();
   }
 

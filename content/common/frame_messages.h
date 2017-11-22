@@ -28,7 +28,6 @@
 #include "content/common/features.h"
 #include "content/common/frame_message_enums.h"
 #include "content/common/frame_owner_properties.h"
-#include "content/common/frame_policy.h"
 #include "content/common/frame_replication_state.h"
 #include "content/common/navigation_gesture.h"
 #include "content/common/navigation_params.h"
@@ -55,8 +54,9 @@
 #include "ipc/ipc_platform_file.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "ppapi/features/features.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/common/frame_policy.h"
 #include "third_party/WebKit/common/message_port/message_port_channel.h"
-#include "third_party/WebKit/public/platform/WebFeaturePolicy.h"
 #include "third_party/WebKit/public/platform/WebFocusType.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
 #include "third_party/WebKit/public/platform/WebRemoteScrollProperties.h"
@@ -128,8 +128,8 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::FileChooserParams::Mode,
                           content::FileChooserParams::Save)
 IPC_ENUM_TRAITS_MAX_VALUE(content::CSPDirective::Name,
                           content::CSPDirective::NameLast)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebFeaturePolicyFeature,
-                          blink::WebFeaturePolicyFeature::LAST_FEATURE)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::FeaturePolicyFeature,
+                          blink::FeaturePolicyFeature::LAST_FEATURE)
 IPC_ENUM_TRAITS_MAX_VALUE(content::CSPDisposition,
                           content::CSPDisposition::LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebTriggeringEventInfo,
@@ -188,6 +188,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ContextMenuParams)
   IPC_STRUCT_TRAITS_MEMBER(source_type)
   IPC_STRUCT_TRAITS_MEMBER(input_field_type)
   IPC_STRUCT_TRAITS_MEMBER(selection_rect)
+  IPC_STRUCT_TRAITS_MEMBER(selection_start_offset)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::CustomContextMenuContext)
@@ -214,7 +215,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameOwnerProperties)
   IPC_STRUCT_TRAITS_MEMBER(required_csp)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::FramePolicy)
+IPC_STRUCT_TRAITS_BEGIN(blink::FramePolicy)
   IPC_STRUCT_TRAITS_MEMBER(sandbox_flags)
   IPC_STRUCT_TRAITS_MEMBER(container_policy)
 IPC_STRUCT_TRAITS_END()
@@ -247,7 +248,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameNavigateParams)
   IPC_STRUCT_TRAITS_MEMBER(redirects)
   IPC_STRUCT_TRAITS_MEMBER(should_update_history)
   IPC_STRUCT_TRAITS_MEMBER(contents_mime_type)
-  IPC_STRUCT_TRAITS_MEMBER(socket_address)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ScreenInfo)
@@ -459,7 +459,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RequestNavigationParams)
 #endif
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::ParsedFeaturePolicyDeclaration)
+IPC_STRUCT_TRAITS_BEGIN(blink::ParsedFeaturePolicyDeclaration)
   IPC_STRUCT_TRAITS_MEMBER(feature)
   IPC_STRUCT_TRAITS_MEMBER(matches_all_origins)
   IPC_STRUCT_TRAITS_MEMBER(origins)
@@ -593,7 +593,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_CreateChildFrame_Params)
   IPC_STRUCT_MEMBER(blink::WebTreeScopeType, scope)
   IPC_STRUCT_MEMBER(std::string, frame_name)
   IPC_STRUCT_MEMBER(std::string, frame_unique_name)
-  IPC_STRUCT_MEMBER(content::FramePolicy, frame_policy)
+  IPC_STRUCT_MEMBER(blink::FramePolicy, frame_policy)
   IPC_STRUCT_MEMBER(content::FrameOwnerProperties, frame_owner_properties)
 IPC_STRUCT_END()
 
@@ -875,7 +875,7 @@ IPC_MESSAGE_ROUTED1(FrameMsg_Collapse, bool /* collapsed */)
 
 // Notifies the frame that its parent has changed the frame's sandbox flags or
 // container policy.
-IPC_MESSAGE_ROUTED1(FrameMsg_DidUpdateFramePolicy, content::FramePolicy)
+IPC_MESSAGE_ROUTED1(FrameMsg_DidUpdateFramePolicy, blink::FramePolicy)
 
 // Update a proxy's window.name property.  Used when the frame's name is
 // changed in another process.
@@ -925,6 +925,11 @@ IPC_MESSAGE_ROUTED1(FrameMsg_PostMessageEvent, FrameMsg_PostMessage_Params)
 
 // Tells the RenderFrame to clear the focused element (if any).
 IPC_MESSAGE_ROUTED0(FrameMsg_ClearFocusedElement)
+
+// Informs the parent renderer that the child would like a new
+// viz::LocalSurfaceId in response to an auto-resize.
+IPC_MESSAGE_ROUTED1(FrameMsg_ResizeDueToAutoResize,
+                    uint64_t /* sequence_number */)
 
 #if defined(OS_ANDROID)
 // Request the distance to the nearest find result in a frame from the point at
@@ -1171,7 +1176,7 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_DidChangeName,
 // delivered with the document being loaded into the frame. |parsed_header| is
 // a list of an origin whitelist for each feature in the policy.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidSetFeaturePolicyHeader,
-                    content::ParsedFeaturePolicyHeader /* parsed_header */)
+                    blink::ParsedFeaturePolicy /* parsed_header */)
 
 // Notifies the browser process about a new Content Security Policy that needs
 // to be applies to the frame.  This message is sent when a frame commits
@@ -1247,7 +1252,7 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeOpener, int /* opener_routing_id */)
 IPC_MESSAGE_ROUTED2(
     FrameHostMsg_DidChangeFramePolicy,
     int32_t /* subframe_routing_id */,
-    content::FramePolicy /* updated sandbox flags and container policy */)
+    blink::FramePolicy /* updated sandbox flags and container policy */)
 
 // Notifies the browser that frame owner properties have changed for a subframe
 // of this frame.
@@ -1465,10 +1470,11 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_BeforeUnload_ACK,
 IPC_MESSAGE_ROUTED0(FrameHostMsg_SwapOut_ACK)
 
 // Tells the browser that a child's resize parameters have changed.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_UpdateResizeParams,
+IPC_MESSAGE_ROUTED4(FrameHostMsg_UpdateResizeParams,
                     gfx::Rect /* frame_rect */,
                     content::ScreenInfo /* screen_info */,
-                    viz::LocalSurfaceId /* local_surface_id */)
+                    uint64_t /* sequence_number */,
+                    viz::SurfaceId /* surface_id */)
 
 // Sent by a parent frame to update its child's viewport intersection rect for
 // use by the IntersectionObserver API.
@@ -1480,6 +1486,14 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_VisibilityChanged, bool /* visible */)
 
 // Sets or unsets the inert bit on a remote frame.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_SetIsInert, bool /* inert */)
+
+// Toggles render throttling on a remote frame. |is_throttled| indicates
+// whether the current frame should be throttled based on its viewport
+// visibility, and |subtree_throttled| indicates that an ancestor frame has
+// been throttled, so all descendant frames also should be throttled.
+IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateRenderThrottlingStatus,
+                    bool /* is_throttled */,
+                    bool /* subtree_throttled */)
 
 // Indicates that this frame recieved a user gesture, so that the state can be
 // propagated to any remote frames.

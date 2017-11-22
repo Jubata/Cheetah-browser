@@ -71,7 +71,9 @@ class SurfaceManager;
 class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
  public:
   using AggregatedDamageCallback =
-      base::RepeatingCallback<void(const LocalSurfaceId&, const gfx::Rect&)>;
+      base::RepeatingCallback<void(const LocalSurfaceId& local_surface_id,
+                                   const gfx::Rect& damage_rect,
+                                   const CompositorFrame& frame)>;
   using PresentedCallback =
       base::OnceCallback<void(base::TimeTicks, base::TimeDelta, uint32_t)>;
 
@@ -91,22 +93,20 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
   const SurfaceId& previous_frame_surface_id() const {
     return previous_frame_surface_id_;
   }
+  const gfx::Size& size_in_pixels() const {
+    return surface_info_.size_in_pixels();
+  }
 
   base::WeakPtr<SurfaceClient> client() { return surface_client_; }
 
   bool has_deadline() const { return deadline_.has_deadline(); }
   const SurfaceDependencyDeadline& deadline() const { return deadline_; }
 
-  bool InheritActivationDeadlineFrom(
-      const SurfaceDependencyDeadline& deadline) {
-    return deadline_.InheritFrom(deadline);
-  }
+  bool InheritActivationDeadlineFrom(const SurfaceDependencyDeadline& deadline);
 
   // Sets a deadline a number of frames ahead to active the currently pending
   // CompositorFrame held by this surface.
-  void SetActivationDeadline(uint32_t number_of_frames_to_deadline) {
-    deadline_.Set(number_of_frames_to_deadline);
-  }
+  void SetActivationDeadline(uint32_t number_of_frames_to_deadline);
 
   void SetPreviousFrameSurface(Surface* surface);
 
@@ -245,8 +245,7 @@ class VIZ_SERVICE_EXPORT Surface final : public SurfaceDeadlineClient {
       base::flat_set<SurfaceId>* added_dependencies,
       base::flat_set<SurfaceId>* removed_dependencies);
 
-  void UnrefFrameResourcesAndRunDrawCallback(
-      base::Optional<FrameData> frame_data);
+  void UnrefFrameResourcesAndRunCallbacks(base::Optional<FrameData> frame_data);
   void ClearCopyRequests();
 
   void TakeLatencyInfoFromPendingFrame(

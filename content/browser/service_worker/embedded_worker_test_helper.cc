@@ -74,8 +74,9 @@ void OnFetchEventCommon(
           std::make_unique<std::vector<GURL>>(), 200, "OK",
           network::mojom::FetchResponseType::kDefault,
           std::make_unique<ServiceWorkerHeaderMap>(), std::string(), 0,
-          nullptr /* blob */, blink::kWebServiceWorkerResponseErrorUnknown,
-          base::Time(), false /* is_in_cache_storage */,
+          nullptr /* blob */,
+          blink::mojom::ServiceWorkerResponseError::kUnknown, base::Time(),
+          false /* is_in_cache_storage */,
           std::string() /* cache_storage_cache_name */,
           std::make_unique<
               ServiceWorkerHeaderList>() /* cors_exposed_header_names */),
@@ -100,6 +101,7 @@ void EmbeddedWorkerTestHelper::MockEmbeddedWorkerInstanceClient::StartWorker(
     mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
     mojom::ControllerServiceWorkerRequest controller_request,
     mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info,
+    blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
     mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
     mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
     blink::mojom::WorkerContentSettingsProxyPtr content_settings_proxy) {
@@ -113,10 +115,10 @@ void EmbeddedWorkerTestHelper::MockEmbeddedWorkerInstanceClient::StartWorker(
   ASSERT_TRUE(worker);
   EXPECT_EQ(EmbeddedWorkerStatus::STARTING, worker->status());
 
-  helper_->OnStartWorkerStub(params, std::move(dispatcher_request),
-                             std::move(controller_request),
-                             std::move(instance_host), std::move(provider_info),
-                             std::move(installed_scripts_info));
+  helper_->OnStartWorkerStub(
+      params, std::move(dispatcher_request), std::move(controller_request),
+      std::move(service_worker_host), std::move(instance_host),
+      std::move(provider_info), std::move(installed_scripts_info));
 }
 
 void EmbeddedWorkerTestHelper::MockEmbeddedWorkerInstanceClient::StopWorker() {
@@ -445,14 +447,16 @@ EmbeddedWorkerTestHelper::EmbeddedWorkerTestHelper(
   auto renderer_interface_ptr =
       std::make_unique<mojom::RendererAssociatedPtr>();
   mock_renderer_interface_->AddBinding(
-      mojo::MakeIsolatedRequest(renderer_interface_ptr.get()));
+      mojo::MakeRequestAssociatedWithDedicatedPipe(
+          renderer_interface_ptr.get()));
   render_process_host_->OverrideRendererInterfaceForTesting(
       std::move(renderer_interface_ptr));
 
   auto new_renderer_interface_ptr =
       std::make_unique<mojom::RendererAssociatedPtr>();
   mock_renderer_interface_->AddBinding(
-      mojo::MakeIsolatedRequest(new_renderer_interface_ptr.get()));
+      mojo::MakeRequestAssociatedWithDedicatedPipe(
+          new_renderer_interface_ptr.get()));
   new_render_process_host_->OverrideRendererInterfaceForTesting(
       std::move(new_renderer_interface_ptr));
 }
@@ -541,6 +545,7 @@ void EmbeddedWorkerTestHelper::OnStartWorker(
     bool pause_after_download,
     mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
     mojom::ControllerServiceWorkerRequest controller_request,
+    blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
     mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
     mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
     mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info) {
@@ -829,6 +834,7 @@ void EmbeddedWorkerTestHelper::OnStartWorkerStub(
     const EmbeddedWorkerStartParams& params,
     mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
     mojom::ControllerServiceWorkerRequest controller_request,
+    blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
     mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
     mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
     mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info) {
@@ -843,8 +849,8 @@ void EmbeddedWorkerTestHelper::OnStartWorkerStub(
           params.embedded_worker_id, params.service_worker_version_id,
           params.scope, params.script_url, params.pause_after_download,
           std::move(dispatcher_request), std::move(controller_request),
-          std::move(instance_host), std::move(provider_info),
-          std::move(installed_scripts_info)));
+          std::move(service_worker_host), std::move(instance_host),
+          std::move(provider_info), std::move(installed_scripts_info)));
 }
 
 void EmbeddedWorkerTestHelper::OnResumeAfterDownloadStub(

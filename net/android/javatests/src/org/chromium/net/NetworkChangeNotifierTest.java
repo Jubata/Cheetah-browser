@@ -40,6 +40,7 @@ import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.test.BaseJUnit4ClassRunner;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.net.NetworkChangeNotifierAutoDetect.ConnectivityManagerDelegate;
 import org.chromium.net.NetworkChangeNotifierAutoDetect.NetworkState;
 import org.chromium.net.NetworkChangeNotifierAutoDetect.WifiManagerDelegate;
@@ -820,10 +821,8 @@ public class NetworkChangeNotifierTest {
     @Test
     @MediumTest
     @Feature({"Android-AppBase"})
+    @MinAndroidSdkLevel(Build.VERSION_CODES.LOLLIPOP)
     public void testNetworkCallbacks() throws Exception {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-            return;
-        }
         // Setup NetworkChangeNotifierAutoDetect
         final TestNetworkChangeNotifierAutoDetectObserver observer =
                 new TestNetworkChangeNotifierAutoDetectObserver();
@@ -952,5 +951,26 @@ public class NetworkChangeNotifierTest {
         mConnectivityDelegate.setActiveNetworkExists(false);
         mReceiver.onReceive(InstrumentationRegistry.getTargetContext(), intent);
         Assert.assertFalse(NetworkChangeNotifier.isOnline());
+    }
+
+    /**
+     * Tests NetworkChangeNotifier.isProcessBoundToNetwork().
+     */
+    @Test
+    @MediumTest
+    @Feature({"Android-AppBase"})
+    @MinAndroidSdkLevel(Build.VERSION_CODES.M)
+    public void testIsProcessBoundToNetwork() throws Exception {
+        ConnectivityManager connectivityManager =
+                (ConnectivityManager) InstrumentationRegistry.getTargetContext().getSystemService(
+                        Context.CONNECTIVITY_SERVICE);
+        Network network = connectivityManager.getActiveNetwork();
+        Assert.assertFalse(NetworkChangeNotifier.isProcessBoundToNetwork());
+        if (network != null) {
+            ConnectivityManager.setProcessDefaultNetwork(network);
+            Assert.assertTrue(NetworkChangeNotifier.isProcessBoundToNetwork());
+        }
+        ConnectivityManager.setProcessDefaultNetwork(null);
+        Assert.assertFalse(NetworkChangeNotifier.isProcessBoundToNetwork());
     }
 }

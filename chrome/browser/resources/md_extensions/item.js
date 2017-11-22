@@ -50,8 +50,11 @@ cr.define('extensions', function() {
     /** @param {string} id */
     repairItem(id) {}
 
+    /** @param {!chrome.developerPrivate.ExtensionInfo} extension */
+    showItemOptionsPage(extension) {}
+
     /** @param {string} id */
-    showItemOptionsPage(id) {}
+    showInFolder(id) {}
   }
 
   const Item = Polymer({

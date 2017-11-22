@@ -4592,6 +4592,38 @@ error::Error GLES2DecoderPassthroughImpl::HandleEndRasterCHROMIUM(
   return error::kNoError;
 }
 
+error::Error
+GLES2DecoderPassthroughImpl::HandleDeleteTransferCacheEntryCHROMIUM(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::DeleteTransferCacheEntryCHROMIUM& c =
+      *static_cast<
+          const volatile gles2::cmds::DeleteTransferCacheEntryCHROMIUM*>(
+          cmd_data);
+  GLuint64 handle_id = c.handle_id();
+  error::Error error = DoDeleteTransferCacheEntryCHROMIUM(handle_id);
+  if (error != error::kNoError) {
+    return error;
+  }
+  return error::kNoError;
+}
+
+error::Error
+GLES2DecoderPassthroughImpl::HandleUnlockTransferCacheEntryCHROMIUM(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::UnlockTransferCacheEntryCHROMIUM& c =
+      *static_cast<
+          const volatile gles2::cmds::UnlockTransferCacheEntryCHROMIUM*>(
+          cmd_data);
+  GLuint64 handle_id = c.handle_id();
+  error::Error error = DoUnlockTransferCacheEntryCHROMIUM(handle_id);
+  if (error != error::kNoError) {
+    return error;
+  }
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderPassthroughImpl::HandleTexStorage2DImageCHROMIUM(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
@@ -4609,6 +4641,39 @@ error::Error GLES2DecoderPassthroughImpl::HandleTexStorage2DImageCHROMIUM(
   GLsizei height = static_cast<GLsizei>(c.height);
   error::Error error = DoTexStorage2DImageCHROMIUM(target, internalFormat,
                                                    bufferUsage, width, height);
+  if (error != error::kNoError) {
+    return error;
+  }
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::HandleWindowRectanglesEXTImmediate(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  if (!feature_info_->IsWebGL2OrES3Context())
+    return error::kUnknownCommand;
+  const volatile gles2::cmds::WindowRectanglesEXTImmediate& c =
+      *static_cast<const volatile gles2::cmds::WindowRectanglesEXTImmediate*>(
+          cmd_data);
+  if (!features().ext_window_rectangles) {
+    return error::kUnknownCommand;
+  }
+
+  GLenum mode = static_cast<GLenum>(c.mode);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  uint32_t data_size = 0;
+  if (count >= 0 && !GLES2Util::ComputeDataSize<GLint, 4>(count, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  volatile const GLint* box = GetImmediateDataAs<volatile const GLint*>(
+      c, data_size, immediate_data_size);
+  if (box == nullptr) {
+    return error::kOutOfBounds;
+  }
+  error::Error error = DoWindowRectanglesEXT(mode, count, box);
   if (error != error::kNoError) {
     return error;
   }

@@ -833,6 +833,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kIdentityPrivate);
   skip.insert(APIPermission::kInputMethodPrivate);
   skip.insert(APIPermission::kLanguageSettingsPrivate);
+  skip.insert(APIPermission::kLockWindowFullscreenPrivate);
   skip.insert(APIPermission::kMediaPlayerPrivate);
   skip.insert(APIPermission::kMediaPerceptionPrivate);
   skip.insert(APIPermission::kMediaRouterPrivate);
@@ -851,6 +852,7 @@ TEST(PermissionsTest, PermissionMessages) {
   skip.insert(APIPermission::kWebrtcAudioPrivate);
   skip.insert(APIPermission::kWebrtcDesktopCapturePrivate);
   skip.insert(APIPermission::kWebrtcLoggingPrivate);
+  skip.insert(APIPermission::kWebrtcLoggingPrivateAudioDebug);
   skip.insert(APIPermission::kWebstorePrivate);
   skip.insert(APIPermission::kWebstoreWidgetPrivate);
 

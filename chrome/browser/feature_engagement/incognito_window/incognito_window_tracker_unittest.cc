@@ -4,16 +4,19 @@
 
 #include "chrome/browser/feature_engagement/incognito_window/incognito_window_tracker.h"
 
+#include <memory>
+
 #include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_param_associator.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/run_loop.h"
 #include "base/sequenced_task_runner.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/feature_engagement/feature_tracker.h"
 #include "chrome/browser/feature_engagement/session_duration_updater.h"
-#include "chrome/browser/feature_engagement/session_duration_updater_factory.h"
+#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
@@ -34,16 +37,14 @@ namespace feature_engagement {
 
 namespace {
 
-const char kIncognitoWindowTrialName[] = "IncognitoWindowTrial";
-const char kGroupName[] = "Enabled";
-const char kTestProfileName[] = "test-profile";
+constexpr char kIncognitoWindowTrialName[] = "IncognitoWindowTrial";
+constexpr char kGroupName[] = "Enabled";
+constexpr char kTestProfileName[] = "test-profile";
 
 class FakeIncognitoWindowTracker : public IncognitoWindowTracker {
  public:
   FakeIncognitoWindowTracker(Tracker* feature_tracker, Profile* profile)
-      : IncognitoWindowTracker(
-            feature_engagement::SessionDurationUpdaterFactory::GetInstance()
-                ->GetForProfile(profile)),
+      : IncognitoWindowTracker(profile),
         feature_tracker_(feature_tracker),
         pref_service_(
             base::MakeUnique<sync_preferences::TestingPrefServiceSyncable>()) {
@@ -52,7 +53,7 @@ class FakeIncognitoWindowTracker : public IncognitoWindowTracker {
 
   PrefService* GetPrefs() { return pref_service_.get(); }
 
-  // feature_engagement::NewTabTracker:
+  // feature_engagement::IncognitoWindowTracker:
   Tracker* GetTracker() const override { return feature_tracker_; }
 
  private:
@@ -80,9 +81,9 @@ class IncognitoWindowTrackerEventTest : public testing::Test {
 
   void TearDown() override {
     incognito_window_tracker_->RemoveSessionDurationObserver();
-    metrics::DesktopSessionDurationTracker::CleanupForTesting();
     // Need to invoke the reset method as TearDown is on the UI thread.
     testing_profile_manager_.reset();
+    metrics::DesktopSessionDurationTracker::CleanupForTesting();
   }
 
  protected:
@@ -151,7 +152,8 @@ class IncognitoWindowTrackerTest : public testing::Test {
         "name:incognito_window_clicked;comparator:any;window:3650;storage:3650";
     incognito_window_params["session_rate"] = "<=3";
     incognito_window_params["availability"] = "any";
-
+    incognito_window_params["x_date_released_in_seconds"] = base::Int64ToString(
+        first_run::GetFirstRunSentinelCreationTime().ToDoubleT());
     SetFeatureParams(kIPHIncognitoWindowFeature, incognito_window_params);
 
     // Start the DesktopSessionDurationTracker to track active session time.

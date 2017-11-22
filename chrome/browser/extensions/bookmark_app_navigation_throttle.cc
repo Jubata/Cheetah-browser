@@ -11,8 +11,12 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,6 +33,30 @@
 using content::BrowserThread;
 
 namespace extensions {
+
+namespace {
+
+scoped_refptr<const Extension> GetAppForURL(
+    const GURL& url,
+    const content::WebContents* web_contents) {
+  content::BrowserContext* browser_context = web_contents->GetBrowserContext();
+  for (scoped_refptr<const extensions::Extension> app :
+       ExtensionRegistry::Get(browser_context)->enabled_extensions()) {
+    if (!app->from_bookmark())
+      continue;
+
+    const UrlHandlerInfo* url_handler =
+        UrlHandlers::FindMatchingUrlHandler(app.get(), url);
+    if (!url_handler)
+      continue;
+
+    return app;
+  }
+
+  return nullptr;
+}
+
+}  // namespace
 
 // static
 std::unique_ptr<content::NavigationThrottle>
@@ -73,19 +101,16 @@ const char* BookmarkAppNavigationThrottle::GetNameForLogging() {
 
 content::NavigationThrottle::ThrottleCheckResult
 BookmarkAppNavigationThrottle::WillStartRequest() {
-  return CheckNavigation();
+  return ProcessNavigation();
 }
 
 content::NavigationThrottle::ThrottleCheckResult
 BookmarkAppNavigationThrottle::WillRedirectRequest() {
-  return CheckNavigation();
+  return ProcessNavigation();
 }
 
 content::NavigationThrottle::ThrottleCheckResult
-BookmarkAppNavigationThrottle::CheckNavigation() {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  content::WebContents* source = navigation_handle()->GetWebContents();
+BookmarkAppNavigationThrottle::ProcessNavigation() {
   ui::PageTransition transition_type = navigation_handle()->GetPageTransition();
   if (!(PageTransitionCoreTypeIs(transition_type, ui::PAGE_TRANSITION_LINK))) {
     DVLOG(1) << "Don't intercept: Transition type is "
@@ -93,53 +118,61 @@ BookmarkAppNavigationThrottle::CheckNavigation() {
     return content::NavigationThrottle::PROCEED;
   }
 
-  if (!navigation_handle()->GetURL().SchemeIsHTTPOrHTTPS()) {
-    DVLOG(1) << "Don't intercept: scheme is not HTTP or HTTPS.";
+  auto app_for_window_ref = GetAppForWindow();
+  auto target_app_ref = GetTargetApp();
+
+  if (app_for_window_ref == target_app_ref) {
+    DVLOG(1) << "Don't intercept: The target URL is in the same scope as the "
+             << "current app.";
     return content::NavigationThrottle::PROCEED;
   }
 
-  DCHECK(navigation_handle()->IsInMainFrame());
-  // Don't redirect same origin navigations. This matches what is done on
-  // Android.
-  if (source->GetMainFrame()->GetLastCommittedOrigin().IsSameOriginWith(
-          url::Origin::Create(navigation_handle()->GetURL()))) {
-    DVLOG(1) << "Don't intercept: Same origin navigation.";
+  // If this is a browser tab, and the current and target URL are within-scope
+  // of the same app, don't intercept the navigation.
+  // This ensures that navigating from
+  // https://www.youtube.com/ to https://www.youtube.com/some_video doesn't
+  // open a new app window if the Youtube app is installed, but navigating from
+  // https://www.google.com/ to https://www.google.com/maps does open a new
+  // app window if only the Maps app is installed.
+  if (!app_for_window_ref && target_app_ref == GetAppForCurrentURL()) {
+    DVLOG(1) << "Don't intercept: Keep same-app navigations in the browser.";
     return content::NavigationThrottle::PROCEED;
   }
 
-  content::BrowserContext* browser_context = source->GetBrowserContext();
-  scoped_refptr<const extensions::Extension> matching_app;
-  for (scoped_refptr<const extensions::Extension> app :
-       ExtensionRegistry::Get(browser_context)->enabled_extensions()) {
-    if (!app->from_bookmark())
-      continue;
+  if (target_app_ref) {
+    auto* prerender_contents = prerender::PrerenderContents::FromWebContents(
+        navigation_handle()->GetWebContents());
+    if (prerender_contents) {
+      // If prerendering, don't launch the app but abort the navigation.
+      prerender_contents->Destroy(
+          prerender::FINAL_STATUS_NAVIGATION_INTERCEPTED);
+      return content::NavigationThrottle::CANCEL_AND_IGNORE;
+    }
 
-    const UrlHandlerInfo* url_handler = UrlHandlers::FindMatchingUrlHandler(
-        app.get(), navigation_handle()->GetURL());
-    if (!url_handler)
-      continue;
-
-    matching_app = app;
-    break;
+    return OpenInAppWindowAndCloseTabIfNecessary(target_app_ref);
   }
 
-  if (!matching_app) {
-    DVLOG(1) << "No matching Bookmark App for URL: "
-             << navigation_handle()->GetURL();
-    return NavigationThrottle::PROCEED;
-  } else {
-    DVLOG(1) << "Found matching Bookmark App: " << matching_app->name() << "("
-             << matching_app->id() << ")";
+  if (app_for_window_ref) {
+    // The experience when navigating to an out-of-scope website inside an app
+    // window is not great, so we bounce these navigations back to the browser.
+    // TODO(crbug.com/774895): Stop bouncing back to the browser once the
+    // experience for out-of-scope navigations improves.
+    DVLOG(1) << "Open in new tab.";
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&BookmarkAppNavigationThrottle::OpenInNewTab,
+                              weak_ptr_factory_.GetWeakPtr()));
+    return content::NavigationThrottle::DEFER;
   }
 
-  // If prerendering, don't launch the app but abort the navigation.
-  prerender::PrerenderContents* prerender_contents =
-      prerender::PrerenderContents::FromWebContents(source);
-  if (prerender_contents) {
-    prerender_contents->Destroy(prerender::FINAL_STATUS_NAVIGATION_INTERCEPTED);
-    return content::NavigationThrottle::CANCEL_AND_IGNORE;
-  }
+  DVLOG(1) << "No matching Bookmark App for URL: "
+           << navigation_handle()->GetURL();
+  return content::NavigationThrottle::PROCEED;
+}
 
+content::NavigationThrottle::ThrottleCheckResult
+BookmarkAppNavigationThrottle::OpenInAppWindowAndCloseTabIfNecessary(
+    scoped_refptr<const Extension> target_app) {
+  content::WebContents* source = navigation_handle()->GetWebContents();
   if (source->GetController().IsInitialNavigation()) {
     // When a new WebContents has no opener, the first navigation will happen
     // synchronously. This could result in us opening the app and then focusing
@@ -148,9 +181,9 @@ BookmarkAppNavigationThrottle::CheckNavigation() {
       DVLOG(1) << "Deferring opening app.";
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::Bind(&BookmarkAppNavigationThrottle::OpenBookmarkApp,
-                                weak_ptr_factory_.GetWeakPtr(), matching_app));
+                                weak_ptr_factory_.GetWeakPtr(), target_app));
     } else {
-      OpenBookmarkApp(matching_app);
+      OpenBookmarkApp(target_app);
     }
 
     // According to NavigationThrottle::WillStartRequest's documentation closing
@@ -162,7 +195,7 @@ BookmarkAppNavigationThrottle::CheckNavigation() {
     return content::NavigationThrottle::DEFER;
   }
 
-  OpenBookmarkApp(matching_app);
+  OpenBookmarkApp(target_app);
   return content::NavigationThrottle::CANCEL_AND_IGNORE;
 }
 
@@ -185,6 +218,63 @@ void BookmarkAppNavigationThrottle::OpenBookmarkApp(
 void BookmarkAppNavigationThrottle::CloseWebContents() {
   DVLOG(1) << "Closing empty tab.";
   navigation_handle()->GetWebContents()->Close();
+}
+
+void BookmarkAppNavigationThrottle::OpenInNewTab() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  content::WebContents* source = navigation_handle()->GetWebContents();
+  content::OpenURLParams url_params(navigation_handle()->GetURL(),
+                                    navigation_handle()->GetReferrer(),
+                                    WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                                    navigation_handle()->GetPageTransition(),
+                                    navigation_handle()->IsRendererInitiated());
+  url_params.redirect_chain = navigation_handle()->GetRedirectChain();
+  url_params.frame_tree_node_id = navigation_handle()->GetFrameTreeNodeId();
+  url_params.user_gesture = navigation_handle()->HasUserGesture();
+  url_params.started_from_context_menu =
+      navigation_handle()->WasStartedFromContextMenu();
+
+  source->OpenURL(url_params);
+  CancelDeferredNavigation(content::NavigationThrottle::CANCEL_AND_IGNORE);
+}
+
+scoped_refptr<const Extension>
+BookmarkAppNavigationThrottle::GetAppForWindow() {
+  content::WebContents* source = navigation_handle()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithWebContents(source);
+  if (!browser || !browser->is_app())
+    return nullptr;
+
+  const Extension* app =
+      ExtensionRegistry::Get(source->GetBrowserContext())
+          ->GetExtensionById(
+              web_app::GetExtensionIdFromApplicationName(browser->app_name()),
+              extensions::ExtensionRegistry::ENABLED);
+  if (!app || !app->from_bookmark())
+    return nullptr;
+
+  // Bookmark Apps for installable websites have scope.
+  // TODO(crbug.com/774918): Replace once there is a more explicit indicator
+  // of a Bookmark App for an installable website.
+  if (UrlHandlers::GetUrlHandlers(app) == nullptr)
+    return nullptr;
+
+  return app;
+}
+
+scoped_refptr<const Extension> BookmarkAppNavigationThrottle::GetTargetApp() {
+  return GetAppForURL(navigation_handle()->GetURL(),
+                      navigation_handle()->GetWebContents());
+}
+
+scoped_refptr<const Extension>
+BookmarkAppNavigationThrottle::GetAppForCurrentURL() {
+  return GetAppForURL(navigation_handle()
+                          ->GetWebContents()
+                          ->GetMainFrame()
+                          ->GetLastCommittedURL(),
+                      navigation_handle()->GetWebContents());
 }
 
 }  // namespace extensions

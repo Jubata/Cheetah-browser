@@ -293,13 +293,13 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   void GetLargestFaviconForURL(
       const GURL& page_url,
-      const std::vector<int>& icon_types,
+      const std::vector<favicon_base::IconTypeSet>& icon_types_list,
       int minimum_size_in_pixels,
       favicon_base::FaviconRawBitmapResult* bitmap_result);
 
   void GetFaviconsForURL(
       const GURL& page_url,
-      int icon_types,
+      const favicon_base::IconTypeSet& icon_types,
       const std::vector<int>& desired_sizes,
       std::vector<favicon_base::FaviconRawBitmapResult>* bitmap_results);
 
@@ -332,7 +332,7 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
 
   void CloneFaviconMappingsForPages(
       const GURL& page_url_to_read,
-      int icon_types,
+      const favicon_base::IconTypeSet& icon_types,
       const base::flat_set<GURL>& page_urls_to_write);
 
   bool SetOnDemandFavicons(const GURL& page_url,
@@ -740,12 +740,12 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // largest favicon bitmap with one of the icon types in |icon_types| is
   // returned. If |icon_types| contains multiple icon types and there are
   // several matched icon types in the database, results will only be returned
-  // for a single icon type in the priority of TOUCH_PRECOMPOSED_ICON,
-  // TOUCH_ICON, and FAVICON. See the comment for
+  // for a single icon type in the priority of kTouchPrecomposedIcon,
+  // kTouchIcon, and kFavicon. See the comment for
   // GetFaviconResultsForBestMatch() for more details on how
   // |favicon_bitmap_results| is constructed.
   bool GetFaviconsFromDB(const GURL& page_url,
-                         int icon_types,
+                         const favicon_base::IconTypeSet& icon_types,
                          const std::vector<int>& desired_sizes,
                          std::vector<favicon_base::FaviconRawBitmapResult>*
                              favicon_bitmap_results);

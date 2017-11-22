@@ -21,11 +21,16 @@
 - (void)showAccountsSettingsFromViewController:
     (UIViewController*)baseViewController;
 
-// Shows the sync settings UI.
-- (void)showSyncSettings;
+// TODO(crbug.com/779791) : Do not pass baseViewController through dispatcher.
+// Shows the sync settings UI, presenting from |baseViewController|.
+- (void)showSyncSettingsFromViewController:
+    (UIViewController*)baseViewController;
 
-// Shows the sync encryption passphrase UI.
-- (void)showSyncPassphraseSettings;
+// TODO(crbug.com/779791) : Do not pass baseViewController through dispatcher.
+// Shows the sync encryption passphrase UI, presenting from
+// |baseViewController|.
+- (void)showSyncPassphraseSettingsFromViewController:
+    (UIViewController*)baseViewController;
 
 @end
 
@@ -72,11 +77,10 @@
 - (void)showClearBrowsingDataSettingsFromViewController:
     (UIViewController*)baseViewController;
 
-// Shows the Autofill Settings UI.
-- (void)showAutofillSettings;
-
-// Shows the Save Passwords settings UI.
-- (void)showSavePasswordsSettings;
+// TODO(crbug.com/779791) : Do not pass baseViewController through dispatcher.
+// Shows the Autofill Settings UI, presenting from |baseViewController|.
+- (void)showAutofillSettingsFromViewController:
+    (UIViewController*)baseViewController;
 
 // Shows the Report an Issue UI, presenting from |baseViewController|.
 - (void)showReportAnIssueFromViewController:
@@ -85,11 +89,14 @@
 // Opens the |command| URL.
 - (void)openURL:(OpenUrlCommand*)command;
 
-// Shows the signin UI.
-- (void)showSignin:(ShowSigninCommand*)command;
+// TODO(crbug.com/779791) : Do not pass baseViewController through dispatcher.
+// Shows the signin UI, presenting from |baseViewController|.
+- (void)showSignin:(ShowSigninCommand*)command
+    baseViewController:(UIViewController*)baseViewController;
 
-// Shows the Add Account UI
-- (void)showAddAccount;
+// TODO(crbug.com/779791) : Do not pass baseViewController through dispatcher.
+// Shows the Add Account UI, presenting from |baseViewController|.
+- (void)showAddAccountFromViewController:(UIViewController*)baseViewController;
 
 @end
 

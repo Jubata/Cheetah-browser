@@ -25,7 +25,7 @@
 
 #include "core/layout/LayoutTableCell.h"
 
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/html_names.h"
@@ -303,31 +303,7 @@ void LayoutTableCell::UpdateLayout() {
   DCHECK(NeedsLayout());
   LayoutAnalyzer::Scope analyzer(*this);
 
-  LayoutUnit old_cell_baseline = CellBaselinePosition();
   UpdateBlockLayout(CellChildrenNeedLayout());
-
-  // If we have replaced content, the intrinsic height of our content may have
-  // changed since the last time we laid out. If that's the case the intrinsic
-  // padding we used for layout (the padding required to push the contents of
-  // the cell down to the row's baseline) is included in our new height and
-  // baseline and makes both of them wrong. So if our content's intrinsic height
-  // has changed push the new content up into the intrinsic padding and relayout
-  // so that the rest of table and row layout can use the correct baseline and
-  // height for this cell.
-  // The Round() calls are in place because intrinsic_padding_before_ isn't sub
-  // pixel yet.
-  if (IsBaselineAligned() && Section()->RowBaseline(RowIndex()) &&
-      CellBaselinePosition().Round() >
-          Section()->RowBaseline(RowIndex()).Round()) {
-    LayoutUnit new_intrinsic_padding_before = std::max(
-        IntrinsicPaddingBefore() -
-            std::max(CellBaselinePosition() - old_cell_baseline, LayoutUnit()),
-        LayoutUnit());
-    SetIntrinsicPaddingBefore(new_intrinsic_padding_before.Round());
-    SubtreeLayoutScope layouter(*this);
-    layouter.SetNeedsLayout(this, LayoutInvalidationReason::kTableChanged);
-    UpdateBlockLayout(CellChildrenNeedLayout());
-  }
 
   // FIXME: This value isn't the intrinsic content logical height, but we need
   // to update the value as its used by flexbox layout. crbug.com/367324
@@ -481,6 +457,12 @@ void LayoutTableCell::StyleDidChange(StyleDifference diff,
   if (!table)
     return;
 
+  if (old_style->Visibility() != StyleRef().Visibility() &&
+      table->ShouldCollapseBorders()) {
+    table->InvalidateCollapsedBorders();
+    collapsed_borders_need_paint_invalidation_ = true;
+  }
+
   LayoutTableBoxComponent::InvalidateCollapsedBordersOnStyleChange(
       *this, *table, diff, *old_style);
 
@@ -514,7 +496,7 @@ bool LayoutTableCell::IsInEndColumn() const {
 
 CSSPropertyID LayoutTableCell::ResolveBorderProperty(
     CSSPropertyID property) const {
-  return CSSPropertyAPI::Get(property).ResolveDirectionAwareProperty(
+  return CSSProperty::Get(property).ResolveDirectionAwareProperty(
       TableStyle().Direction(), TableStyle().GetWritingMode());
 }
 
@@ -1083,7 +1065,7 @@ void LayoutTableCell::UpdateCollapsedBorderValues() const {
 
     collapsed_border_values_valid_ = true;
 
-    auto new_values = WTF::MakeUnique<CollapsedBorderValues>(
+    auto new_values = std::make_unique<CollapsedBorderValues>(
         ComputeCollapsedStartBorder(), ComputeCollapsedEndBorder(),
         ComputeCollapsedBeforeBorder(), ComputeCollapsedAfterBorder());
 

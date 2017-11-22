@@ -62,7 +62,7 @@ AXMenuListOption* AXMenuListPopup::MenuListOptionAXObject(
   if (!IsHTMLOptionElement(*element))
     return nullptr;
 
-  AXObject* object = AxObjectCache().GetOrCreate(element);
+  AXObject* object = AXObjectCache().GetOrCreate(element);
   if (!object || !object->IsMenuListOption())
     return nullptr;
 
@@ -130,7 +130,7 @@ void AXMenuListPopup::DidUpdateActiveOption(int option_index,
   if (!fire_notifications)
     return;
 
-  AXObjectCacheImpl& cache = AxObjectCache();
+  AXObjectCacheImpl& cache = AXObjectCache();
   if (old_index != option_index && old_index >= 0 &&
       old_index < static_cast<int>(children_.size())) {
     AXObject* previous_child = children_[old_index].Get();
@@ -140,15 +140,17 @@ void AXMenuListPopup::DidUpdateActiveOption(int option_index,
 
   if (option_index >= 0 && option_index < static_cast<int>(children_.size())) {
     AXObject* child = children_[option_index].Get();
+    cache.PostNotification(this, AXObjectCacheImpl::kAXChildrenChanged);
     cache.PostNotification(this, AXObjectCacheImpl::kAXActiveDescendantChanged);
     cache.PostNotification(child, AXObjectCacheImpl::kAXMenuListItemSelected);
   }
 }
 
 void AXMenuListPopup::DidHide() {
-  AXObjectCacheImpl& cache = AxObjectCache();
+  AXObjectCacheImpl& cache = AXObjectCache();
   cache.PostNotification(this, AXObjectCacheImpl::kAXHide);
   if (ActiveDescendant())
+    cache.PostNotification(this, AXObjectCacheImpl::kAXChildrenChanged);
     cache.PostNotification(ActiveDescendant(),
                            AXObjectCacheImpl::kAXMenuListItemUnselected);
 }
@@ -157,7 +159,7 @@ void AXMenuListPopup::DidShow() {
   if (!have_children_)
     AddChildren();
 
-  AXObjectCacheImpl& cache = AxObjectCache();
+  AXObjectCacheImpl& cache = AXObjectCache();
   cache.PostNotification(this, AXObjectCacheImpl::kAXShow);
   int selected_index = GetSelectedIndex();
   if (selected_index >= 0 &&

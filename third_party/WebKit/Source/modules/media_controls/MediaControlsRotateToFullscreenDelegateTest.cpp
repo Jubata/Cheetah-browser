@@ -86,7 +86,7 @@ class StubLocalFrameClient : public EmptyLocalFrameClient {
       const WebMediaPlayerSource&,
       WebMediaPlayerClient*,
       WebLayerTreeView*) override {
-    return WTF::MakeUnique<MockVideoWebMediaPlayer>();
+    return std::make_unique<MockVideoWebMediaPlayer>();
   }
 };
 
@@ -561,8 +561,8 @@ TEST_F(MediaControlsRotateToFullscreenDelegateTest, EnterFailHidden) {
   EXPECT_TRUE(ObservedVisibility());
 
   // Move video offscreen.
-  GetDocument().body()->style()->setProperty("margin-top", "-999px", "",
-                                             ASSERT_NO_EXCEPTION);
+  GetDocument().body()->style()->setProperty(&GetDocument(), "margin-top",
+                                             "-999px", "", ASSERT_NO_EXCEPTION);
 
   UpdateVisibilityObserver();
 

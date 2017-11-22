@@ -12,7 +12,6 @@
 #include <string>
 #include <vector>
 
-#include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/strings/string16.h"
@@ -25,11 +24,7 @@
 #include "components/autofill/core/browser/proto/server.pb.h"
 #include "url/gurl.h"
 
-enum UploadRequired {
-  UPLOAD_NOT_REQUIRED,
-  UPLOAD_REQUIRED,
-  USE_UPLOAD_RATES
-};
+enum UploadRequired { UPLOAD_NOT_REQUIRED, UPLOAD_REQUIRED, USE_UPLOAD_RATES };
 
 namespace base {
 class TimeTicks;
@@ -155,21 +150,6 @@ class FormStructure {
   // specifies a section for at least one field.
   void ParseFieldTypesFromAutocompleteAttributes();
 
-  // Determines whether |type| and |field| match.
-  typedef base::Callback<bool(ServerFieldType type,
-                              const AutofillField& field)>
-      InputFieldComparator;
-
-  // Fills in |fields_| that match |types| (via |matches|) with info from
-  // |get_info|. Uses |address_language_code| to determine line separators when
-  // collapsing street address lines into a single-line input text field.
-  bool FillFields(
-      const std::vector<ServerFieldType>& types,
-      const InputFieldComparator& matches,
-      const base::Callback<base::string16(const AutofillType&)>& get_info,
-      const std::string& address_language_code,
-      const std::string& app_locale);
-
   // Returns the values that can be filled into the form structure for the
   // given type. For example, there's no way to fill in a value of "The Moon"
   // into ADDRESS_HOME_STATE if the form only has a
@@ -182,6 +162,10 @@ class FormStructure {
   // Gets the form's current value for |type|. For example, it may return
   // the contents of a text input or the currently selected <option>.
   base::string16 GetUniqueValue(HtmlFieldType type) const;
+
+  // Rationalize phone number fields in a given section, that is only fill
+  // the fields that are considered composing a first complete phone number.
+  void RationalizePhoneNumbersInSection(std::string section);
 
   const AutofillField* field(size_t index) const;
   AutofillField* field(size_t index);
@@ -207,6 +191,8 @@ class FormStructure {
   const GURL& source_url() const { return source_url_; }
 
   const GURL& target_url() const { return target_url_; }
+
+  const GURL& main_frame_url() const { return main_frame_url_; }
 
   bool has_author_specified_types() const {
     return has_author_specified_types_;
@@ -255,16 +241,12 @@ class FormStructure {
   friend class FormStructureTest;
   FRIEND_TEST_ALL_PREFIXES(AutofillDownloadTest, QueryAndUploadTest);
   FRIEND_TEST_ALL_PREFIXES(FormStructureTest, FindLongestCommonPrefix);
-
+  FRIEND_TEST_ALL_PREFIXES(FormStructureTest,
+                           RationalizePhoneNumber_RunsOncePerSection);
   // A function to fine tune the credit cards related predictions. For example:
   // lone credit card fields in an otherwise non-credit-card related form is
   // unlikely to be correct, the function will override that prediction.
   void RationalizeCreditCardFieldPredictions();
-
-  // A function that detects if predictions suggest there are more phone fields
-  // than one valid phone number can fill, then mark those extranous fields
-  // as fill-only-when-user-highlight.
-  void RationalizePhoneNumberFieldPredictions();
 
   // A helper function to review the predictions and do appropriate adjustments
   // when it considers neccessary.
@@ -311,6 +293,9 @@ class FormStructure {
 
   // The target URL.
   GURL target_url_;
+
+  // The source URL of the main frame of this form.
+  GURL main_frame_url_;
 
   // The number of fields able to be auto-filled.
   size_t autofill_count_;
@@ -365,6 +350,9 @@ class FormStructure {
 
   // When a form is parsed on this page.
   base::TimeTicks form_parsed_timestamp_;
+
+  // If phone number rationalization has been performed for a given section.
+  std::map<std::string, bool> phone_rationalized_;
 
   DISALLOW_COPY_AND_ASSIGN(FormStructure);
 };

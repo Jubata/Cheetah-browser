@@ -8,6 +8,7 @@
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/layout/HitTestResult.h"
 #include "platform/exported/WebActiveGestureAnimation.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 
@@ -130,10 +131,6 @@ void WebViewFrameWidget::SetFocus(bool enable) {
   return web_view_->SetFocus(enable);
 }
 
-WebRange WebViewFrameWidget::CompositionRange() {
-  return web_view_->CompositionRange();
-}
-
 bool WebViewFrameWidget::SelectionBounds(WebRect& anchor,
                                          WebRect& focus) const {
   return web_view_->SelectionBounds(anchor, focus);
@@ -181,7 +178,7 @@ void WebViewFrameWidget::UpdateBrowserControlsState(
 }
 
 void WebViewFrameWidget::SetVisibilityState(
-    WebPageVisibilityState visibility_state) {
+    mojom::PageVisibilityState visibility_state) {
   return web_view_->SetVisibilityState(visibility_state, false);
 }
 

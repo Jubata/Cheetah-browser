@@ -36,6 +36,7 @@ import server
 from webelement import WebElement
 import webserver
 
+
 _TEST_DATA_DIR = os.path.join(chrome_paths.GetTestData(), 'chromedriver')
 
 if util.IsLinux():
@@ -74,6 +75,10 @@ _NEGATIVE_FILTER = [
     'PerfTest.testColdExecuteScript',
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1819
     'ChromeExtensionsCapabilityTest.testIFrameWithExtensionsSource',
+    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2144
+    'MobileEmulationCapabilityTest.testClickElement',
+    'MobileEmulationCapabilityTest.testNetworkConnectionTypeIsAppliedToAllTabs',
+    'MobileEmulationCapabilityTest.testNetworkConnectionTypeIsAppliedToAllTabsImmediately',
 ]
 
 _VERSION_SPECIFIC_FILTER = {}
@@ -82,8 +87,6 @@ _VERSION_SPECIFIC_FILTER['HEAD'] = [
     'MobileEmulationCapabilityTest.testDeviceName',
     'MobileEmulationCapabilityTest.testNetworkConnectionTypeIsAppliedToAllTabs',
     'MobileEmulationCapabilityTest.testNetworkConnectionTypeIsAppliedToAllTabsImmediately',
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2114
-    'ChromeDriverTest.testShadowDomFindElementFailsBetweenShadowRoots',
 ]
 
 _OS_SPECIFIC_FILTER = {}
@@ -98,6 +101,8 @@ _OS_SPECIFIC_FILTER['win'] = [
 _OS_SPECIFIC_FILTER['linux'] = [
     # Xvfb doesn't support maximization.
     'ChromeDriverTest.testWindowMaximize',
+    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2132
+    'MobileEmulationCapabilityTest.testDeviceMetricsWithDeviceWidth',
 ]
 _OS_SPECIFIC_FILTER['mac'] = [
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1927
@@ -167,8 +172,6 @@ _ANDROID_NEGATIVE_FILTER['chrome'] = (
         'ChromeDriverTest.testCanClickAlertInIframes',
         # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2081
         'ChromeDriverTest.testCloseWindowUsingJavascript',
-        # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2106
-        'ChromeDriverTest.testShadowDomFindElementFailsBetweenShadowRoots'
     ]
 )
 _ANDROID_NEGATIVE_FILTER['chrome_stable'] = (
@@ -998,7 +1001,8 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
   def testPendingConsoleLog(self):
     new_logs = [""]
     def GetPendingLogs(driver):
-      new_logs[0] = driver.GetLog('browser')
+      response = driver.GetLog('browser')
+      new_logs[0] = [x for x in response if x['source'] == 'console-api']
       return new_logs[0]
 
     self._driver.Load(self.GetHttpUrlForFile(
@@ -1206,15 +1210,6 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     # can't find element from the root without /deep/
     with self.assertRaises(chromedriver.NoSuchElement):
       self._driver.FindElement("id", "#olderTextBox")
-
-  def testShadowDomFindElementFailsBetweenShadowRoots(self):
-    """Checks that chromedriver can't find elements in other shadow DOM
-    trees."""
-    self._driver.Load(self.GetHttpUrlForFile(
-        '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #youngerChildDiv")
-    with self.assertRaises(chromedriver.NoSuchElement):
-      elem.FindElement("id", "#olderTextBox")
 
   def testShadowDomText(self):
     """Checks that chromedriver can find extract the text from a shadow DOM

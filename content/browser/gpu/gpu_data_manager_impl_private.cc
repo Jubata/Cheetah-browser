@@ -337,14 +337,6 @@ void GpuDataManagerImplPrivate::InitializeForTesting(
 }
 
 bool GpuDataManagerImplPrivate::IsFeatureBlacklisted(int feature) const {
-#if defined(OS_CHROMEOS)
-  if (feature == gpu::GPU_FEATURE_TYPE_PANEL_FITTING &&
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisablePanelFitting)) {
-    return true;
-  }
-#endif  // OS_CHROMEOS
-
   // SwiftShader blacklists all features
   return use_swiftshader_ || (blacklisted_features_.count(feature) == 1);
 }
@@ -811,16 +803,12 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
 void GpuDataManagerImplPrivate::UpdateRendererWebPrefs(
     WebPreferences* prefs) const {
   DCHECK(prefs);
-
-#if defined(USE_AURA)
-  if (!CanUseGpuBrowserCompositor()) {
-    prefs->accelerated_2d_canvas_enabled = false;
-    prefs->pepper_3d_enabled = false;
-  }
-#endif
-
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
+  // TODO(zmo): Remove this when we check on the renderer side for 2d canvas.
+  if (command_line->HasSwitch(switches::kDisableGpuCompositing)) {
+    prefs->accelerated_2d_canvas_enabled = false;
+  }
   if (!ShouldDisableAcceleratedVideoDecode(command_line) &&
       !command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode)) {
     prefs->pepper_accelerated_video_decode_enabled = true;
@@ -966,17 +954,6 @@ bool GpuDataManagerImplPrivate::UpdateActiveGpu(uint32_t vendor_id,
     gpu_info_.gpu.active = false;
   }
   UpdateGpuInfoHelper();
-  return true;
-}
-
-bool GpuDataManagerImplPrivate::CanUseGpuBrowserCompositor() const {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableGpuCompositing))
-    return false;
-  if (ShouldUseSwiftShader())
-    return false;
-  if (IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING))
-    return false;
   return true;
 }
 

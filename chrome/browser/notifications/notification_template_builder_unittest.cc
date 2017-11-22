@@ -10,8 +10,13 @@
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/notifications/mock_notification_image_retainer.h"
+#include "chrome/grit/chromium_strings.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/message_center/notification.h"
 
 using message_center::Notification;
@@ -20,10 +25,12 @@ using message_center::RichNotificationData;
 
 namespace {
 
+const char kContextMenuLabel[] = "settings";
 const char kNotificationId[] = "notification_id";
 const char kNotificationTitle[] = "My Title";
 const char kNotificationMessage[] = "My Message";
 const char kNotificationOrigin[] = "https://example.com";
+const char kProfileId[] = "Default";
 
 bool FixedTime(base::Time* time) {
   base::Time::Exploded exploded = {0};
@@ -43,6 +50,15 @@ class NotificationTemplateBuilderTest : public ::testing::Test {
   NotificationTemplateBuilderTest() = default;
   ~NotificationTemplateBuilderTest() override = default;
 
+  void SetUp() override {
+    NotificationTemplateBuilder::OverrideContextMenuLabelForTesting(
+        kContextMenuLabel);
+  }
+
+  void TearDown() override {
+    NotificationTemplateBuilder::OverrideContextMenuLabelForTesting(nullptr);
+  }
+
  protected:
   // Builds a notification object and initializes it to default values.
   std::unique_ptr<message_center::Notification> InitializeBasicNotification() {
@@ -53,6 +69,7 @@ class NotificationTemplateBuilderTest : public ::testing::Test {
         base::UTF8ToUTF16(kNotificationMessage), gfx::Image() /* icon */,
         base::string16() /* display_source */, origin_url,
         NotifierId(origin_url), RichNotificationData(), nullptr /* delegate */);
+    // Set a fixed timestamp, to avoid having to test against current timestamp.
     base::Time timestamp;
     if (!FixedTime(&timestamp))
       return nullptr;
@@ -64,8 +81,10 @@ class NotificationTemplateBuilderTest : public ::testing::Test {
   // must be wrapped in ASSERT_NO_FATAL_FAILURE().
   void VerifyXml(const message_center::Notification& notification,
                  const base::string16& xml_template) {
-    template_ =
-        NotificationTemplateBuilder::Build(kNotificationId, notification);
+    MockNotificationImageRetainer image_retainer;
+    template_ = NotificationTemplateBuilder::Build(&image_retainer, kProfileId,
+                                                   notification);
+
     ASSERT_TRUE(template_);
 
     EXPECT_EQ(template_->GetNotificationTemplate(), xml_template);
@@ -91,6 +110,9 @@ TEST_F(NotificationTemplateBuilderTest, SimpleToast) {
    <text placement="attribution">example.com</text>
   </binding>
  </visual>
+ <actions>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
+ </actions>
 </toast>
 )";
 
@@ -118,6 +140,7 @@ TEST_F(NotificationTemplateBuilderTest, Buttons) {
  <actions>
   <action activationType="foreground" content="Button1" arguments="buttonIndex=0"/>
   <action activationType="foreground" content="Button2" arguments="buttonIndex=1"/>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
  </actions>
 </toast>
 )";
@@ -150,6 +173,7 @@ TEST_F(NotificationTemplateBuilderTest, InlineReplies) {
   <input id="userResponse" type="text" placeHolderContent="Reply here"/>
   <action activationType="foreground" content="Button1" arguments="buttonIndex=0"/>
   <action activationType="foreground" content="Button2" arguments="buttonIndex=1"/>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
  </actions>
 </toast>
 )";
@@ -185,6 +209,7 @@ TEST_F(NotificationTemplateBuilderTest, InlineRepliesDoubleInput) {
   <input id="userResponse" type="text" placeHolderContent="Reply here"/>
   <action activationType="foreground" content="Button1" arguments="buttonIndex=0"/>
   <action activationType="foreground" content="Button2" arguments="buttonIndex=1"/>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
  </actions>
 </toast>
 )";
@@ -217,6 +242,7 @@ TEST_F(NotificationTemplateBuilderTest, InlineRepliesTextTypeNotFirst) {
   <input id="userResponse" type="text" placeHolderContent="Reply here"/>
   <action activationType="foreground" content="Button1" arguments="buttonIndex=0"/>
   <action activationType="foreground" content="Button2" arguments="buttonIndex=1"/>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
  </actions>
 </toast>
 )";
@@ -238,7 +264,158 @@ TEST_F(NotificationTemplateBuilderTest, Silent) {
    <text placement="attribution">example.com</text>
   </binding>
  </visual>
+ <actions>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
+ </actions>
  <audio silent="true"/>
+</toast>
+)";
+
+  ASSERT_NO_FATAL_FAILURE(VerifyXml(*notification, kExpectedXml));
+}
+
+TEST_F(NotificationTemplateBuilderTest, RequireInteraction) {
+  std::unique_ptr<message_center::Notification> notification =
+      InitializeBasicNotification();
+
+  std::vector<message_center::ButtonInfo> buttons;
+  buttons.emplace_back(base::ASCIIToUTF16("Button1"));
+  notification->set_buttons(buttons);
+  notification->set_never_timeout(true);
+
+  const wchar_t kExpectedXml[] =
+      LR"(<toast launch="notification_id" scenario="reminder" displayTimestamp="1998-09-04T01:02:03Z">
+ <visual>
+  <binding template="ToastGeneric">
+   <text>My Title</text>
+   <text>My Message</text>
+   <text placement="attribution">example.com</text>
+  </binding>
+ </visual>
+ <actions>
+  <action activationType="foreground" content="Button1" arguments="buttonIndex=0"/>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
+ </actions>
+</toast>
+)";
+
+  ASSERT_NO_FATAL_FAILURE(VerifyXml(*notification, kExpectedXml));
+}
+
+TEST_F(NotificationTemplateBuilderTest, NullTimestamp) {
+  std::unique_ptr<message_center::Notification> notification =
+      InitializeBasicNotification();
+  base::Time timestamp;
+  notification->set_timestamp(timestamp);
+
+  const wchar_t kExpectedXml[] =
+      LR"(<toast launch="notification_id">
+ <visual>
+  <binding template="ToastGeneric">
+   <text>My Title</text>
+   <text>My Message</text>
+   <text placement="attribution">example.com</text>
+  </binding>
+ </visual>
+ <actions>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
+ </actions>
+</toast>
+)";
+
+  ASSERT_NO_FATAL_FAILURE(VerifyXml(*notification, kExpectedXml));
+}
+
+TEST_F(NotificationTemplateBuilderTest, LocalizedContextMenu) {
+  std::unique_ptr<message_center::Notification> notification =
+      InitializeBasicNotification();
+  // Disable overriding context menu label.
+  NotificationTemplateBuilder::OverrideContextMenuLabelForTesting(nullptr);
+
+  const wchar_t kExpectedXmlTemplate[] =
+      LR"(<toast launch="notification_id" displayTimestamp="1998-09-04T01:02:03Z">
+ <visual>
+  <binding template="ToastGeneric">
+   <text>My Title</text>
+   <text>My Message</text>
+   <text placement="attribution">example.com</text>
+  </binding>
+ </visual>
+ <actions>
+  <action content="%ls" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
+ </actions>
+</toast>
+)";
+
+  base::string16 settings_msg = l10n_util::GetStringUTF16(
+      IDS_WIN_NOTIFICATION_SETTINGS_CONTEXT_MENU_ITEM_NAME);
+  base::string16 expected_xml =
+      base::StringPrintf(kExpectedXmlTemplate, settings_msg.c_str());
+
+  ASSERT_NO_FATAL_FAILURE(VerifyXml(*notification, expected_xml));
+}
+
+TEST_F(NotificationTemplateBuilderTest, Images) {
+  std::unique_ptr<message_center::Notification> notification =
+      InitializeBasicNotification();
+
+  SkBitmap icon;
+  icon.allocN32Pixels(64, 64);
+  icon.eraseARGB(255, 100, 150, 200);
+
+  notification->set_icon(gfx::Image::CreateFrom1xBitmap(icon));
+  notification->set_image(gfx::Image::CreateFrom1xBitmap(icon));
+
+  std::vector<message_center::ButtonInfo> buttons;
+  message_center::ButtonInfo button(base::ASCIIToUTF16("Button1"));
+  button.type = message_center::ButtonType::TEXT;
+  button.placeholder = base::ASCIIToUTF16("Reply here");
+  button.icon = gfx::Image::CreateFrom1xBitmap(icon);
+  buttons.emplace_back(button);
+  notification->set_buttons(buttons);
+
+  const wchar_t kExpectedXml[] =
+      LR"(<toast launch="notification_id" displayTimestamp="1998-09-04T01:02:03Z">
+ <visual>
+  <binding template="ToastGeneric">
+   <text>My Title</text>
+   <text>My Message</text>
+   <text placement="attribution">example.com</text>
+   <image placement="appLogoOverride" src="c:\temp\img0.tmp" hint-crop="none"/>
+   <image placement="hero" src="c:\temp\img1.tmp"/>
+  </binding>
+ </visual>
+ <actions>
+  <input id="userResponse" type="text" placeHolderContent="Reply here"/>
+  <action activationType="foreground" content="Button1" arguments="buttonIndex=0" imageUri="c:\temp\img2.tmp"/>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
+ </actions>
+</toast>
+)";
+
+  ASSERT_NO_FATAL_FAILURE(VerifyXml(*notification, kExpectedXml));
+}
+
+TEST_F(NotificationTemplateBuilderTest, ProgressBar) {
+  std::unique_ptr<message_center::Notification> notification =
+      InitializeBasicNotification();
+
+  notification->set_type(message_center::NOTIFICATION_TYPE_PROGRESS);
+  notification->set_progress(30);
+
+  const wchar_t kExpectedXml[] =
+      LR"(<toast launch="notification_id" displayTimestamp="1998-09-04T01:02:03Z">
+ <visual>
+  <binding template="ToastGeneric">
+   <text>My Title</text>
+   <text>My Message</text>
+   <text placement="attribution">example.com</text>
+   <progress status="" value="0.30"/>
+  </binding>
+ </visual>
+ <actions>
+  <action content="settings" placement="contextMenu" activationType="foreground" arguments="notificationSettings"/>
+ </actions>
 </toast>
 )";
 

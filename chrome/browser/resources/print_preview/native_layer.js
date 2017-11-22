@@ -295,8 +295,6 @@ cr.define('print_preview', function() {
      * @param {!print_preview.Destination} destination Destination to print to.
      * @param {!print_preview.PrintTicketStore} printTicketStore Used to get the
      *     state of the print ticket.
-     * @param {cloudprint.CloudPrintInterface} cloudPrintInterface Interface
-     *     to Google Cloud Print.
      * @param {!print_preview.DocumentInfo} documentInfo Document data model.
      * @param {boolean=} opt_isOpenPdfInPreview Whether to open the PDF in the
      *     system's preview application.
@@ -306,8 +304,8 @@ cr.define('print_preview', function() {
      *     finished or rejected.
      */
     print(
-        destination, printTicketStore, cloudPrintInterface, documentInfo,
-        opt_isOpenPdfInPreview, opt_showSystemDialog) {
+        destination, printTicketStore, documentInfo, opt_isOpenPdfInPreview,
+        opt_showSystemDialog) {
       assert(
           printTicketStore.isTicketValid(),
           'Trying to print when ticket is not valid');
@@ -436,19 +434,12 @@ cr.define('print_preview', function() {
       return cr.sendWithPromise('signIn', addAccount);
     }
 
-    /** Navigates the user to the system printer settings interface. */
-    manageLocalPrinters() {
-      chrome.send('manageLocalPrinters');
-    }
-
     /**
-     * Navigates the user to the Google Cloud Print management page.
-     * @param {?string} user Email address of the user to open the management
-     *     page for (user must be currently logged in, indeed) or {@code null}
-     *     to open this page for the primary user.
+     * Navigates the user to the Chrome printing setting page to manage local
+     * printers and Google cloud printers.
      */
-    manageCloudPrinters(user) {
-      chrome.send('manageCloudPrinters', [user || '']);
+    managePrinters() {
+      chrome.send('managePrinters');
     }
 
     /** Forces browser to open a new tab with the given URL address. */

@@ -16,7 +16,7 @@
 #include "core/css/StyleColor.h"
 #include "core/css/parser/CSSParserIdioms.h"
 #include "core/css/parser/CSSPropertyParser.h"
-#include "core/css/properties/CSSPropertyAPI.h"
+#include "core/css/properties/CSSProperty.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/wtf/text/StringToNumber.h"
@@ -683,6 +683,8 @@ bool CSSParserFastPaths::IsValidKeywordPropertyAndValue(
       return value_id == CSSValueSolid || value_id == CSSValueDouble ||
              value_id == CSSValueDotted || value_id == CSSValueDashed ||
              value_id == CSSValueWavy;
+    case CSSPropertyTextDecorationSkipInk:
+      return value_id == CSSValueAuto || value_id == CSSValueNone;
     case CSSPropertyTextJustify:
       DCHECK(RuntimeEnabledFeatures::CSS3TextEnabled());
       return value_id == CSSValueInterWord || value_id == CSSValueDistribute ||
@@ -923,6 +925,7 @@ bool CSSParserFastPaths::IsKeywordPropertyID(CSSPropertyID property_id) {
     case CSSPropertyTextAnchor:
     case CSSPropertyTextCombineUpright:
     case CSSPropertyTextDecorationStyle:
+    case CSSPropertyTextDecorationSkipInk:
     case CSSPropertyTextJustify:
     case CSSPropertyTextOrientation:
     case CSSPropertyWebkitTextOrientation:
@@ -996,7 +999,7 @@ static CSSValue* ParseKeywordValue(CSSPropertyID property_id,
       return nullptr;
 
     // Descriptors do not support css wide keywords.
-    if (!CSSPropertyAPI::Get(property_id).IsProperty())
+    if (!CSSProperty::Get(property_id).IsProperty())
       return nullptr;
   }
 

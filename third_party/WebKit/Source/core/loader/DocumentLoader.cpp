@@ -51,6 +51,7 @@
 #include "core/loader/FrameFetchContext.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/IdlenessDetector.h"
+#include "core/loader/InteractiveDetector.h"
 #include "core/loader/LinkLoader.h"
 #include "core/loader/NetworkHintsInterface.h"
 #include "core/loader/ProgressTracker.h"
@@ -94,14 +95,18 @@
 
 namespace blink {
 
+// The MHTML mime type should be same as the one we check in the browser
+// process's ChromeResourceDispatcherHostDelegate.
 static bool IsArchiveMIMEType(const String& mime_type) {
   return DeprecatedEqualIgnoringCase("multipart/related", mime_type);
 }
 
-DocumentLoader::DocumentLoader(LocalFrame* frame,
-                               const ResourceRequest& req,
-                               const SubstituteData& substitute_data,
-                               ClientRedirectPolicy client_redirect_policy)
+DocumentLoader::DocumentLoader(
+    LocalFrame* frame,
+    const ResourceRequest& req,
+    const SubstituteData& substitute_data,
+    ClientRedirectPolicy client_redirect_policy,
+    const base::UnguessableToken& devtools_navigation_token)
     : frame_(frame),
       fetcher_(FrameFetchContext::CreateFetcherFromDocumentLoader(this)),
       original_request_(req),
@@ -119,7 +124,8 @@ DocumentLoader::DocumentLoader(LocalFrame* frame,
       was_blocked_after_csp_(false),
       state_(kNotStarted),
       in_data_received_(false),
-      data_buffer_(SharedBuffer::Create()) {
+      data_buffer_(SharedBuffer::Create()),
+      devtools_navigation_token_(devtools_navigation_token) {
   DCHECK(frame_);
 
   // The document URL needs to be added to the head of the list as that is
@@ -980,6 +986,12 @@ void DocumentLoader::DidCommitNavigation() {
   // This happens after the first chunk is parsed in HTMLDocumentParser.
   DispatchLinkHeaderPreloads(nullptr, LinkLoader::kOnlyLoadNonMedia);
 
+  Document* document = frame_->GetDocument();
+  InteractiveDetector* interactive_detector =
+      InteractiveDetector::From(*document);
+  if (interactive_detector)
+    interactive_detector->SetNavigationStartTime(GetTiming().NavigationStart());
+
   TRACE_EVENT1("devtools.timeline", "CommitLoad", "data",
                InspectorCommitLoadEvent::Data(frame_));
   probe::didCommitLoad(frame_, this);
@@ -1114,7 +1126,7 @@ void DocumentLoader::InstallNewDocument(
 
   if (document->GetSettings()
           ->GetForceTouchEventFeatureDetectionForInspector()) {
-    OriginTrialContext::From(document)->AddFeature(
+    OriginTrialContext::FromOrCreate(document)->AddFeature(
         "ForceTouchEventFeatureDetectionForInspector");
   }
   OriginTrialContext::AddTokensFromHeader(

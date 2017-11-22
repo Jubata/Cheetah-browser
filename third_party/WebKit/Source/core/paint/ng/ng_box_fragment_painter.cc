@@ -17,6 +17,7 @@
 #include "core/paint/PaintInfo.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintPhase.h"
+#include "core/paint/ng/ng_fragment_painter.h"
 #include "core/paint/ng/ng_paint_fragment.h"
 #include "core/paint/ng/ng_text_fragment_painter.h"
 #include "platform/geometry/LayoutRectOutsets.h"
@@ -149,9 +150,8 @@ void NGBoxFragmentPainter::PaintObject(const PaintInfo& paint_info,
       paint_phase == PaintPhase::kTextClip)
     PaintFloats(contents_paint_info, paint_offset);
 
-  // TODO(eae): Implement outline painting.
-  // if (ShouldPaintSelfOutline(paint_phase))
-  //  ObjectPainter(box_fragment_).PaintOutline(paint_info, paint_offset);
+  if (ShouldPaintSelfOutline(paint_phase))
+    NGFragmentPainter(box_fragment_).PaintOutline(paint_info, paint_offset);
 
   // TODO(layout-dev): Implement once we have selections in LayoutNG.
   // If the caret's node's layout object's containing block is this block, and
@@ -335,6 +335,8 @@ void NGBoxFragmentPainter::PaintChildren(
     LayoutPoint child_offset = paint_offset + LayoutSize(fragment.Offset().left,
                                                          fragment.Offset().top);
     if (fragment.Type() == NGPhysicalFragment::kFragmentBox) {
+      if (child->HasSelfPaintingLayer())
+        continue;
       PaintInfo info(paint_info);
       if (RequiresLegacyFallback(fragment))
         fragment.GetLayoutObject()->Paint(info, child_offset);
@@ -378,6 +380,11 @@ void NGBoxFragmentPainter::PaintInlineBlock(const PaintInfo& paint_info,
 void NGBoxFragmentPainter::PaintText(const NGPaintFragment& text_fragment,
                                      const PaintInfo& paint_info,
                                      const LayoutPoint& paint_offset) {
+  if (DrawingRecorder::UseCachedDrawingIfPossible(
+          paint_info.context, text_fragment,
+          DisplayItem::PaintPhaseToDrawingType(paint_info.phase)))
+    return;
+
   DrawingRecorder recorder(
       paint_info.context, text_fragment,
       DisplayItem::PaintPhaseToDrawingType(paint_info.phase));

@@ -4,13 +4,13 @@
 
 #include "chrome/browser/ui/ash/ash_init.h"
 
-#include "ash/accessibility_types.h"
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/magnifier/magnification_controller.h"
-#include "ash/mus/window_manager.h"
+#include "ash/public/cpp/accessibility_types.h"
 #include "ash/public/cpp/config.h"
 #include "ash/shell.h"
 #include "ash/shell_init_params.h"
+#include "ash/window_manager.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
 #include "base/task_scheduler/post_task.h"
@@ -48,13 +48,13 @@ void CreateClassicShell() {
   ash::Shell::CreateInstance(shell_init_params);
 }
 
-std::unique_ptr<ash::mus::WindowManager> CreateMusShell() {
+std::unique_ptr<ash::WindowManager> CreateMusShell() {
   service_manager::Connector* connector =
       content::ServiceManagerConnection::GetForProcess()->GetConnector();
   const bool show_primary_host_on_connect = true;
-  std::unique_ptr<ash::mus::WindowManager> window_manager =
-      base::MakeUnique<ash::mus::WindowManager>(connector, ash::Config::MUS,
-                                                show_primary_host_on_connect);
+  std::unique_ptr<ash::WindowManager> window_manager =
+      base::MakeUnique<ash::WindowManager>(connector, ash::Config::MUS,
+                                           show_primary_host_on_connect);
   // The WindowManager normally deletes the Shell when it loses its connection
   // to mus. Disable that by installing an empty callback. Chrome installs
   // its own callback to detect when the connection to mus is lost and that is
@@ -113,11 +113,6 @@ AshInit::AshInit() {
 }
 
 AshInit::~AshInit() {
-  // ImageCursorsSet may indirectly hold a reference to CursorDataFactoryOzone,
-  // which is indirectly owned by Shell. Make sure we destroy the
-  // ImageCursorsSet before the Shell to avoid potential use after free.
-  g_browser_process->platform_part()->DestroyImageCursorsSet();
-
   // |window_manager_| deletes the Shell.
   if (!window_manager_ && ash::Shell::HasInstance()) {
     ash::Shell::DeleteInstance();

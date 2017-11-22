@@ -12,6 +12,9 @@
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/screen_util.h"
 #include "ash/shell.h"
+#include "ash/strings/grit/ash_strings.h"
+#include "ash/system/toast/toast_data.h"
+#include "ash/system/toast/toast_manager.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/splitview/split_view_divider.h"
@@ -20,8 +23,10 @@
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
 #include "base/command_line.h"
+#include "base/optional.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/coordinate_conversion.h"
@@ -40,6 +45,10 @@ constexpr float kFixedPositionRatios[] = {0.f, 0.5f, 1.0f};
 constexpr float kOneThirdPositionRatio = 0.33f;
 constexpr float kTwoThirdPositionRatio = 0.67f;
 
+// Toast data.
+constexpr char kAppCannotSnapToastId[] = "split_view_app_cannot_snap";
+constexpr int kAppCannotSnapToastDurationMs = 2500;
+
 gfx::Point GetBoundedPosition(const gfx::Point& location_in_screen,
                               const gfx::Rect& bounds_in_screen) {
   return gfx::Point(
@@ -47,16 +56,6 @@ gfx::Point GetBoundedPosition(const gfx::Point& location_in_screen,
                bounds_in_screen.x()),
       std::max(std::min(location_in_screen.y(), bounds_in_screen.bottom() - 1),
                bounds_in_screen.y()));
-}
-
-// Returns ture if |left_window_| should be placed on the left or top side of
-// the screen.
-bool IsLeftWindowOnTopOrLeftOfScreen(
-    blink::WebScreenOrientationLockType screen_orientation) {
-  return screen_orientation ==
-             blink::kWebScreenOrientationLockLandscapePrimary ||
-         screen_orientation ==
-             blink::kWebScreenOrientationLockPortraitSecondary;
 }
 
 // Transpose the given |rect|.
@@ -89,6 +88,15 @@ bool SplitViewController::ShouldAllowSplitView() {
     return false;
   }
   return true;
+}
+
+// static
+bool SplitViewController::IsLeftWindowOnTopOrLeftOfScreen(
+    blink::WebScreenOrientationLockType screen_orientation) {
+  return screen_orientation ==
+             blink::kWebScreenOrientationLockLandscapePrimary ||
+         screen_orientation ==
+             blink::kWebScreenOrientationLockPortraitSecondary;
 }
 
 bool SplitViewController::CanSnap(aura::Window* window) {
@@ -240,7 +248,7 @@ gfx::Rect SplitViewController::GetSnappedWindowBoundsInScreen(
   // window's minimum size is larger than current acquired window bounds, which
   // will lead to the divider pass over the window. This is no need for
   // |right_or_bottom_rect| since its origin of the bounds is flexible.
-  AdjustLeftOrTopSnappedWindowBoundsDuringResizing(&left_or_top_rect);
+  AdjustLeftOrTopSnappedWindowBounds(&left_or_top_rect);
 
   if (IsLeftWindowOnTopOrLeftOfScreen(screen_orientation_))
     return (snap_position == LEFT) ? left_or_top_rect : right_or_bottom_rect;
@@ -307,15 +315,28 @@ void SplitViewController::EndResize(const gfx::Point& location_in_screen) {
   MoveDividerToClosestFixedPosition();
   NotifyDividerPositionChanged();
 
+  // Need to update snapped windows bounds even if the split view mode may have
+  // to exit. Otherwise it's possible for a snapped window stuck in the edge of
+  // of the screen while overview mode is active.
+  UpdateSnappedWindowsAndDividerBounds();
+
   // Check if one of the snapped windows needs to be closed.
   if (ShouldEndSplitViewAfterResizing()) {
     aura::Window* active_window = GetActiveWindowAfterResizingUponExit();
-    if (active_window)
-      wm::ActivateWindow(active_window);
     EndSplitView();
-  } else {
-    UpdateSnappedWindowsAndDividerBounds();
+    if (active_window) {
+      EndOverview();
+      wm::ActivateWindow(active_window);
+    }
   }
+}
+
+void SplitViewController::ShowAppCannotSnapToast() {
+  ash::ToastData toast(
+      kAppCannotSnapToastId,
+      l10n_util::GetStringUTF16(IDS_ASH_SPLIT_VIEW_CANNOT_SNAP),
+      kAppCannotSnapToastDurationMs, base::Optional<base::string16>());
+  ash::Shell::Get()->toast_manager()->Show(toast);
 }
 
 void SplitViewController::EndSplitView() {
@@ -367,8 +388,7 @@ void SplitViewController::OnPostWindowStateTypeChange(
     // full-screened. Also end overview mode if overview mode is active at the
     // moment.
     EndSplitView();
-    if (Shell::Get()->window_selector_controller()->IsSelecting())
-      Shell::Get()->window_selector_controller()->ToggleOverview();
+    EndOverview();
   } else if (window_state->IsMinimized()) {
     OnSnappedWindowMinimizedOrDestroyed(window_state->window());
   }
@@ -705,23 +725,10 @@ void SplitViewController::MoveDividerToClosestFixedPosition() {
   // extract the center from |divider_position_|. The result will also be the
   // center of the divider, so extract the origin, unless the result is on of
   // the endpoints.
-  float divider_distance =
-      divider_position_ + std::floor(divider_thickness / 2.f);
-
   int work_area_long_length = GetDividerEndPosition();
-  float current_ratio = divider_distance / work_area_long_length;
-  float closest_ratio = 0.f;
-  std::vector<float> position_ratios(
-      kFixedPositionRatios,
-      kFixedPositionRatios + sizeof(kFixedPositionRatios) / sizeof(float));
-  GetDividerOptionalPositionRatios(position_ratios);
-  for (float ratio : position_ratios) {
-    if (std::abs(current_ratio - ratio) <
-        std::abs(current_ratio - closest_ratio)) {
-      closest_ratio = ratio;
-    }
-  }
-
+  float closest_ratio = FindClosestPositionRatio(
+      divider_position_ + std::floor(divider_thickness / 2.f),
+      work_area_long_length);
   divider_position_ = std::floor(work_area_long_length * closest_ratio);
   if (closest_ratio > 0.f && closest_ratio < 1.f)
     divider_position_ -= std::floor(divider_thickness / 2.f);
@@ -778,15 +785,12 @@ void SplitViewController::OnSnappedWindowMinimizedOrDestroyed(
     state_ = left_window_ ? LEFT_SNAPPED : RIGHT_SNAPPED;
     default_snap_position_ = left_window_ ? LEFT : RIGHT;
     NotifySplitViewStateChanged(previous_state, state_);
-    Shell::Get()->window_selector_controller()->ToggleOverview();
+    StartOverview();
   }
 }
 
-void SplitViewController::AdjustLeftOrTopSnappedWindowBoundsDuringResizing(
+void SplitViewController::AdjustLeftOrTopSnappedWindowBounds(
     gfx::Rect* left_or_top_rect) {
-  if (!is_resizing_)
-    return;
-
   aura::Window* left_or_top_window =
       IsLeftWindowOnTopOrLeftOfScreen(screen_orientation_) ? left_window_
                                                            : right_window_;
@@ -810,8 +814,25 @@ void SplitViewController::AdjustLeftOrTopSnappedWindowBoundsDuringResizing(
     TransposeRect(left_or_top_rect);
 }
 
+float SplitViewController::FindClosestPositionRatio(float distance,
+                                                    float length) {
+  float current_ratio = distance / length;
+  float closest_ratio = 0.f;
+  std::vector<float> position_ratios(
+      kFixedPositionRatios,
+      kFixedPositionRatios + sizeof(kFixedPositionRatios) / sizeof(float));
+  GetDividerOptionalPositionRatios(&position_ratios);
+  for (float ratio : position_ratios) {
+    if (std::abs(current_ratio - ratio) <
+        std::abs(current_ratio - closest_ratio)) {
+      closest_ratio = ratio;
+    }
+  }
+  return closest_ratio;
+}
+
 void SplitViewController::GetDividerOptionalPositionRatios(
-    std::vector<float>& position_ratios) {
+    std::vector<float>* position_ratios) {
   bool is_left_or_top = IsLeftWindowOnTopOrLeftOfScreen(screen_orientation_);
   aura::Window* left_or_top_window =
       is_left_or_top ? left_window_ : right_window_;
@@ -834,10 +855,20 @@ void SplitViewController::GetDividerOptionalPositionRatios(
   min_size_left_ratio = static_cast<float>(min_left_size) / long_length;
   min_size_right_ratio = static_cast<float>(min_right_size) / long_length;
   if (min_size_left_ratio <= kOneThirdPositionRatio)
-    position_ratios.push_back(kOneThirdPositionRatio);
+    position_ratios->push_back(kOneThirdPositionRatio);
 
   if (min_size_right_ratio <= kOneThirdPositionRatio)
-    position_ratios.push_back(kTwoThirdPositionRatio);
+    position_ratios->push_back(kTwoThirdPositionRatio);
+}
+
+void SplitViewController::StartOverview() {
+  if (!Shell::Get()->window_selector_controller()->IsSelecting())
+    Shell::Get()->window_selector_controller()->ToggleOverview();
+}
+
+void SplitViewController::EndOverview() {
+  if (Shell::Get()->window_selector_controller()->IsSelecting())
+    Shell::Get()->window_selector_controller()->ToggleOverview();
 }
 
 }  // namespace ash

@@ -20,9 +20,12 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/chromeos/arc/arc_session_manager.h"
 #include "chrome/browser/chromeos/arc/policy/arc_policy_util.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/user_flow.h"
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
+#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/arc/arc_prefs.h"
@@ -152,6 +155,32 @@ bool IsArcMigrationAllowedInternal(const Profile* profile) {
          policy_util::EcryptfsMigrationAction::kDisallowMigration;
 }
 
+bool IsUnaffiliatedArcAllowed() {
+  bool arc_allowed;
+  ArcSessionManager* arc_session_manager = ArcSessionManager::Get();
+  if (arc_session_manager) {
+    switch (arc_session_manager->state()) {
+      case ArcSessionManager::State::NOT_INITIALIZED:
+      case ArcSessionManager::State::STOPPED:
+        // Apply logic below
+        break;
+      case ArcSessionManager::State::NEGOTIATING_TERMS_OF_SERVICE:
+      case ArcSessionManager::State::CHECKING_ANDROID_MANAGEMENT:
+      case ArcSessionManager::State::REMOVING_DATA_DIR:
+      case ArcSessionManager::State::ACTIVE:
+      case ArcSessionManager::State::STOPPING:
+        // Never forbid unaffiliated ARC while ARC is running
+        return true;
+    }
+  }
+  if (chromeos::CrosSettings::Get()->GetBoolean(
+          chromeos::kUnaffiliatedArcAllowed, &arc_allowed)) {
+    return arc_allowed;
+  }
+  // If device policy is not set, allow ARC.
+  return true;
+}
+
 }  // namespace
 
 bool IsArcAllowedForProfile(const Profile* profile) {
@@ -215,6 +244,11 @@ bool IsArcAllowedForProfile(const Profile* profile) {
     return false;
   }
 
+  if (!user->IsAffiliated() && !IsUnaffiliatedArcAllowed()) {
+    VLOG(1) << "Device admin disallowed ARC for unaffiliated users.";
+    return false;
+  }
+
   // Do not run ARC instance when supervised user is being created.
   // Otherwise noisy notification may be displayed.
   chromeos::UserFlow* user_flow =
@@ -230,18 +264,8 @@ bool IsArcAllowedForProfile(const Profile* profile) {
 
 bool IsArcMigrationAllowedByPolicyForProfile(const Profile* profile) {
   // Always allow migration for unmanaged users.
-  // We're checking if kArcEnabled is managed to find out if the profile is
-  // managed. This is equivalent, because kArcEnabled is marked
-  // 'default_for_enterprise_users': False in policy_templates.json).
-  // Also note that IsArcPlayStoreEnabledPreferenceManagedForProfile cannot be
-  // used here due to function call chain (it calls IsArcAllowedForProfile
-  // again).
-  // TODO(pmarko): crbug.com/771666: Figure out a nicer way to do this on a
-  // const Profile*.
-  if (!profile ||
-      !profile->GetPrefs()->IsManagedPreference(prefs::kArcEnabled)) {
+  if (!profile || !policy_util::IsAccountManaged(profile))
     return true;
-  }
 
   // Use the profile path as unique identifier for profile.
   const base::FilePath path = profile->GetPath();
@@ -369,6 +393,40 @@ bool IsActiveDirectoryUserForProfile(const Profile* profile) {
   return user ? user->IsActiveDirectoryUser() : false;
 }
 
+bool IsArcOobeOptInActive() {
+  // Check if Chrome OS OOBE or OPA OptIn flow is currently showing.
+  // TODO(b/65861628): Rename the method since it is no longer accurate.
+  // Redesign the OptIn flow since there is no longer reason to have two
+  // different OptIn flows.
+  chromeos::LoginDisplayHost* host = chromeos::LoginDisplayHost::default_host();
+  if (!host)
+    return false;
+
+  // Make sure the wizard controller is active and have the ARC ToS screen
+  // showing for the voice interaction OptIn flow.
+  if (host->IsVoiceInteractionOobe()) {
+    const chromeos::WizardController* wizard_controller =
+        host->GetWizardController();
+    if (!wizard_controller)
+      return false;
+    const chromeos::BaseScreen* screen = wizard_controller->current_screen();
+    if (!screen)
+      return false;
+    return screen->screen_id() ==
+           chromeos::OobeScreen::SCREEN_ARC_TERMS_OF_SERVICE;
+  }
+
+  // Use the legacy logic for first sign-in OOBE OptIn flow. Make sure the user
+  // is new and the swtich is appended.
+  if (!user_manager::UserManager::Get()->IsCurrentUserNew())
+    return false;
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kEnableArcOOBEOptIn)) {
+    return false;
+  }
+  return true;
+}
+
 void UpdateArcFileSystemCompatibilityPrefIfNeeded(
     const AccountId& account_id,
     const base::FilePath& profile_path,
@@ -398,6 +456,35 @@ void UpdateArcFileSystemCompatibilityPrefIfNeeded(
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
       base::Bind(&IsArcCompatibleFilesystem, profile_path),
       base::Bind(&StoreCompatibilityCheckResult, account_id, callback));
+}
+
+ash::mojom::AssistantAllowedState IsAssistantAllowedForProfile(
+    const Profile* profile) {
+  if (!chromeos::switches::IsVoiceInteractionFlagsEnabled())
+    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_FLAG;
+
+  if (!chromeos::switches::IsVoiceInteractionLocalesSupported())
+    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_LOCALE;
+
+  if (!chromeos::ProfileHelper::IsPrimaryProfile(profile))
+    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_NONPRIMARY_USER;
+
+  if (profile->IsOffTheRecord())
+    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_INCOGNITO;
+
+  if (profile->IsLegacySupervised())
+    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_SUPERVISED_USER;
+
+  const PrefService* prefs = profile->GetPrefs();
+  if (prefs->IsManagedPreference(prefs::kArcEnabled) &&
+      !prefs->GetBoolean(prefs::kArcEnabled)) {
+    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_ARC_POLICY;
+  }
+
+  if (!IsArcAllowedForProfile(profile))
+    return ash::mojom::AssistantAllowedState::DISALLOWED_BY_ARC_DISALLOWED;
+
+  return ash::mojom::AssistantAllowedState::ALLOWED;
 }
 
 }  // namespace arc

@@ -12,17 +12,26 @@
 
 namespace blink {
 
+// An implementation of Keyframe specifically for CSS Transitions.
+//
+// TransitionKeyframes are a simple form of keyframe, which only have one
+// (property, value) pair. CSS Transitions do not support SVG attributes, so the
+// property will always be a CSSPropertyID (for CSS properties and presentation
+// attributes) or an AtomicString (for custom CSS properties).
 class CORE_EXPORT TransitionKeyframe : public Keyframe {
  public:
   static scoped_refptr<TransitionKeyframe> Create(
       const PropertyHandle& property) {
-    return WTF::AdoptRef(new TransitionKeyframe(property));
+    DCHECK(!property.IsSVGAttribute());
+    return base::AdoptRef(new TransitionKeyframe(property));
   }
   void SetValue(std::unique_ptr<TypedInterpolationValue> value) {
     value_ = std::move(value);
   }
   void SetCompositorValue(scoped_refptr<AnimatableValue>);
   PropertyHandleSet Properties() const final;
+
+  void AddKeyframePropertiesToV8Object(V8ObjectBuilder&) const override;
 
   class PropertySpecificKeyframe : public Keyframe::PropertySpecificKeyframe {
    public:
@@ -32,7 +41,7 @@ class CORE_EXPORT TransitionKeyframe : public Keyframe {
         EffectModel::CompositeOperation composite,
         std::unique_ptr<TypedInterpolationValue> value,
         scoped_refptr<AnimatableValue> compositor_value) {
-      return WTF::AdoptRef(new PropertySpecificKeyframe(
+      return base::AdoptRef(new PropertySpecificKeyframe(
           offset, std::move(easing), composite, std::move(value),
           std::move(compositor_value)));
     }
@@ -88,11 +97,12 @@ class CORE_EXPORT TransitionKeyframe : public Keyframe {
   bool IsTransitionKeyframe() const final { return true; }
 
   scoped_refptr<Keyframe> Clone() const final {
-    return WTF::AdoptRef(new TransitionKeyframe(*this));
+    return base::AdoptRef(new TransitionKeyframe(*this));
   }
 
   scoped_refptr<Keyframe::PropertySpecificKeyframe>
-  CreatePropertySpecificKeyframe(const PropertyHandle&) const final;
+  CreatePropertySpecificKeyframe(const PropertyHandle&,
+                                 double offset) const final;
 
   PropertyHandle property_;
   std::unique_ptr<TypedInterpolationValue> value_;

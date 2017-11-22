@@ -4,6 +4,7 @@
 
 #include "services/resource_coordinator/memory_instrumentation/graph_processor.h"
 
+#include "base/memory/shared_memory_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace memory_instrumentation {
@@ -41,10 +42,24 @@ class GraphProcessorTest : public testing::Test {
                              GlobalDumpGraph::Process* process) {
     GraphProcessor::AssignTracingOverhead(allocator, global_graph, process);
   }
+
+  GlobalDumpGraph::Node::Entry AggregateNumericWithNameForNode(
+      GlobalDumpGraph::Node* node,
+      base::StringPiece name) {
+    return GraphProcessor::AggregateNumericWithNameForNode(node, name);
+  }
+
+  void AggregateNumericsRecursively(GlobalDumpGraph::Node* node) {
+    return GraphProcessor::AggregateNumericsRecursively(node);
+  }
+
+  void PropagateNumericsAndDiagnosticsRecursively(GlobalDumpGraph::Node* node) {
+    return GraphProcessor::PropagateNumericsAndDiagnosticsRecursively(node);
+  }
 };
 
 TEST_F(GraphProcessorTest, SmokeComputeMemoryGraph) {
-  std::map<ProcessId, ProcessMemoryDump> process_dumps;
+  std::map<ProcessId, const ProcessMemoryDump*> process_dumps;
 
   MemoryDumpArgs dump_args = {MemoryDumpLevelOfDetail::DETAILED};
   ProcessMemoryDump pmd(new HeapProfilerSerializationState, dump_args);
@@ -59,10 +74,9 @@ TEST_F(GraphProcessorTest, SmokeComputeMemoryGraph) {
   auto* weak =
       pmd.CreateWeakSharedGlobalAllocatorDump(MemoryAllocatorDumpGuid(1));
 
-  process_dumps.emplace(1, std::move(pmd));
+  process_dumps.emplace(1, &pmd);
 
-  auto global_dump =
-      GraphProcessor::ComputeMemoryGraph(std::move(process_dumps));
+  auto global_dump = GraphProcessor::CreateMemoryGraph(process_dumps);
 
   ASSERT_EQ(1u, global_dump->process_dump_graphs().size());
 
@@ -82,9 +96,9 @@ TEST_F(GraphProcessorTest, SmokeComputeMemoryGraph) {
   auto* direct = id_to_dump_it->second->FindNode("test1/test2/test3");
   ASSERT_EQ(third_child, direct);
 
-  ASSERT_EQ(third_child->entries().size(), 1ul);
+  ASSERT_EQ(third_child->entries()->size(), 1ul);
 
-  auto size = third_child->entries().find(MemoryAllocatorDump::kNameSize);
+  auto size = third_child->entries()->find(MemoryAllocatorDump::kNameSize);
   ASSERT_EQ(10ul, size->second.value_uint64);
 
   ASSERT_TRUE(weak->flags() & MemoryAllocatorDump::Flags::WEAK);
@@ -95,6 +109,131 @@ TEST_F(GraphProcessorTest, SmokeComputeMemoryGraph) {
   ASSERT_EQ(edge_it->source(), direct);
   ASSERT_EQ(edge_it->target(), id_to_dump_it->second->FindNode("target"));
   ASSERT_EQ(edge_it->priority(), 10);
+}
+
+TEST_F(GraphProcessorTest, SmokeComputeSharedFootprint) {
+  std::map<ProcessId, const ProcessMemoryDump*> process_dumps;
+
+  MemoryDumpArgs dump_args = {MemoryDumpLevelOfDetail::DETAILED};
+  ProcessMemoryDump pmd1(new HeapProfilerSerializationState, dump_args);
+  ProcessMemoryDump pmd2(new HeapProfilerSerializationState, dump_args);
+
+  auto* p1_d1 = pmd1.CreateAllocatorDump("process1/dump1");
+  auto* p1_d2 = pmd1.CreateAllocatorDump("process1/dump2");
+  auto* p2_d1 = pmd2.CreateAllocatorDump("process2/dump1");
+
+  base::UnguessableToken token = base::UnguessableToken::Create();
+
+  // Done by SharedMemoryTracker.
+  size_t size = 256;
+  auto global_dump_guid =
+      base::SharedMemoryTracker::GetGlobalDumpIdForTracing(token);
+  auto local_dump_name =
+      base::SharedMemoryTracker::GetDumpNameForTracing(token);
+
+  MemoryAllocatorDump* local_dump_1 =
+      pmd1.CreateAllocatorDump(local_dump_name, MemoryAllocatorDumpGuid(1));
+  local_dump_1->AddScalar("virtual_size", MemoryAllocatorDump::kUnitsBytes,
+                          size);
+  local_dump_1->AddScalar(MemoryAllocatorDump::kNameSize,
+                          MemoryAllocatorDump::kUnitsBytes, size);
+
+  MemoryAllocatorDump* global_dump_1 =
+      pmd1.CreateSharedGlobalAllocatorDump(global_dump_guid);
+  global_dump_1->AddScalar(MemoryAllocatorDump::kNameSize,
+                           MemoryAllocatorDump::kUnitsBytes, size);
+
+  pmd1.AddOverridableOwnershipEdge(local_dump_1->guid(), global_dump_1->guid(),
+                                   0 /* importance */);
+
+  MemoryAllocatorDump* local_dump_2 =
+      pmd2.CreateAllocatorDump(local_dump_name, MemoryAllocatorDumpGuid(2));
+  local_dump_2->AddScalar("virtual_size", MemoryAllocatorDump::kUnitsBytes,
+                          size);
+  local_dump_2->AddScalar(MemoryAllocatorDump::kNameSize,
+                          MemoryAllocatorDump::kUnitsBytes, size);
+
+  MemoryAllocatorDump* global_dump_2 =
+      pmd2.CreateSharedGlobalAllocatorDump(global_dump_guid);
+  pmd2.AddOverridableOwnershipEdge(local_dump_2->guid(), global_dump_2->guid(),
+                                   0 /* importance */);
+
+  // Done by each consumer of the shared memory.
+  pmd1.CreateSharedMemoryOwnershipEdge(p1_d1->guid(), token, 2);
+  pmd1.CreateSharedMemoryOwnershipEdge(p1_d2->guid(), token, 1);
+  pmd2.CreateSharedMemoryOwnershipEdge(p2_d1->guid(), token, 2);
+
+  process_dumps.emplace(1, &pmd1);
+  process_dumps.emplace(2, &pmd2);
+
+  auto graph = GraphProcessor::CreateMemoryGraph(process_dumps);
+  auto pid_to_sizes = GraphProcessor::ComputeSharedFootprintFromGraph(*graph);
+  ASSERT_EQ(pid_to_sizes[1], 128ul);
+  ASSERT_EQ(pid_to_sizes[2], 128ul);
+}
+
+TEST_F(GraphProcessorTest, ComputeSharedFootprintFromGraphSameImportance) {
+  GlobalDumpGraph graph;
+  Process* global_process = graph.shared_memory_graph();
+  Node* global_node =
+      global_process->CreateNode(MemoryAllocatorDumpGuid(1), "global/1", false);
+  global_node->AddEntry("size", Node::Entry::ScalarUnits::kBytes, 100);
+
+  Process* first = graph.CreateGraphForProcess(1);
+  Node* shared_1 =
+      first->CreateNode(MemoryAllocatorDumpGuid(2), "shared_memory/1", false);
+
+  Process* second = graph.CreateGraphForProcess(2);
+  Node* shared_2 =
+      second->CreateNode(MemoryAllocatorDumpGuid(3), "shared_memory/2", false);
+
+  graph.AddNodeOwnershipEdge(shared_1, global_node, 1);
+  graph.AddNodeOwnershipEdge(shared_2, global_node, 1);
+
+  auto pid_to_sizes = GraphProcessor::ComputeSharedFootprintFromGraph(graph);
+  ASSERT_EQ(pid_to_sizes[1], 50ul);
+  ASSERT_EQ(pid_to_sizes[2], 50ul);
+}
+
+TEST_F(GraphProcessorTest, ComputeSharedFootprintFromGraphSomeDiffImportance) {
+  GlobalDumpGraph graph;
+  Process* global_process = graph.shared_memory_graph();
+  Node* global_node =
+      global_process->CreateNode(MemoryAllocatorDumpGuid(1), "global/1", false);
+  global_node->AddEntry("size", Node::Entry::ScalarUnits::kBytes, 100);
+
+  Process* first = graph.CreateGraphForProcess(1);
+  Node* shared_1 =
+      first->CreateNode(MemoryAllocatorDumpGuid(2), "shared_memory/1", false);
+
+  Process* second = graph.CreateGraphForProcess(2);
+  Node* shared_2 =
+      second->CreateNode(MemoryAllocatorDumpGuid(3), "shared_memory/2", false);
+
+  Process* third = graph.CreateGraphForProcess(3);
+  Node* shared_3 =
+      third->CreateNode(MemoryAllocatorDumpGuid(4), "shared_memory/3", false);
+
+  Process* fourth = graph.CreateGraphForProcess(4);
+  Node* shared_4 =
+      fourth->CreateNode(MemoryAllocatorDumpGuid(5), "shared_memory/4", false);
+
+  Process* fifth = graph.CreateGraphForProcess(5);
+  Node* shared_5 =
+      fifth->CreateNode(MemoryAllocatorDumpGuid(6), "shared_memory/5", false);
+
+  graph.AddNodeOwnershipEdge(shared_1, global_node, 1);
+  graph.AddNodeOwnershipEdge(shared_2, global_node, 2);
+  graph.AddNodeOwnershipEdge(shared_3, global_node, 3);
+  graph.AddNodeOwnershipEdge(shared_4, global_node, 3);
+  graph.AddNodeOwnershipEdge(shared_5, global_node, 3);
+
+  auto pid_to_sizes = GraphProcessor::ComputeSharedFootprintFromGraph(graph);
+  ASSERT_EQ(pid_to_sizes[1], 0ul);
+  ASSERT_EQ(pid_to_sizes[2], 0ul);
+  ASSERT_EQ(pid_to_sizes[3], 33ul);
+  ASSERT_EQ(pid_to_sizes[4], 33ul);
+  ASSERT_EQ(pid_to_sizes[5], 33ul);
 }
 
 TEST_F(GraphProcessorTest, MarkWeakParentsSimple) {
@@ -279,8 +418,8 @@ TEST_F(GraphProcessorTest, RemoveWeakNodesRecursively) {
 
 TEST_F(GraphProcessorTest, RemoveWeakNodesRecursivelyBetweenGraphs) {
   GlobalDumpGraph graph;
-  GlobalDumpGraph::Process first_process(&graph);
-  GlobalDumpGraph::Process second_process(&graph);
+  GlobalDumpGraph::Process first_process(1, &graph);
+  GlobalDumpGraph::Process second_process(2, &graph);
 
   Node parent(&first_process, first_process.root());
   Node child(&first_process, &parent);
@@ -321,7 +460,7 @@ TEST_F(GraphProcessorTest, RemoveWeakNodesRecursivelyBetweenGraphs) {
 
 TEST_F(GraphProcessorTest, AssignTracingOverhead) {
   GlobalDumpGraph graph;
-  Process process(&graph);
+  Process process(1, &graph);
 
   // Now add an allocator node.
   Node allocator(&process, process.root());
@@ -339,6 +478,99 @@ TEST_F(GraphProcessorTest, AssignTracingOverhead) {
   AssignTracingOverhead("malloc", &graph, &process);
   ASSERT_NE(process.FindNode("malloc/allocated_objects/tracing_overhead"),
             nullptr);
+}
+
+TEST_F(GraphProcessorTest, AggregateNumericWithNameForNode) {
+  GlobalDumpGraph graph;
+  Process process(1, &graph);
+
+  Node parent(&process, process.root());
+
+  Node c1(&process, &parent);
+  c1.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 100);
+
+  Node c2(&process, &parent);
+  c2.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 256);
+
+  Node c3(&process, &parent);
+  c3.AddEntry("other_numeric", Node::Entry::ScalarUnits::kBytes, 1000);
+
+  parent.InsertChild("c1", &c1);
+  parent.InsertChild("c2", &c2);
+  parent.InsertChild("c3", &c3);
+
+  Node::Entry entry =
+      AggregateNumericWithNameForNode(&parent, "random_numeric");
+  ASSERT_EQ(entry.value_uint64, 356ul);
+  ASSERT_EQ(entry.units, Node::Entry::ScalarUnits::kBytes);
+}
+
+TEST_F(GraphProcessorTest, AggregateNumericsRecursively) {
+  GlobalDumpGraph graph;
+  Process process(1, &graph);
+  Node parent(&process, process.root());
+
+  Node c1(&process, &parent);
+  c1.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 100);
+
+  // If an entry already exists in the parent, the child should not
+  // ovewrite it.
+  Node c2(&process, &parent);
+  Node c2_c1(&process, &c2);
+  Node c2_c2(&process, &c2);
+  c2.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 256);
+  c2_c1.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 256);
+  c2_c2.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 256);
+
+  // If nothing exists, then the child can aggregrate.
+  Node c3(&process, &parent);
+  Node c3_c1(&process, &c3);
+  Node c3_c2(&process, &c3);
+  c3_c1.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 10);
+  c3_c2.AddEntry("random_numeric", Node::Entry::ScalarUnits::kBytes, 10);
+
+  parent.InsertChild("c1", &c1);
+  parent.InsertChild("c2", &c2);
+  parent.InsertChild("c3", &c3);
+  c2.InsertChild("c1", &c2_c1);
+  c2.InsertChild("c2", &c2_c2);
+  c3.InsertChild("c1", &c3_c1);
+  c3.InsertChild("c2", &c3_c2);
+
+  AggregateNumericsRecursively(&parent);
+  ASSERT_EQ(parent.entries()->size(), 1ul);
+
+  auto entry = parent.entries()->begin()->second;
+  ASSERT_EQ(entry.value_uint64, 376ul);
+  ASSERT_EQ(entry.units, Node::Entry::ScalarUnits::kBytes);
+}
+
+TEST_F(GraphProcessorTest, PropagateNumericsAndDiagnosticsRecursively) {
+  GlobalDumpGraph graph;
+  Process process(1, &graph);
+
+  Node c1(&process, process.root());
+  Node c1_c1(&process, process.root());
+
+  Node c2(&process, process.root());
+
+  Node owner_1(&process, process.root());
+  Node owner_2(&process, process.root());
+
+  process.root()->InsertChild("c1", &c1);
+  process.root()->InsertChild("c2", &c2);
+  process.root()->InsertChild("owner_1", &owner_1);
+  process.root()->InsertChild("owner_2", &owner_2);
+
+  c1.InsertChild("c1", &c1_c1);
+
+  Edge edge_1(&owner_1, &c1_c1, 0);
+  c1_c1.AddOwnedByEdge(&edge_1);
+  owner_1.SetOwnsEdge(&edge_1);
+
+  Edge edge_2(&owner_2, &c2, 0);
+  c2.AddOwnedByEdge(&edge_2);
+  owner_2.SetOwnsEdge(&edge_2);
 }
 
 }  // namespace memory_instrumentation

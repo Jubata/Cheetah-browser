@@ -13,7 +13,6 @@
 #include "build/build_config.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
-#include "content/common/frame_policy.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/browser_side_navigation_policy.h"
@@ -26,6 +25,7 @@
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
+#include "third_party/WebKit/common/frame_policy.h"
 
 namespace content {
 
@@ -133,7 +133,8 @@ TEST_F(RenderProcessHostUnitTest, ReuseCommittedSite) {
       process()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, std::string(), unique_name,
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
   TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(0)->current_frame_host());
   subframe = static_cast<TestRenderFrameHost*>(
@@ -212,6 +213,50 @@ TEST_F(RenderProcessHostUnitTest, ReuseUnmatchedServiceWorkerProcess) {
       SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
   EXPECT_NE(sw_host1, site_instance3->GetProcess());
   EXPECT_NE(sw_host2, site_instance3->GetProcess());
+}
+
+class UnsuitableHostContentBrowserClient : public ContentBrowserClient {
+ public:
+  UnsuitableHostContentBrowserClient() {}
+  ~UnsuitableHostContentBrowserClient() override {}
+
+ private:
+  bool IsSuitableHost(RenderProcessHost* process_host,
+                      const GURL& site_url) override {
+    return false;
+  }
+};
+
+// Check that an unmatched ServiceWorker process is not reused when it's not a
+// suitable host for the destination URL.  See https://crbug.com/782349.
+TEST_F(RenderProcessHostUnitTest,
+       DontReuseUnsuitableUnmatchedServiceWorkerProcess) {
+  const GURL kUrl("https://foo.com");
+
+  // Gets a RenderProcessHost for an unmatched service worker.
+  scoped_refptr<SiteInstanceImpl> sw_site_instance =
+      SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
+  sw_site_instance->set_is_for_service_worker();
+  RenderProcessHost* sw_host = sw_site_instance->GetProcess();
+
+  // Simulate a situation where |sw_host| won't be considered suitable for
+  // future navigations to |kUrl|.  In https://crbug.com/782349, this happened
+  // when |kUrl| corresponded to a nonexistent extension, but
+  // chrome-extension:// URLs can't be tested inside content/.  Instead,
+  // install a ContentBrowserClient which will return false when IsSuitableHost
+  // is consulted.
+  UnsuitableHostContentBrowserClient modified_client;
+  ContentBrowserClient* regular_client =
+      SetBrowserClientForTesting(&modified_client);
+
+  // Now, getting a RenderProcessHost for a navigation to the same site should
+  // not reuse the unmatched service worker's process (i.e., |sw_host|), as
+  // it's unsuitable.
+  scoped_refptr<SiteInstanceImpl> site_instance =
+      SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
+  EXPECT_NE(sw_host, site_instance->GetProcess());
+
+  SetBrowserClientForTesting(regular_client);
 }
 
 TEST_F(RenderProcessHostUnitTest, ReuseServiceWorkerProcessForServiceWorker) {
@@ -367,6 +412,19 @@ TEST_F(RenderProcessHostUnitTest, DoNotReuseError) {
   pending_rfh->SimulateNavigationError(kUrl1, net::ERR_TIMED_OUT);
   pending_rfh->SimulateNavigationErrorPageCommit();
   site_instance = SiteInstanceImpl::CreateForURL(browser_context(), kUrl1);
+  site_instance->set_process_reuse_policy(
+      SiteInstanceImpl::ProcessReusePolicy::REUSE_PENDING_OR_COMMITTED_SITE);
+  EXPECT_NE(main_test_rfh()->GetProcess(), site_instance->GetProcess());
+}
+
+// Tests that RenderProcessHost will not consider reusing a process that is
+// marked as never suitable for reuse, according to MayReuseHost().
+TEST_F(RenderProcessHostUnitTest, DoNotReuseHostThatIsNeverSuitableForReuse) {
+  const GURL kUrl("http://foo.com");
+  NavigateAndCommit(kUrl);
+  main_test_rfh()->GetProcess()->SetIsNeverSuitableForReuse();
+  scoped_refptr<SiteInstanceImpl> site_instance =
+      SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
   site_instance->set_process_reuse_policy(
       SiteInstanceImpl::ProcessReusePolicy::REUSE_PENDING_OR_COMMITTED_SITE);
   EXPECT_NE(main_test_rfh()->GetProcess(), site_instance->GetProcess());
@@ -605,7 +663,8 @@ class EffectiveURLContentBrowserClient : public ContentBrowserClient {
 
  private:
   GURL GetEffectiveURL(BrowserContext* browser_context,
-                       const GURL& url) override {
+                       const GURL& url,
+                       bool is_isolated_origin) override {
     if (url == url_to_modify_)
       return url_to_return_;
     return url;

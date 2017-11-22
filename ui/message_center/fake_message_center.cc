@@ -31,19 +31,11 @@ size_t FakeMessageCenter::NotificationCount() const {
   return 0u;
 }
 
-size_t FakeMessageCenter::UnreadNotificationCount() const {
-  return 0u;
-}
-
 bool FakeMessageCenter::HasPopupNotifications() const {
   return false;
 }
 
 bool FakeMessageCenter::IsQuietMode() const {
-  return false;
-}
-
-bool FakeMessageCenter::IsLockedState() const {
   return false;
 }
 
@@ -103,6 +95,11 @@ void FakeMessageCenter::ClickOnNotificationButton(const std::string& id,
                                                   int button_index) {
 }
 
+void FakeMessageCenter::ClickOnNotificationButtonWithReply(
+    const std::string& id,
+    int button_index,
+    const base::string16& reply) {}
+
 void FakeMessageCenter::ClickOnSettingsButton(const std::string& id) {}
 
 void FakeMessageCenter::MarkSinglePopupAsShown(const std::string& id,
@@ -113,8 +110,6 @@ void FakeMessageCenter::DisplayedNotification(const std::string& id,
                                               const DisplaySource source) {}
 
 void FakeMessageCenter::SetQuietMode(bool in_quiet_mode) {}
-
-void FakeMessageCenter::SetLockedState(bool locked) {}
 
 void FakeMessageCenter::EnterQuietModeWithExpire(
     const base::TimeDelta& expires_in) {

@@ -7,20 +7,22 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <queue>
+#include <vector>
 
 #include "base/containers/circular_deque.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/optional.h"
 #include "base/timer/timer.h"
 #include "chromeos/audio/audio_device.h"
 #include "chromeos/audio/audio_devices_pref_handler.h"
 #include "chromeos/audio/audio_pref_observer.h"
 #include "chromeos/dbus/audio_node.h"
 #include "chromeos/dbus/cras_audio_client.h"
-#include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/volume_state.h"
 #include "media/base/video_facing.h"
 
@@ -32,7 +34,6 @@ class AudioDevicesPrefHandler;
 // browser main thread.
 class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
                                          public AudioPrefObserver,
-                                         public SessionManagerClient::Observer,
                                          public media::VideoCaptureObserver {
  public:
   typedef std::
@@ -253,14 +254,8 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   // If the feature is not supported on the device, nothing happens.
   void SwapInternalSpeakerLeftRightChannel(bool swap);
 
-  // Accessibility audio setting: sets the output mono or not.
-  void SetOutputMono(bool mono_on);
-
-  // Returns true if output mono is enabled.
-  bool IsOutputMonoEnabled() const;
-
-  // Enables error logging.
-  void LogErrors();
+  // Accessibility mono audio setting: sets the output mono or not.
+  void SetOutputMonoEnabled(bool enabled);
 
   // If necessary, sets the starting point for re-discovering the active HDMI
   // output device caused by device entering/exiting docking mode, HDMI display
@@ -300,9 +295,6 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
 
   // AudioPrefObserver overrides.
   void OnAudioPolicyPrefChanged() override;
-
-  // SessionManagerClient::Observer overrides.
-  void EmitLoginPromptVisibleCalled() override;
 
   // Sets the |active_device| to be active.
   // If |notify|, notifies Active*NodeChange.
@@ -390,11 +382,7 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
                        bool* active_device_removed);
 
   // Handles dbus callback for GetNodes.
-  void HandleGetNodes(const chromeos::AudioNodeList& node_list, bool success);
-
-  // Handles the dbus error callback.
-  void HandleGetNodesError(const std::string& error_name,
-                           const std::string& error_msg);
+  void HandleGetNodes(base::Optional<chromeos::AudioNodeList> node_list);
 
   // Adds an active node.
   // If there is no active node, |node_id| will be switched to become the
@@ -481,7 +469,7 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   void GetDefaultOutputBufferSizeInternal();
 
   // Handle dbus callback for GetDefaultOutputBufferSize.
-  void HandleGetDefaultOutputBufferSize(int buffer_size, bool success);
+  void HandleGetDefaultOutputBufferSize(base::Optional<int> buffer_size);
 
   void OnVideoCaptureStartedOnMainThread(media::VideoFacingMode facing);
   void OnVideoCaptureStoppedOnMainThread(media::VideoFacingMode facing);
@@ -508,10 +496,7 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
 
   // Audio output channel counts.
   int32_t output_channels_;
-  bool output_mono_on_;
-
-  // Failures are not logged at startup, since CRAS may not be running yet.
-  bool log_errors_;
+  bool output_mono_enabled_;
 
   // Timer for HDMI re-discovering grace period.
   base::OneShotTimer hdmi_rediscover_timer_;

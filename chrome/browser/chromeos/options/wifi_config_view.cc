@@ -497,7 +497,7 @@ bool WifiConfigView::CaCertActive() const {
 }
 
 void WifiConfigView::UpdateDialogButtons() {
-  parent_->GetDialogClientView()->UpdateDialogButtons();
+  parent_->DialogModelChanged();
 }
 
 void WifiConfigView::RefreshEapFields() {
@@ -662,7 +662,7 @@ void WifiConfigView::OnPerformAction(views::Combobox* combobox) {
   UpdateErrorLabel();
 }
 
-void WifiConfigView::OnCertificatesLoaded(bool initial_load) {
+void WifiConfigView::OnCertificatesLoaded() {
   RefreshEapFields();
   UpdateDialogButtons();
   UpdateErrorLabel();

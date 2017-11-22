@@ -368,9 +368,17 @@ TEST_F(DeletePageTaskTest, DeletePageForPageLimit_UnlimitedNamespace) {
 
   auto task = DeletePageTask::CreateTaskDeletingForPageLimit(
       store(), delete_page_callback(), policy_controller(), page);
-  // Since there's no limit for page per url of Download Namespace, the task
-  // should be nullptr.
-  EXPECT_FALSE(task);
+  runner()->RunTask(std::move(task));
+
+  // Since there's no limit for page per url of Download Namespace, the result
+  // should be success with no page deleted.
+  EXPECT_EQ(DeletePageResult::SUCCESS, last_delete_page_result());
+  EXPECT_EQ(0UL, last_deleted_page_infos().size());
 }
+
+// This test is disabled since it's lacking the ability of mocking store failure
+// in store_test_utils. https://crbug.com/781023
+// TODO(romax): reenable the test once the above issue is resolved.
+TEST_F(DeletePageTaskTest, DISABLED_DeletePageStoreFailureOnRemove) {}
 
 }  // namespace offline_pages

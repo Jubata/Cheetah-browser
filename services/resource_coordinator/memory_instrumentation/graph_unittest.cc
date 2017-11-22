@@ -40,7 +40,7 @@ TEST(GlobalDumpGraphTest, AddNodeOwnershipEdge) {
 
 TEST(ProcessTest, CreateAndFindNode) {
   GlobalDumpGraph global_dump_graph;
-  Process graph(&global_dump_graph);
+  Process graph(1, &global_dump_graph);
 
   Node* first =
       graph.CreateNode(MemoryAllocatorDumpGuid(1), "simple/test/1", false);
@@ -69,7 +69,7 @@ TEST(ProcessTest, CreateAndFindNode) {
 
 TEST(ProcessTest, CreateNodeParent) {
   GlobalDumpGraph global_dump_graph;
-  Process graph(&global_dump_graph);
+  Process graph(1, &global_dump_graph);
 
   Node* parent = graph.CreateNode(MemoryAllocatorDumpGuid(1), "simple", false);
   Node* child =
@@ -81,7 +81,7 @@ TEST(ProcessTest, CreateNodeParent) {
 
 TEST(ProcessTest, WeakAndExplicit) {
   GlobalDumpGraph global_dump_graph;
-  Process graph(&global_dump_graph);
+  Process graph(1, &global_dump_graph);
 
   Node* first =
       graph.CreateNode(MemoryAllocatorDumpGuid(1), "simple/test/1", true);
@@ -132,17 +132,17 @@ TEST(NodeTest, AddEntry) {
   Node node(global_dump_graph.shared_memory_graph(), nullptr);
 
   node.AddEntry("scalar", Node::Entry::ScalarUnits::kBytes, 100ul);
-  ASSERT_EQ(node.entries().size(), 1ul);
+  ASSERT_EQ(node.entries()->size(), 1ul);
 
   node.AddEntry("string", "data");
-  ASSERT_EQ(node.entries().size(), 2ul);
+  ASSERT_EQ(node.entries()->size(), 2ul);
 
-  auto scalar = node.entries().find("scalar");
+  auto scalar = node.entries()->find("scalar");
   ASSERT_EQ(scalar->first, "scalar");
   ASSERT_EQ(scalar->second.units, Node::Entry::ScalarUnits::kBytes);
   ASSERT_EQ(scalar->second.value_uint64, 100ul);
 
-  auto string = node.entries().find("string");
+  auto string = node.entries()->find("string");
   ASSERT_EQ(string->first, "string");
   ASSERT_EQ(string->second.value_string, "data");
 }

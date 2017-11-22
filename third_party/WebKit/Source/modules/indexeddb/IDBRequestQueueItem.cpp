@@ -6,13 +6,13 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "core/dom/DOMException.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBRequest.h"
 #include "modules/indexeddb/IDBRequestLoader.h"
 #include "modules/indexeddb/IDBValue.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/modules/indexeddb/WebIDBCursor.h"
 
 namespace blink {
@@ -80,7 +80,7 @@ IDBRequestQueueItem::IDBRequestQueueItem(IDBRequest* request,
   request_->queue_item_ = this;
   values_.push_back(std::move(value));
   if (attach_loader)
-    loader_ = WTF::MakeUnique<IDBRequestLoader>(this, &values_);
+    loader_ = std::make_unique<IDBRequestLoader>(this, &values_);
 }
 
 IDBRequestQueueItem::IDBRequestQueueItem(
@@ -97,7 +97,7 @@ IDBRequestQueueItem::IDBRequestQueueItem(
   DCHECK_EQ(request->queue_item_, nullptr);
   request_->queue_item_ = this;
   if (attach_loader)
-    loader_ = WTF::MakeUnique<IDBRequestLoader>(this, &values_);
+    loader_ = std::make_unique<IDBRequestLoader>(this, &values_);
 }
 
 IDBRequestQueueItem::IDBRequestQueueItem(IDBRequest* request,
@@ -117,7 +117,7 @@ IDBRequestQueueItem::IDBRequestQueueItem(IDBRequest* request,
   request_->queue_item_ = this;
   values_.push_back(std::move(value));
   if (attach_loader)
-    loader_ = WTF::MakeUnique<IDBRequestLoader>(this, &values_);
+    loader_ = std::make_unique<IDBRequestLoader>(this, &values_);
 }
 
 IDBRequestQueueItem::IDBRequestQueueItem(IDBRequest* request,
@@ -139,7 +139,7 @@ IDBRequestQueueItem::IDBRequestQueueItem(IDBRequest* request,
   request_->queue_item_ = this;
   values_.push_back(std::move(value));
   if (attach_loader)
-    loader_ = WTF::MakeUnique<IDBRequestLoader>(this, &values_);
+    loader_ = std::make_unique<IDBRequestLoader>(this, &values_);
 }
 
 IDBRequestQueueItem::~IDBRequestQueueItem() {

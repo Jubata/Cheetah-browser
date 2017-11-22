@@ -181,7 +181,8 @@
         <template is="dom-if"
             if="[[computeSourceIndicatorIcon_(data.*)]]">
           <div id="source-indicator">
-            <div class="source-icon-wrapper">
+            <div class="source-icon-wrapper" role="img"
+                aria-labelledby="source-indicator-text">
               <iron-icon icon="[[computeSourceIndicatorIcon_(data.*)]]">
               </iron-icon>
             </div>
@@ -200,30 +201,32 @@
         <div id="content">
           <div id="name-and-version" class="layout horizontal center">
             <div id="name">[[data.name]]</div>
-            <template is="dom-if" if="[[inDevMode]]">
-              <span id="version">[[data.version]]</span>
-            </template>
+            <span id="version" hidden$="[[!inDevMode]]">
+              [[data.version]]
+            </span>
           </div>
           <div id="description" hidden$="[[hasWarnings_(data.*)]]">
             [[data.description]]
           </div>
-          <div id="warnings" hidden$="[[!hasWarnings_(data.*)]]">
-            <div id="suspicious-warning"
-                 hidden$="[[!data.disableReasons.suspiciousInstall]]">
-              $i18n{itemSuspiciousInstall}
-              <a target="_blank" id="learn-more-link"
-                  href="$i18n{suspiciousInstallHelpUrl}">
-                $i18n{learnMore}
-              </a>
+          <template is="dom-if" if="[[hasWarnings_(data.*)]]">
+            <div id="warnings" >
+              <div id="suspicious-warning"
+                   hidden$="[[!data.disableReasons.suspiciousInstall]]">
+                $i18n{itemSuspiciousInstall}
+                <a target="_blank" id="learn-more-link"
+                    href="$i18n{suspiciousInstallHelpUrl}">
+                  $i18n{learnMore}
+                </a>
+              </div>
+              <div id="corrupted-warning"
+                  hidden$="[[!data.disableReasons.corruptInstall]]">
+                $i18n{itemCorruptInstall}
+              </div>
+              <div id="blacklisted-warning"><!-- No whitespace
+                -->[[data.blacklistText]]<!-- so we can use :empty in css.
+             --></div>
             </div>
-            <div id="corrupted-warning"
-                hidden$="[[!data.disableReasons.corruptInstall]]">
-              $i18n{itemCorruptInstall}
-            </div>
-            <div id="blacklisted-warning"><!-- No whitespace
-              -->[[data.blacklistText]]<!-- so we can use :empty in css.
-           --></div>
-          </div>
+          </template>
           <template is="dom-if" if="[[inDevMode]]">
             <div id="extension-id">[[data.id]]</div>
             <template is="dom-if"
@@ -260,6 +263,7 @@
         </div>
         <template is="dom-if" if="[[!computeDevReloadButtonHidden_(data.*)]]">
           <button id="dev-reload-button" is="paper-icon-button-light"
+              aria-label="$i18n{itemReload}"
               class="icon-refresh no-overlap" on-tap="onReloadTap_">
           </button>
         </template>

@@ -6,10 +6,10 @@
 
 #include <utility>
 
+#include "services/metrics/public/cpp/mojo_ukm_recorder.h"
 #include "services/resource_coordinator/memory_instrumentation/coordinator_impl.h"
 #include "services/resource_coordinator/observers/metrics_collector.h"
-#include "services/resource_coordinator/observers/tab_signal_generator_impl.h"
-#include "services/resource_coordinator/service_callbacks_impl.h"
+#include "services/resource_coordinator/observers/page_signal_generator_impl.h"
 #include "services/resource_coordinator/tracing/agent_registry.h"
 #include "services/resource_coordinator/tracing/coordinator.h"
 #include "services/service_manager/public/cpp/service_context.h"
@@ -35,26 +35,25 @@ void ResourceCoordinatorService::OnStart() {
       base::Bind(&service_manager::ServiceContext::RequestQuit,
                  base::Unretained(context()))));
 
-  registry_.AddInterface(base::Bind(ServiceCallbacksImpl::Create,
-                                    base::Unretained(ref_factory_.get()),
-                                    base::Unretained(this)));
+  ukm_recorder_ = ukm::MojoUkmRecorder::Create(context()->connector());
 
   registry_.AddInterface(
       base::Bind(&CoordinationUnitIntrospectorImpl::BindToInterface,
                  base::Unretained(&introspector_)));
 
   // Register new |CoordinationUnitGraphObserver| implementations here.
-  auto tab_signal_generator_impl = std::make_unique<TabSignalGeneratorImpl>();
+  auto page_signal_generator_impl = std::make_unique<PageSignalGeneratorImpl>();
   registry_.AddInterface(
-      base::Bind(&TabSignalGeneratorImpl::BindToInterface,
-                 base::Unretained(tab_signal_generator_impl.get())));
+      base::Bind(&PageSignalGeneratorImpl::BindToInterface,
+                 base::Unretained(page_signal_generator_impl.get())));
   coordination_unit_manager_.RegisterObserver(
-      std::move(tab_signal_generator_impl));
+      std::move(page_signal_generator_impl));
 
   coordination_unit_manager_.RegisterObserver(
       std::make_unique<MetricsCollector>());
 
   coordination_unit_manager_.OnStart(&registry_, ref_factory_.get());
+  coordination_unit_manager_.set_ukm_recorder(ukm_recorder_.get());
 
   // TODO(chiniforooshan): The abstract class Coordinator in the
   // public/cpp/memory_instrumentation directory should not be needed anymore.
@@ -85,12 +84,6 @@ void ResourceCoordinatorService::OnBindInterface(
     mojo::ScopedMessagePipeHandle interface_pipe) {
   registry_.BindInterface(interface_name, std::move(interface_pipe),
                           source_info);
-}
-
-void ResourceCoordinatorService::SetUkmRecorder(
-    std::unique_ptr<ukm::MojoUkmRecorder> ukm_recorder) {
-  ukm_recorder_ = std::move(ukm_recorder);
-  coordination_unit_manager_.set_ukm_recorder(ukm_recorder_.get());
 }
 
 }  // namespace resource_coordinator

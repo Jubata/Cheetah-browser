@@ -9,7 +9,10 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/task_scheduler/post_task.h"
+#include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "media/base/scoped_callback_runner.h"
 
 namespace media {
@@ -45,21 +48,28 @@ bool IsValidFileName(const std::string& name) {
 
 }  // namespace
 
-MojoCdmFileIO::MojoCdmFileIO(cdm::FileIOClient* client,
+MojoCdmFileIO::MojoCdmFileIO(Delegate* delegate,
+                             cdm::FileIOClient* client,
                              mojom::CdmStorage* cdm_storage)
-    : client_(client), cdm_storage_(cdm_storage), weak_factory_(this) {
-  DVLOG(3) << __func__;
+    : delegate_(delegate),
+      client_(client),
+      cdm_storage_(cdm_storage),
+      weak_factory_(this) {
+  DVLOG(1) << __func__;
+  DCHECK(delegate_);
   DCHECK(client_);
   DCHECK(cdm_storage_);
 }
 
 MojoCdmFileIO::~MojoCdmFileIO() {
-  // The destructor is private. |this| can only be destructed through Close().
+  DVLOG(1) << __func__;
 }
 
 void MojoCdmFileIO::Open(const char* file_name, uint32_t file_name_size) {
   std::string file_name_string(file_name, file_name_size);
   DVLOG(3) << __func__ << " file: " << file_name_string;
+
+  TRACE_EVENT1("media", "MojoCdmFileIO::Open", "file_name", file_name_string);
 
   // Open is only allowed if the current state is kUnopened and the file name
   // is valid.
@@ -86,6 +96,9 @@ void MojoCdmFileIO::OnFileOpened(StorageStatus status,
                                  base::File file,
                                  mojom::CdmFileAssociatedPtrInfo cdm_file) {
   DVLOG(3) << __func__ << " file: " << file_name_ << ", status: " << status;
+
+  TRACE_EVENT2("media", "MojoCdmFileIO::FileOpened", "file_name", file_name_,
+               "status", static_cast<int32_t>(status));
 
   switch (status) {
     case StorageStatus::kSuccess:
@@ -119,6 +132,8 @@ void MojoCdmFileIO::OnFileOpened(StorageStatus status,
 
 void MojoCdmFileIO::Read() {
   DVLOG(3) << __func__ << " file: " << file_name_;
+
+  TRACE_EVENT1("media", "MojoCdmFileIO::Read", "file_name", file_name_);
 
   // If another operation is in progress, fail.
   if (state_ == State::kReading || state_ == State::kWriting) {
@@ -163,32 +178,42 @@ void MojoCdmFileIO::DoRead(int64_t num_bytes) {
   DVLOG(3) << __func__ << " file: " << file_name_;
   DCHECK_EQ(State::kReading, state_);
 
+  TRACE_EVENT2("media", "MojoCdmFileIO::DoRead", "file_name", file_name_,
+               "bytes_to_read", num_bytes);
+
   // We know how much data is available, so read the complete contents of the
   // file into a buffer and passing it back to |client_|. As these should be
   // small files, we don't worry about breaking it up into chunks to read it.
-
-  // If the file has 0 bytes, no need to read anything.
-  if (num_bytes == 0) {
-    state_ = State::kOpened;
-    client_->OnReadComplete(ClientStatus::kSuccess, nullptr, 0);
-    return;
-  }
 
   // Read the contents of the file. Read() sizes (provided and returned) are
   // type int, so cast appropriately.
   int bytes_to_read = base::checked_cast<int>(num_bytes);
   std::vector<uint8_t> buffer(bytes_to_read);
-  int bytes_read = file_for_reading_.Read(
-      0, reinterpret_cast<char*>(buffer.data()), bytes_to_read);
-  if (bytes_to_read != bytes_read) {
-    // Unable to read the contents of the file. Setting |state_| to kOpened
-    // so that the CDM can write something valid to this file.
-    DVLOG(1) << "Failed to read file " << file_name_ << ". Requested "
-             << bytes_to_read << " bytes, got " << bytes_read;
-    state_ = State::kOpened;
-    OnError(ErrorType::kReadError);
-    return;
+
+  // If the file has 0 bytes, no need to read anything.
+  if (bytes_to_read != 0) {
+    TRACE_EVENT0("media", "MojoCdmFileIO::ActualRead");
+    base::TimeTicks start = base::TimeTicks::Now();
+    int bytes_read = file_for_reading_.Read(
+        0, reinterpret_cast<char*>(buffer.data()), bytes_to_read);
+    base::TimeDelta read_time = base::TimeTicks::Now() - start;
+    if (bytes_to_read != bytes_read) {
+      // Unable to read the contents of the file. Setting |state_| to kOpened
+      // so that the CDM can write something valid to this file.
+      DVLOG(1) << "Failed to read file " << file_name_ << ". Requested "
+               << bytes_to_read << " bytes, got " << bytes_read;
+      state_ = State::kOpened;
+      OnError(ErrorType::kReadError);
+      return;
+    }
+
+    // Only report reading time for successful reads.
+    UMA_HISTOGRAM_TIMES("Media.EME.CdmFileIO.ReadTime", read_time);
   }
+
+  // Call this before OnReadComplete() so that we always have the latest file
+  // size before CDM fires errors.
+  delegate_->ReportFileReadSize(bytes_to_read);
 
   state_ = State::kOpened;
   client_->OnReadComplete(ClientStatus::kSuccess, buffer.data(), buffer.size());
@@ -196,6 +221,8 @@ void MojoCdmFileIO::DoRead(int64_t num_bytes) {
 
 void MojoCdmFileIO::Write(const uint8_t* data, uint32_t data_size) {
   DVLOG(3) << __func__ << " file: " << file_name_ << ", bytes: " << data_size;
+
+  TRACE_EVENT1("media", "MojoCdmFileIO::Write", "file_name", file_name_);
 
   // If another operation is in progress, fail.
   if (state_ == State::kReading || state_ == State::kWriting) {
@@ -221,16 +248,19 @@ void MojoCdmFileIO::Write(const uint8_t* data, uint32_t data_size) {
   // won't be used again.
   state_ = State::kWriting;
   file_for_reading_.Close();
-  cdm_file_->OpenFileForWriting(base::BindOnce(
-      &MojoCdmFileIO::OnFileOpenedForWriting, weak_factory_.GetWeakPtr(),
-      std::vector<uint8_t>(data, data + data_size)));
+  cdm_file_->OpenFileForWriting(
+      base::BindOnce(&MojoCdmFileIO::DoWrite, weak_factory_.GetWeakPtr(),
+                     std::vector<uint8_t>(data, data + data_size)));
 }
 
-void MojoCdmFileIO::OnFileOpenedForWriting(const std::vector<uint8_t>& data,
-                                           base::File temporary_file) {
+void MojoCdmFileIO::DoWrite(const std::vector<uint8_t>& data,
+                            base::File temporary_file) {
   DVLOG(3) << __func__ << " file: " << file_name_ << ", result: "
            << base::File::ErrorToString(temporary_file.error_details());
   DCHECK_EQ(State::kWriting, state_);
+
+  TRACE_EVENT2("media", "MojoCdmFileIO::DoWrite", "file_name", file_name_,
+               "bytes_to_write", data.size());
 
   if (!temporary_file.IsValid()) {
     // Failed to open temporary file.
@@ -244,14 +274,20 @@ void MojoCdmFileIO::OnFileOpenedForWriting(const std::vector<uint8_t>& data,
   CHECK_EQ(0u, temporary_file.GetLength()) << "Temporary file is not empty.";
   int bytes_to_write = base::checked_cast<int>(data.size());
   if (bytes_to_write > 0) {
+    TRACE_EVENT0("media", "MojoCdmFileIO::ActualWrite");
+    base::TimeTicks start = base::TimeTicks::Now();
     int bytes_written = temporary_file.Write(
         0, reinterpret_cast<const char*>(data.data()), bytes_to_write);
+    base::TimeDelta write_time = base::TimeTicks::Now() - start;
     if (bytes_written != bytes_to_write) {
       // Failed to write to the temporary file.
       state_ = State::kError;
       OnError(ErrorType::kWriteError);
       return;
     }
+
+    // Only report writing time for successful writes.
+    UMA_HISTOGRAM_TIMES("Media.EME.CdmFileIO.WriteTime", write_time);
   }
 
   // Close the temporary file returned before renaming. Original file was
@@ -267,6 +303,8 @@ void MojoCdmFileIO::OnWriteCommitted(base::File reopened_file) {
   DCHECK_EQ(State::kWriting, state_);
   DCHECK(!file_for_reading_.IsValid()) << "Original file was not closed.";
 
+  TRACE_EVENT1("media", "MojoCdmFileIO::WriteDone", "file_name", file_name_);
+
   if (!reopened_file.IsValid()) {
     // Rename failed, and no file to use.
     state_ = State::kError;
@@ -281,7 +319,9 @@ void MojoCdmFileIO::OnWriteCommitted(base::File reopened_file) {
 
 void MojoCdmFileIO::Close() {
   DVLOG(3) << __func__ << " file: " << file_name_;
-  delete this;
+
+  // Note: |this| could be deleted as part of this call.
+  delegate_->CloseCdmFileIO(this);
 }
 
 void MojoCdmFileIO::OnError(ErrorType error) {

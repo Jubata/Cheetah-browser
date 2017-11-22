@@ -32,44 +32,29 @@ const char* ScriptModuleStateToString(ScriptModuleState state) {
   return "";
 }
 
-ScriptModule::ScriptModule() {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-}
+ScriptModule::ScriptModule() {}
 
 ScriptModule::ScriptModule(v8::Isolate* isolate, v8::Local<v8::Module> module)
     : module_(SharedPersistent<v8::Module>::Create(module, isolate)),
       identity_hash_(static_cast<unsigned>(module->GetIdentityHash())) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   DCHECK(!module_->IsEmpty());
 }
 
 ScriptModule::~ScriptModule() {}
 
-ScriptModule ScriptModule::Compile(
-    v8::Isolate* isolate,
-    const String& source,
-    const String& file_name,
-    AccessControlStatus access_control_status,
-    network::mojom::FetchCredentialsMode credentials_mode,
-    const String& nonce,
-    ParserDisposition parser_state,
-    const TextPosition& text_position,
-    ExceptionState& exception_state) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
+ScriptModule ScriptModule::Compile(v8::Isolate* isolate,
+                                   const String& source,
+                                   const String& file_name,
+                                   const ScriptFetchOptions& options,
+                                   AccessControlStatus access_control_status,
+                                   const TextPosition& text_position,
+                                   ExceptionState& exception_state) {
   v8::TryCatch try_catch(isolate);
   v8::Local<v8::Module> module;
 
   if (!V8ScriptRunner::CompileModule(
            isolate, source, file_name, access_control_status, text_position,
-           ReferrerScriptInfo(credentials_mode, nonce, parser_state))
+           ReferrerScriptInfo::FromScriptFetchOptions(options))
            .ToLocal(&module)) {
     DCHECK(try_catch.HasCaught());
     exception_state.RethrowV8Exception(try_catch.Exception());
@@ -133,9 +118,6 @@ ScriptValue ScriptModule::Evaluate(ScriptState* script_state,
 
 void ScriptModule::ReportException(ScriptState* script_state,
                                    v8::Local<v8::Value> exception) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
   V8ScriptRunner::ReportException(script_state->GetIsolate(), exception);
 }
 
@@ -200,10 +182,6 @@ v8::MaybeLocal<v8::Module> ScriptModule::ResolveModuleCallback(
     v8::Local<v8::Context> context,
     v8::Local<v8::String> specifier,
     v8::Local<v8::Module> referrer) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   v8::Isolate* isolate = context->GetIsolate();
   Modulator* modulator = Modulator::From(ScriptState::From(context));
   DCHECK(modulator);

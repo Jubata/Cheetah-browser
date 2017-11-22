@@ -25,7 +25,7 @@ LLVM_BOOTSTRAP_INSTALL_DIR = os.path.join(THIRD_PARTY_DIR,
                                           'llvm-bootstrap-install')
 LLVM_BUILD_DIR = os.path.join(THIRD_PARTY_DIR, 'llvm-build')
 LLVM_RELEASE_DIR = os.path.join(LLVM_BUILD_DIR, 'Release+Asserts')
-LLVM_LTO_LLD_DIR = os.path.join(THIRD_PARTY_DIR, 'llvm-lto-lld')
+EU_STRIP = os.path.join(THIRD_PARTY_DIR, 'eu-strip', 'bin', 'eu-strip')
 STAMP_FILE = os.path.join(LLVM_BUILD_DIR, 'cr_build_revision')
 
 
@@ -296,7 +296,7 @@ def main():
         subprocess.call(['strip', '-x', dest])
       elif (sys.platform.startswith('linux') and
             os.path.splitext(f)[1] in ['.so', '.a']):
-        subprocess.call(['strip', '-g', dest])
+        subprocess.call([EU_STRIP, '-g', dest])
 
   # Set up symlinks.
   if sys.platform != 'win32':
@@ -337,16 +337,38 @@ def main():
             filter=PrintTarProgress)
   MaybeUpload(args, code_coverage_dir, platform)
 
-  # Zip up llvm-objdump for sanitizer coverage.
+  # Zip up llvm-objdump and related tools for sanitizer coverage and Supersize.
   objdumpdir = 'llvmobjdump-' + stamp
   shutil.rmtree(objdumpdir, ignore_errors=True)
   os.makedirs(os.path.join(objdumpdir, 'bin'))
-  shutil.copy(os.path.join(LLVM_RELEASE_DIR, 'bin', 'llvm-objdump' + exe_ext),
-              os.path.join(objdumpdir, 'bin'))
+  for filename in ['llvm-cxxfilt', 'llvm-nm', 'llvm-objdump', 'llvm-readobj']:
+    shutil.copy(os.path.join(LLVM_RELEASE_DIR, 'bin', filename + exe_ext),
+                os.path.join(objdumpdir, 'bin'))
+  llvmobjdump_stamp_file_base = 'llvmobjdump_build_revision'
+  llvmobjdump_stamp_file = os.path.join(objdumpdir, llvmobjdump_stamp_file_base)
+  with open(llvmobjdump_stamp_file, 'w') as f:
+    f.write(expected_stamp)
+    f.write('\n')
+  if sys.platform != 'win32':
+    os.symlink('llvm-readobj', os.path.join(objdumpdir, 'bin', 'llvm-readelf'))
   with tarfile.open(objdumpdir + '.tgz', 'w:gz') as tar:
     tar.add(os.path.join(objdumpdir, 'bin'), arcname='bin',
             filter=PrintTarProgress)
+    tar.add(llvmobjdump_stamp_file, arcname=llvmobjdump_stamp_file_base,
+            filter=PrintTarProgress)
   MaybeUpload(args, objdumpdir, platform)
+
+  # Zip up llvm-cfi-verify for CFI coverage.
+  cfiverifydir = 'llvmcfiverify-' + stamp
+  shutil.rmtree(cfiverifydir, ignore_errors=True)
+  os.makedirs(os.path.join(cfiverifydir, 'bin'))
+  shutil.copy(os.path.join(LLVM_RELEASE_DIR, 'bin', 'llvm-cfi-verify' +
+                           exe_ext),
+              os.path.join(cfiverifydir, 'bin'))
+  with tarfile.open(cfiverifydir + '.tgz', 'w:gz') as tar:
+    tar.add(os.path.join(cfiverifydir, 'bin'), arcname='bin',
+            filter=PrintTarProgress)
+  MaybeUpload(args, cfiverifydir, platform)
 
   # On Mac, lld isn't part of the main zip.  Upload it in a separate zip.
   if sys.platform == 'darwin':

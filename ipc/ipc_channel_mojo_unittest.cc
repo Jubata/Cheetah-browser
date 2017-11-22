@@ -657,18 +657,21 @@ class ChannelProxyRunner {
   void CreateProxy(IPC::Listener* listener) {
     io_thread_.StartWithOptions(
         base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
-    proxy_ = IPC::SyncChannel::Create(
-        listener, io_thread_.task_runner(), &never_signaled_);
+    proxy_ = IPC::SyncChannel::Create(listener, io_thread_.task_runner(),
+                                      base::ThreadTaskRunnerHandle::Get(),
+                                      &never_signaled_);
   }
 
   void RunProxy() {
     std::unique_ptr<IPC::ChannelFactory> factory;
     if (for_server_) {
       factory = IPC::ChannelMojo::CreateServerFactory(
-          std::move(handle_), io_thread_.task_runner());
+          std::move(handle_), io_thread_.task_runner(),
+          base::ThreadTaskRunnerHandle::Get());
     } else {
       factory = IPC::ChannelMojo::CreateClientFactory(
-          std::move(handle_), io_thread_.task_runner());
+          std::move(handle_), io_thread_.task_runner(),
+          base::ThreadTaskRunnerHandle::Get());
     }
     proxy_->Init(std::move(factory), true);
   }

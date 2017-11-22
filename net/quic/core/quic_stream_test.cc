@@ -27,13 +27,10 @@
 using std::string;
 using testing::AnyNumber;
 using testing::AtLeast;
-using testing::CreateFunctor;
-using testing::DoAll;
 using testing::InSequence;
 using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
-using testing::WithArgs;
 using testing::_;
 
 namespace net {
@@ -451,6 +448,20 @@ TEST_F(QuicStreamTest, FinalByteOffsetFromRst) {
   EXPECT_TRUE(stream_->HasFinalReceivedByteOffset());
 }
 
+TEST_F(QuicStreamTest, InvalidFinalByteOffsetFromRst) {
+  Initialize(kShouldProcessData);
+
+  EXPECT_FALSE(stream_->HasFinalReceivedByteOffset());
+  QuicRstStreamFrame rst_frame(stream_->id(), QUIC_STREAM_CANCELLED,
+                               0xFFFFFFFFFFFF);
+  // Stream should not accept the frame, and the connection should be closed.
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA, _, _));
+  stream_->OnStreamReset(rst_frame);
+  EXPECT_TRUE(stream_->HasFinalReceivedByteOffset());
+  stream_->OnClose();
+}
+
 TEST_F(QuicStreamTest, FinalByteOffsetFromZeroLengthStreamFrame) {
   // When receiving Trailers, an empty stream frame is created with the FIN set,
   // and is passed to OnStreamFrame. The Trailers may be sent in advance of
@@ -637,7 +648,7 @@ TEST_F(QuicStreamTest, StreamDataGetAckedOutOfOrder) {
   EXPECT_EQ(3u, QuicStreamPeer::SendBuffer(stream_).size());
   stream_->OnStreamFrameAcked(frame3, QuicTime::Delta::Zero());
   EXPECT_EQ(3u, QuicStreamPeer::SendBuffer(stream_).size());
-  stream_->OnStreamFrameDiscarded(frame1);
+  stream_->OnStreamFrameAcked(frame1, QuicTime::Delta::Zero());
   EXPECT_EQ(0u, QuicStreamPeer::SendBuffer(stream_).size());
   // FIN is not acked yet.
   EXPECT_TRUE(stream_->IsWaitingForAcks());
@@ -665,9 +676,13 @@ TEST_F(QuicStreamTest, CancelStream) {
               SendRstStream(stream_->id(), QUIC_STREAM_CANCELLED, 9));
   stream_->Reset(QUIC_STREAM_CANCELLED);
   stream_->OnStreamFrameDiscarded(frame);
+  if (!FLAGS_quic_reloadable_flag_quic_remove_on_stream_frame_discarded) {
+    EXPECT_EQ(0u, QuicStreamPeer::SendBuffer(stream_).size());
+  } else {
+    EXPECT_EQ(1u, QuicStreamPeer::SendBuffer(stream_).size());
+  }
   // Stream stops waiting for acks as data is not going to be retransmitted.
   EXPECT_FALSE(stream_->IsWaitingForAcks());
-  EXPECT_EQ(0u, QuicStreamPeer::SendBuffer(stream_).size());
 }
 
 TEST_F(QuicStreamTest, RstFrameReceivedStreamNotFinishSending) {
@@ -688,10 +703,14 @@ TEST_F(QuicStreamTest, RstFrameReceivedStreamNotFinishSending) {
               SendRstStream(stream_->id(), QUIC_RST_ACKNOWLEDGEMENT, 9));
   stream_->OnStreamReset(rst_frame);
   stream_->OnStreamFrameDiscarded(frame);
+  if (!FLAGS_quic_reloadable_flag_quic_remove_on_stream_frame_discarded) {
+    EXPECT_EQ(0u, QuicStreamPeer::SendBuffer(stream_).size());
+  } else {
+    EXPECT_EQ(1u, QuicStreamPeer::SendBuffer(stream_).size());
+  }
   // Stream stops waiting for acks as it does not finish sending and rst is
   // sent.
   EXPECT_FALSE(stream_->IsWaitingForAcks());
-  EXPECT_EQ(0u, QuicStreamPeer::SendBuffer(stream_).size());
 }
 
 TEST_F(QuicStreamTest, RstFrameReceivedStreamFinishSending) {
@@ -729,9 +748,13 @@ TEST_F(QuicStreamTest, ConnectionClosed) {
   stream_->OnConnectionClosed(QUIC_INTERNAL_ERROR,
                               ConnectionCloseSource::FROM_SELF);
   stream_->OnStreamFrameDiscarded(frame);
+  if (!FLAGS_quic_reloadable_flag_quic_remove_on_stream_frame_discarded) {
+    EXPECT_EQ(0u, QuicStreamPeer::SendBuffer(stream_).size());
+  } else {
+    EXPECT_EQ(1u, QuicStreamPeer::SendBuffer(stream_).size());
+  }
   // Stream stops waiting for acks as connection is going to close.
   EXPECT_FALSE(stream_->IsWaitingForAcks());
-  EXPECT_EQ(0u, QuicStreamPeer::SendBuffer(stream_).size());
 }
 
 TEST_F(QuicStreamTest, WriteBufferedData) {

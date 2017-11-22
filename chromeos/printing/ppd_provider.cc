@@ -17,6 +17,8 @@
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/json/json_parser.h"
+#include "base/memory/ptr_util.h"
+#include "base/optional.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -31,6 +33,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chromeos/printing/ppd_cache.h"
+#include "chromeos/printing/ppd_line_reader.h"
 #include "chromeos/printing/printing_constants.h"
 #include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
@@ -43,8 +46,7 @@
 namespace chromeos {
 namespace {
 
-// Extract cupsFilter/cupsFilter2 filter names from the contents
-// of a ppd, pre-split into lines.
+// Extract cupsFilter/cupsFilter2 filter names from a line from a ppd.
 
 // cupsFilter2 lines look like this:
 //
@@ -61,69 +63,61 @@ namespace {
 // |num_value_tokens| is the number of tokens we expect to find in the
 // value string.  The filter is always the last of these.
 //
-// This function looks at each line in ppd_lines for lines of this format, and,
-// for each one found, adds the name of the filter (rastertofoo in the examples
-// above) to the returned set.
+// Return the name of the filter, if one is found.
 //
 // This would be simpler with re2, but re2 is not an allowed dependency in
 // this part of the tree.
-std::set<std::string> ExtractCupsFilters(
-    const std::vector<std::string>& ppd_lines,
-    const std::string& field_name,
-    int num_value_tokens) {
-  std::set<std::string> ret;
+base::Optional<std::string> ExtractCupsFilter(const std::string& line,
+                                              const std::string& field_name,
+                                              int num_value_tokens) {
   std::string delims(" \n\t\r\"");
+  base::StringTokenizer line_tok(line, delims);
 
-  for (const std::string& line : ppd_lines) {
-    base::StringTokenizer line_tok(line, delims);
-
-    if (!line_tok.GetNext()) {
-      continue;
-    }
-    if (line_tok.token_piece() != field_name) {
-      continue;
-    }
-
-    // Skip to the last of the value tokens.
-    for (int i = 0; i < num_value_tokens; ++i) {
-      if (!line_tok.GetNext()) {
-        // Continue the outer loop.
-        goto next_line;
-      }
-    }
-
-    if (line_tok.token_piece() != "") {
-      ret.insert(line_tok.token_piece().as_string());
-    }
-  next_line : {}  // Lint requires {} instead of ; for an empty statement.
+  if (!line_tok.GetNext()) {
+    return {};
   }
-  return ret;
+  if (line_tok.token_piece() != field_name) {
+    return {};
+  }
+
+  // Skip to the last of the value tokens.
+  for (int i = 0; i < num_value_tokens; ++i) {
+    if (!line_tok.GetNext()) {
+      return {};
+    }
+  }
+  if (line_tok.token_piece() != "") {
+    return line_tok.token_piece().as_string();
+  }
+  return {};
 }
 
-// The ppd spec explicitly disallows quotes inside quoted strings, and provides
-// no way for including escaped quotes in a quoted string.  It also requires
-// that the string be a single line, and that everything in these fields be
-// 7-bit ASCII.  The CUPS spec on these particular fields is not particularly
-// rigorous, but specifies no way of including escaped spaces in the tokens
-// themselves, and the cups *code* just parses out these lines with a sscanf
-// call that uses spaces as delimiters.
+// Extract the used cups filters from a ppd.
 //
-// Furthermore, cups (post 1.5) discards all cupsFilter lines if *any*
+// Note that CUPS (post 1.5) discards all cupsFilter lines if *any*
 // cupsFilter2 lines exist.
 //
-// All of this is a long way of saying the regular-expression based parsing
-// done here is, to the best of my knowledge, actually conformant to the specs
-// that exist, and not just a hack.
 std::vector<std::string> ExtractFiltersFromPpd(
     const std::string& ppd_contents) {
-  std::vector<std::string> lines = base::SplitString(
-      ppd_contents, "\n\r", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  std::set<std::string> filters = ExtractCupsFilters(lines, "*cupsFilter2:", 4);
-  if (filters.empty()) {
-    // No cupsFilter2 lines found, fall back to looking for cupsFilter lines.
-    filters = ExtractCupsFilters(lines, "*cupsFilter:", 3);
+  std::string line;
+  base::Optional<std::string> tmp;
+  auto ppd_reader = PpdLineReader::Create(ppd_contents, 255);
+  std::vector<std::string> cups_filters;
+  std::vector<std::string> cups_filter2s;
+  while (ppd_reader->NextLine(&line)) {
+    tmp = ExtractCupsFilter(line, "*cupsFilter:", 3);
+    if (tmp.has_value()) {
+      cups_filters.push_back(tmp.value());
+    }
+    tmp = ExtractCupsFilter(line, "*cupsFilter2:", 4);
+    if (tmp.has_value()) {
+      cups_filter2s.push_back(tmp.value());
+    }
   }
-  return std::vector<std::string>(filters.begin(), filters.end());
+  if (!cups_filter2s.empty()) {
+    return cups_filter2s;
+  }
+  return cups_filters;
 }
 
 // Returns false if there are obvious errors in the reference that will prevent
@@ -201,6 +195,30 @@ struct PrinterResolutionQueueEntry {
   PpdProvider::ResolvePrintersCallback cb;
 };
 
+// A queued request to download reverse index information for a make and model
+struct ReverseIndexQueueEntry {
+  // Canonical Printer Name
+  std::string effective_make_and_model;
+
+  // URL we are going to pull from.
+  GURL url;
+
+  // User callback on completion.
+  PpdProvider::ReverseLookupCallback cb;
+};
+
+// The string fields from a metadata_v2 printers response
+struct ReverseIndexResponse {
+  // Canonical Printer Name
+  std::string effective_make_and_model;
+
+  // Name of printer manufacturer
+  std::string manufacturer;
+
+  // Name of printer model
+  std::string model;
+};
+
 class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
  public:
   // What kind of thing is the fetcher currently fetching?  We use this to
@@ -211,6 +229,7 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
     FT_PRINTERS,       // List of printers from a manufacturer.
     FT_PPD_INDEX,      // Master ppd index.
     FT_PPD,            // A Ppd file.
+    FT_REVERSE_INDEX,  // List of sharded printers from a manufacturer
     FT_USB_DEVICES     // USB device id to canonical name map.
   };
 
@@ -316,13 +335,22 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
       return;
     }
 
-    if (!manufacturers_resolution_queue_.empty()) {
+    if (!manufacturers_resolution_queue_.empty() ||
+        !reverse_index_resolution_queue_.empty()) {
       if (locale_.empty()) {
         // Don't have a locale yet, figure that out first.
         StartFetch(GetLocalesURL(), FT_LOCALES);
       } else {
         // Get manufacturers based on the locale we have.
-        StartFetch(GetManufacturersURL(locale_), FT_MANUFACTURERS);
+        if (!manufacturers_resolution_queue_.empty()) {
+          StartFetch(GetManufacturersURL(locale_), FT_MANUFACTURERS);
+        } else if (!reverse_index_resolution_queue_.empty()) {
+          // Update the url with the locale before fetching
+          ReverseIndexQueueEntry& entry =
+              reverse_index_resolution_queue_.front();
+          entry.url = GetReverseIndexURL(entry.effective_make_and_model);
+          StartFetch(entry.url, FT_REVERSE_INDEX);
+        }
       }
       return;
     }
@@ -424,9 +452,18 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
       return;
     }
 
-    ResolveManufacturers(base::Bind(&PpdProviderImpl::ReverseLookupManufacturer,
-                                    base::Unretained(this),
-                                    effective_make_and_model, cb));
+    // In v2 metadata, all work will be done on a lowercase
+    // effective_make_and_model. We convert the string to lowercase here to
+    // maintain consistency across the file.
+    std::string lowercase_effective_make_and_model =
+        base::ToLowerASCII(effective_make_and_model);
+
+    ReverseIndexQueueEntry entry;
+    entry.effective_make_and_model = lowercase_effective_make_and_model;
+    entry.url = GetReverseIndexURL(lowercase_effective_make_and_model);
+    entry.cb = cb;
+    reverse_index_resolution_queue_.push_back(entry);
+    MaybeStartFetch();
   }
 
   // Common handler that gets called whenever a fetch completes.  Note this
@@ -448,6 +485,9 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
         break;
       case FT_PPD:
         OnPpdFetchComplete();
+        break;
+      case FT_REVERSE_INDEX:
+        OnReverseIndexComplete();
         break;
       case FT_USB_DEVICES:
         OnUsbFetchComplete();
@@ -496,6 +536,14 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
   GURL GetPpdURL(const std::string& filename) {
     return GURL(base::StringPrintf(
         "%s/ppds/%s", options_.ppd_server_root.c_str(), filename.c_str()));
+  }
+
+  // Return the URL to get a localized, shared manufacturers map.
+  GURL GetReverseIndexURL(const std::string& effective_make_and_model) {
+    return GURL(base::StringPrintf("%s/metadata_v2/reverse_index-%s-%02d.json",
+                                   options_.ppd_server_root.c_str(),
+                                   locale_.c_str(),
+                                   IndexShard(effective_make_and_model)));
   }
 
   // Create and return a fetcher that has the usual (for this class) flags set
@@ -735,6 +783,40 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
     ppd_resolution_queue_.pop_front();
   }
 
+  // This is called when |fetch_| should have just downloaded a reverse index
+  // file. If we downloaded something successfully, used the downloaded results
+  // to satisfy the callback in the first item of the reverse index resolution
+  // queue.
+  void OnReverseIndexComplete() {
+    DCHECK(!reverse_index_resolution_queue_.empty());
+    std::vector<ReverseIndexResponse> contents;
+    PpdProvider::CallbackResultCode code =
+        ValidateAndParseReverseIndexJSON(&contents);
+    const ReverseIndexQueueEntry& entry =
+        reverse_index_resolution_queue_.front();
+
+    if (code != PpdProvider::SUCCESS) {
+      LOG(ERROR) << "Request Failed or failed reverse index parsing";
+      PostReverseLookupFailure(code, entry.cb);
+    } else {
+      auto found =
+          std::find_if(contents.begin(), contents.end(),
+                       [&entry](const ReverseIndexResponse& rir) -> bool {
+                         return rir.effective_make_and_model ==
+                                entry.effective_make_and_model;
+                       });
+      if (found != contents.end()) {
+        base::SequencedTaskRunnerHandle::Get()->PostTask(
+            FROM_HERE, base::Bind(entry.cb, PpdProvider::SUCCESS,
+                                  found->manufacturer, found->model));
+      } else {
+        LOG(ERROR) << "Failed to lookup printer in retrieved data response";
+        PostReverseLookupFailure(PpdProvider::NOT_FOUND, entry.cb);
+      }
+    }
+    reverse_index_resolution_queue_.pop_front();
+  }
+
   // Called when |fetcher_| should have just downloaded a usb device map
   // for the vendor at the head of the |ppd_reference_resolution_queue_|.
   void OnUsbFetchComplete() {
@@ -972,6 +1054,57 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
     return PpdProvider::SUCCESS;
   }
 
+  // For the metadata fetches that happens to be in the form of a JSON
+  // list-of-lists-of-3-strings and a dictionary of metadata (the data from a
+  // reverse index json response will be in this format). This method
+  // attempts to parse a JSON reply to |fetcher| into the passed contents
+  // vector. A return code of SUCCESS means the JSON was formatted as expected
+  // and we've parsed it into |contents|. On error the contents of |contents| is
+  // cleared.
+  PpdProvider::CallbackResultCode ValidateAndParseReverseIndexJSON(
+      std::vector<ReverseIndexResponse>* contents) {
+    DCHECK(contents != nullptr);
+    contents->clear();
+    std::string buffer;
+
+    auto fetch_result = ValidateAndGetResponseAsString(&buffer);
+    if (fetch_result != PpdProvider::SUCCESS) {
+      return fetch_result;
+    }
+
+    auto top_list = base::ListValue::From(base::JSONReader::Read(buffer));
+    if (top_list.get() == nullptr) {
+      return PpdProvider::INTERNAL_ERROR;
+    }
+
+    // Fetched data should be in the form {[effective_make_and_model],
+    // [manufacturer], [model], [dictionary of metadata]}
+    for (const auto& entry : *top_list) {
+      if (!entry.is_list()) {
+        LOG(WARNING) << "Retrieved data in unexpected format. Data should be "
+                        "in list format";
+        return PpdProvider::INTERNAL_ERROR;
+      }
+
+      const base::Value::ListStorage& list = entry.GetList();
+
+      if (list.size() < 3 || !list[0].is_string() || !list[1].is_string() ||
+          !list[2].is_string()) {
+        LOG(ERROR) << "Retrieved data in unexpected format. Expecting List of "
+                      "3 or more strings";
+        return PpdProvider::INTERNAL_ERROR;
+      }
+
+      ReverseIndexResponse rir_entry;
+      rir_entry.effective_make_and_model = list[0].GetString();
+      rir_entry.manufacturer = list[1].GetString();
+      rir_entry.model = list[2].GetString();
+
+      contents->push_back(rir_entry);
+    }
+    return PpdProvider::SUCCESS;
+  }
+
   // Create the list of manufacturers from |cached_metadata_|.  Requires that
   // the manufacturer list has already been resolved.
   std::vector<std::string> GetManufacturerList() const {
@@ -1013,74 +1146,16 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
         FROM_HERE, base::Bind(cb, result, std::string(), std::string()));
   }
 
-  // Iterates through all |manufacturers| starting with |index| to see if any
-  // contain |effective_make_and_model|.  Upon finding
-  // |effective_make_and_model|, calls |cb|.  If |effective_make_and_model| is
-  // not found, |cb| is called with NOT_FOUND.
-  void SearchEntries(const std::string& effective_make_and_model,
-                     const ReverseLookupCallback& cb,
-                     size_t index,
-                     const std::vector<std::string>& manufacturers,
-                     CallbackResultCode printers_result,
-                     const ResolvedPrintersList& printer_list) {
-    if (printers_result == PpdProvider::SUCCESS) {
-      auto found =
-          std::find_if(printer_list.begin(), printer_list.end(),
-                       [effective_make_and_model](
-                           const std::pair<std::string, Printer::PpdReference>&
-                               printer_listing) {
-                         return effective_make_and_model ==
-                                printer_listing.second.effective_make_and_model;
-                       });
-      if (found != printer_list.end()) {
-        // We found it.  Done now!
-        base::SequencedTaskRunnerHandle::Get()->PostTask(
-            FROM_HERE, base::Bind(cb, PpdProvider::SUCCESS,
-                                  manufacturers[index], found->first));
-        return;
-      }
+  // The hash function to calculate the hash of canonical identifiers to the
+  // name of the ppd file for that printer.
+  int IndexShard(std::string effective_make_and_model) {
+    unsigned int hash = 5381;
+    int kNumIndexShards = 20;
+
+    for (char c : effective_make_and_model) {
+      hash = hash * 33 + c;
     }
-
-    // We didn't find it, keep searching.
-    size_t next_index = index + 1;
-    if (next_index >= manufacturers.size()) {
-      // All manufacturers have been checked.  It's not here.
-      PostReverseLookupFailure(NOT_FOUND, cb);
-      return;
-    }
-
-    ResolvePrinters(
-        manufacturers[next_index],
-        base::Bind(&PpdProviderImpl::SearchEntries, base::Unretained(this),
-                   effective_make_and_model, cb, next_index, manufacturers));
-  }
-
-  // Handles the ResolveManufacturers callback and initiates the search through
-  // known PPDs fro the listed |effective_make_and_model|.  |cb| is called when
-  // the result is found or all listings have been searched.
-  void ReverseLookupManufacturer(
-      const std::string& effective_make_and_model,
-      const ReverseLookupCallback& cb,
-      CallbackResultCode manufacturer_result,
-      const std::vector<std::string>& manufacturers) {
-    DCHECK(!effective_make_and_model.empty());
-
-    if (manufacturer_result != PpdProvider::SUCCESS) {
-      PostReverseLookupFailure(manufacturer_result, cb);
-      return;
-    }
-
-    if (manufacturers.empty()) {
-      PostReverseLookupFailure(PpdProvider::NOT_FOUND, cb);
-      return;
-    }
-
-    int start_index = 0;
-
-    ResolvePrinters(
-        manufacturers[start_index],
-        base::Bind(&PpdProviderImpl::SearchEntries, base::Unretained(this),
-                   effective_make_and_model, cb, start_index, manufacturers));
+    return hash % kNumIndexShards;
   }
 
   // Map from (localized) manufacturer name to metadata for that manufacturer.
@@ -1114,6 +1189,9 @@ class PpdProviderImpl : public PpdProvider, public net::URLFetcherDelegate {
   base::circular_deque<
       std::pair<PrinterSearchData, ResolvePpdReferenceCallback>>
       ppd_reference_resolution_queue_;
+
+  // Queued ReverseIndex() calls.
+  base::circular_deque<ReverseIndexQueueEntry> reverse_index_resolution_queue_;
 
   // Locale we're using for grabbing stuff from the server.  Empty if we haven't
   // determined it yet.

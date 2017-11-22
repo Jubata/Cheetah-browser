@@ -46,7 +46,7 @@
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/Page.h"
 #include "core/page/ValidationMessageClient.h"
-#include "core/testing/DummyPageHolder.h"
+#include "core/testing/PageTestBase.h"
 #include "platform/heap/Handle.h"
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/weborigin/ReferrerPolicy.h"
@@ -58,24 +58,12 @@
 
 namespace blink {
 
-class DocumentTest : public ::testing::Test {
+class DocumentTest : public PageTestBase {
  protected:
-  void SetUp() override;
-
   void TearDown() override { ThreadState::Current()->CollectAllGarbage(); }
 
-  Document& GetDocument() const { return dummy_page_holder_->GetDocument(); }
-  Page& GetPage() const { return dummy_page_holder_->GetPage(); }
-
   void SetHtmlInnerHTML(const char*);
-
- private:
-  std::unique_ptr<DummyPageHolder> dummy_page_holder_;
 };
-
-void DocumentTest::SetUp() {
-  dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
-}
 
 void DocumentTest::SetHtmlInnerHTML(const char* html_content) {
   GetDocument().documentElement()->SetInnerHTMLFromString(
@@ -847,7 +835,7 @@ TEST_F(DocumentTest, SandboxDisablesAppCache) {
 
   ApplicationCacheHost* appcache_host =
       GetDocument().Loader()->GetApplicationCacheHost();
-  appcache_host->host_ = WTF::MakeUnique<MockWebApplicationCacheHost>();
+  appcache_host->host_ = std::make_unique<MockWebApplicationCacheHost>();
   appcache_host->SelectCacheWithManifest(
       KURL(NullURL(), "https://test.com/foobar/manifest"));
   MockWebApplicationCacheHost* mock_web_host =
@@ -868,7 +856,7 @@ TEST_F(DocumentTest, SuboriginDisablesAppCache) {
 
   ApplicationCacheHost* appcache_host =
       GetDocument().Loader()->GetApplicationCacheHost();
-  appcache_host->host_ = WTF::MakeUnique<MockWebApplicationCacheHost>();
+  appcache_host->host_ = std::make_unique<MockWebApplicationCacheHost>();
   appcache_host->SelectCacheWithManifest(
       KURL(NullURL(), "https://test.com/foobar/manifest"));
   MockWebApplicationCacheHost* mock_web_host =

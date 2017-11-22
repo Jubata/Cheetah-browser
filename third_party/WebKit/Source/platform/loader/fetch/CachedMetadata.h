@@ -32,10 +32,10 @@
 #define CachedMetadata_h
 
 #include <stdint.h>
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 
 namespace blink {
@@ -49,13 +49,13 @@ class PLATFORM_EXPORT CachedMetadata : public RefCounted<CachedMetadata> {
   static scoped_refptr<CachedMetadata> Create(uint32_t data_type_id,
                                               const char* data,
                                               size_t size) {
-    return WTF::AdoptRef(new CachedMetadata(data_type_id, data, size));
+    return base::AdoptRef(new CachedMetadata(data_type_id, data, size));
   }
 
   static scoped_refptr<CachedMetadata> CreateFromSerializedData(
       const char* data,
       size_t size) {
-    return WTF::AdoptRef(new CachedMetadata(data, size));
+    return base::AdoptRef(new CachedMetadata(data, size));
   }
 
   ~CachedMetadata() {}

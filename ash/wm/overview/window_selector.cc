@@ -11,8 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "ash/accessibility/accessibility_delegate.h"
-#include "ash/accessibility_types.h"
+#include "ash/accessibility/accessibility_controller.h"
 #include "ash/metrics/user_metrics_recorder.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/screen_util.h"
@@ -20,6 +19,7 @@
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/overview_window_drag_controller.h"
+#include "ash/wm/overview/rounded_rect_view.h"
 #include "ash/wm/overview/window_grid.h"
 #include "ash/wm/overview/window_selector_delegate.h"
 #include "ash/wm/overview/window_selector_item.h"
@@ -103,38 +103,6 @@ struct WindowSelectorItemForRoot {
   const aura::Window* root_window;
 };
 
-// A View having rounded corners and a specified background color which is
-// only painted within the bounds defined by the rounded corners.
-// TODO(tdanderson): This duplicates code from RoundedImageView. Refactor these
-//                   classes and move into ui/views.
-class RoundedContainerView : public views::View {
- public:
-  RoundedContainerView(int corner_radius, SkColor background)
-      : corner_radius_(corner_radius), background_(background) {}
-
-  ~RoundedContainerView() override {}
-
-  void OnPaint(gfx::Canvas* canvas) override {
-    views::View::OnPaint(canvas);
-
-    SkScalar radius = SkIntToScalar(corner_radius_);
-    const SkScalar kRadius[8] = {radius, radius, radius, radius,
-                                 radius, radius, radius, radius};
-    SkPath path;
-    gfx::Rect bounds(size());
-    path.addRoundRect(gfx::RectToSkRect(bounds), kRadius);
-
-    canvas->ClipPath(path, true);
-    canvas->DrawColor(background_);
-  }
-
- private:
-  int corner_radius_;
-  SkColor background_;
-
-  DISALLOW_COPY_AND_ASSIGN(RoundedContainerView);
-};
-
 // Triggers a shelf visibility update on all root window controllers.
 void UpdateShelfVisibility() {
   for (aura::Window* root : Shell::GetAllRootWindows())
@@ -191,8 +159,8 @@ views::Widget* CreateTextFilter(views::TextfieldController* controller,
 
   // Use |container| to specify the padding surrounding the text and to give
   // the textfield rounded corners.
-  views::View* container = new RoundedContainerView(kTextFilterCornerRadius,
-                                                    kTextFilterBackgroundColor);
+  views::View* container =
+      new RoundedRectView(kTextFilterCornerRadius, kTextFilterBackgroundColor);
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   const int text_height =
       std::max(kTextFilterIconSize,
@@ -346,8 +314,8 @@ void WindowSelector::Init(const WindowList& windows,
   display::Screen::GetScreen()->AddObserver(this);
   base::RecordAction(base::UserMetricsAction("WindowSelector_Overview"));
   // Send an a11y alert.
-  Shell::Get()->accessibility_delegate()->TriggerAccessibilityAlert(
-      A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED);
+  Shell::Get()->accessibility_controller()->TriggerAccessibilityAlert(
+      mojom::AccessibilityAlert::WINDOW_OVERVIEW_MODE_ENTERED);
 
   UpdateShelfVisibility();
 }
@@ -554,6 +522,16 @@ void WindowSelector::CompleteDrag(WindowSelectorItem* item,
   DCHECK(window_drag_controller_.get());
   DCHECK_EQ(item, window_drag_controller_->item());
   window_drag_controller_->CompleteDrag(location_in_screen);
+}
+
+void WindowSelector::ActivateDraggedWindow() {
+  DCHECK(window_drag_controller_.get());
+  window_drag_controller_->ActivateDraggedWindow();
+}
+
+void WindowSelector::ResetDraggedWindowGesture() {
+  DCHECK(window_drag_controller_.get());
+  window_drag_controller_->ResetGesture();
 }
 
 void WindowSelector::PositionWindows(bool animate) {
@@ -766,6 +744,8 @@ void WindowSelector::OnSplitViewStateChanged(
     // Otherwise adjust the overview window grid bounds if overview mode is
     // active at the moment.
     OnDisplayBoundsChanged();
+    for (auto& grid : grid_list_)
+      grid->UpdateCannotSnapWarningVisibility();
   }
 }
 

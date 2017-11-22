@@ -113,6 +113,7 @@ content::WebUIDataSource* CreateMdExtensionsSource() {
 
   // Add common strings.
   source->AddLocalizedString("add", IDS_ADD);
+  source->AddLocalizedString("back", IDS_ACCNAME_BACK);
   source->AddLocalizedString("cancel", IDS_CANCEL);
   source->AddLocalizedString("close", IDS_CLOSE);
   source->AddLocalizedString("confirm", IDS_CONFIRM);
@@ -143,11 +144,14 @@ content::WebUIDataSource* CreateMdExtensionsSource() {
   source->AddLocalizedString("openInDevtool",
                              IDS_MD_EXTENSIONS_ERROR_LAUNCH_DEVTOOLS);
   source->AddLocalizedString("stackTrace", IDS_MD_EXTENSIONS_ERROR_STACK_TRACE);
-  source->AddLocalizedString("getMoreExtensions",
-                             IDS_MD_EXTENSIONS_SIDEBAR_GET_MORE_EXTENSIONS);
+  // TODO(dpapad): Unify with Settings' IDS_SETTINGS_WEB_STORE.
+  source->AddLocalizedString("openChromeWebStore",
+                             IDS_MD_EXTENSIONS_SIDEBAR_OPEN_CHROME_WEB_STORE);
   source->AddLocalizedString("keyboardShortcuts",
                              IDS_MD_EXTENSIONS_SIDEBAR_KEYBOARD_SHORTCUTS);
   source->AddLocalizedString("guestModeMessage", IDS_MD_EXTENSIONS_GUEST_MODE);
+  source->AddLocalizedString("incognitoInfoWarning",
+                             IDS_EXTENSIONS_INCOGNITO_WARNING);
   source->AddLocalizedString("itemId", IDS_MD_EXTENSIONS_ITEM_ID);
   source->AddLocalizedString("itemInspectViews",
                              IDS_MD_EXTENSIONS_ITEM_INSPECT_VIEWS);
@@ -174,6 +178,8 @@ content::WebUIDataSource* CreateMdExtensionsSource() {
   source->AddLocalizedString("extensionEnabled",
                              IDS_MD_EXTENSIONS_EXTENSION_ENABLED);
   source->AddLocalizedString("appEnabled", IDS_MD_EXTENSIONS_APP_ENABLED);
+  source->AddString("itemExtensionPath",
+                    l10n_util::GetStringUTF16(IDS_EXTENSIONS_PATH));
   source->AddLocalizedString("itemOff", IDS_MD_EXTENSIONS_ITEM_OFF);
   source->AddLocalizedString("itemOn", IDS_MD_EXTENSIONS_ITEM_ON);
   source->AddLocalizedString("itemOptions", IDS_MD_EXTENSIONS_ITEM_OPTIONS);
@@ -279,6 +285,8 @@ content::WebUIDataSource* CreateMdExtensionsSource() {
   source->AddLocalizedString("toolbarPack", IDS_MD_EXTENSIONS_TOOLBAR_PACK);
   source->AddLocalizedString("toolbarUpdateNow",
                              IDS_MD_EXTENSIONS_TOOLBAR_UPDATE_NOW);
+  source->AddLocalizedString("toolbarUpdateNowTooltip",
+                             IDS_MD_EXTENSIONS_TOOLBAR_UPDATE_NOW_TOOLTIP);
   source->AddLocalizedString(
       "updateRequiredByPolicy",
       IDS_MD_EXTENSIONS_DISABLED_UPDATE_REQUIRED_BY_POLICY);

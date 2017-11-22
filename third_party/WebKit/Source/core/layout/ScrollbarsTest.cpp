@@ -8,6 +8,7 @@
 #include "core/frame/VisualViewport.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/input/EventHandler.h"
+#include "core/inspector/DevToolsEmulator.h"
 #include "core/layout/LayoutView.h"
 #include "core/page/Page.h"
 #include "core/paint/PaintLayerScrollableArea.h"
@@ -96,21 +97,19 @@ class ScrollbarsTest : public ::testing::WithParamInterface<bool>,
 
 class ScrollbarsTestWithVirtualTimer : public ScrollbarsTest {
  public:
-  void TearDown() override {
-    // The SimTest destructor calls runPendingTasks. This is a problem because
-    // if there are any repeating tasks, advancing virtual time will cause the
-    // runloop to busy loop. Disabling virtual time here fixes that.
-    WebView().Scheduler()->DisableVirtualTimeForTesting();
+  void SetUp() override {
+    ScrollbarsTest::SetUp();
+    WebView().Scheduler()->EnableVirtualTime();
   }
 
   void TimeAdvance() {
     WebView().Scheduler()->SetVirtualTimePolicy(
-        WebViewScheduler::VirtualTimePolicy::ADVANCE);
+        WebViewScheduler::VirtualTimePolicy::kAdvance);
   }
 
   void StopVirtualTimeAndExitRunLoop() {
     WebView().Scheduler()->SetVirtualTimePolicy(
-        WebViewScheduler::VirtualTimePolicy::PAUSE);
+        WebViewScheduler::VirtualTimePolicy::kPause);
     testing::ExitRunLoop();
   }
 
@@ -140,9 +139,9 @@ TEST_P(ScrollbarsTest, DocumentStyleRecalcPreservesScrollbars) {
   WebView().Resize(WebSize(800, 600));
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  request.Complete(
-      "<!DOCTYPE html>"
-      "<style> body { width: 1600px; height: 1200px; } </style>");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style> body { width: 1600px; height: 1200px; } </style>)HTML");
   auto* layout_viewport = GetDocument().View()->LayoutViewportScrollableArea();
 
   Compositor().BeginFrame();
@@ -977,21 +976,251 @@ TEST_P(ScrollbarsTest,
   Compositor().BeginFrame();
 }
 
-// http://crbug.com/633321, Disable since VirtualTime not work for Android.
+// Make sure native scrollbar can change by Emulator.
+// Disable on Android since Android always enable OverlayScrollbar.
+
 #if defined(OS_ANDROID)
-#define DISABLE_ON_ANDROID(test_name) DISABLED_##test_name
+TEST_P(ScrollbarsTest, DISABLED_NativeScrollbarChangeToMobileByEmulator) {
 #else
-#define DISABLE_ON_ANDROID(test_name) test_name
+TEST_P(ScrollbarsTest, NativeScrollbarChangeToMobileByEmulator) {
 #endif
+  ScopedOverlayScrollbarsForTest overlay_scrollbars(false);
+  ScrollbarTheme::SetMockScrollbarsEnabled(false);
+  WebView().Resize(WebSize(200, 200));
+
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style type='text/css'>
+    body {
+      height: 10000px;
+      margin: 0;
+    }
+    #d1 {
+      height: 200px;
+      width: 200px;
+      overflow: auto;
+    }
+    #d2 {
+      height: 2000px;
+    }
+    </style>
+    <div id='d1'>
+      <div id='d2'/>
+    </div>
+  )HTML");
+
+  Compositor().BeginFrame();
+
+  Document& document = GetDocument();
+
+  ScrollableArea* root_scrollable =
+      document.View()->LayoutViewportScrollableArea();
+
+  Element* div = document.getElementById("d1");
+
+  ScrollableArea* div_scrollable =
+      ToLayoutBox(div->GetLayoutObject())->GetScrollableArea();
+
+  VisualViewport& viewport = WebView().GetPage()->GetVisualViewport();
+
+  DCHECK(root_scrollable->VerticalScrollbar());
+  DCHECK(!root_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  DCHECK(!root_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  DCHECK(!root_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+
+  DCHECK(!viewport.LayerForHorizontalScrollbar()->Parent());
+
+  DCHECK(div_scrollable->VerticalScrollbar());
+  DCHECK(!div_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  DCHECK(!div_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  DCHECK(!div_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+
+  // Turn on mobile emulator.
+  WebDeviceEmulationParams params;
+  params.screen_position = WebDeviceEmulationParams::kMobile;
+  WebView().EnableDeviceEmulation(params);
+
+  // For root Scrollbar, mobile emulator will change them to page VisualViewport
+  // scrollbar layer.
+  EXPECT_TRUE(viewport.LayerForHorizontalScrollbar()->Parent());
+
+  // Ensure div scrollbar also change to mobile overlay theme.
+  EXPECT_TRUE(div_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+
+  ScrollbarThemeOverlay& theme =
+      (ScrollbarThemeOverlay&)div_scrollable->VerticalScrollbar()->GetTheme();
+  EXPECT_TRUE(theme.IsMobileTheme());
+
+  // Turn off mobile emulator.
+  WebView().DisableDeviceEmulation();
+
+  EXPECT_TRUE(root_scrollable->VerticalScrollbar());
+  EXPECT_FALSE(root_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  EXPECT_FALSE(root_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  EXPECT_FALSE(root_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+
+  DCHECK(!viewport.LayerForHorizontalScrollbar()->Parent());
+
+  EXPECT_TRUE(div_scrollable->VerticalScrollbar());
+  EXPECT_FALSE(div_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  EXPECT_FALSE(div_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  EXPECT_FALSE(div_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+}
+
+// Make sure root custom scrollbar can change by Emulator but div custom
+// scrollbar not.
+TEST_P(ScrollbarsTest, CustomScrollbarChangeToMobileByEmulator) {
+  ScopedOverlayScrollbarsForTest overlay_scrollbars(false);
+  ScrollbarTheme::SetMockScrollbarsEnabled(false);
+  WebView().Resize(WebSize(200, 200));
+
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style type='text/css'>
+    body {
+      height: 10000px;
+      margin: 0;
+    }
+    #d1 {
+      height: 200px;
+      width: 200px;
+      overflow: auto;
+    }
+    #d2 {
+      height: 2000px;
+    }
+    ::-webkit-scrollbar {
+      width: 10px;
+    }
+    </style>
+    <div id='d1'>
+      <div id='d2'/>
+    </div>
+  )HTML");
+
+  Compositor().BeginFrame();
+
+  Document& document = GetDocument();
+
+  ScrollableArea* root_scrollable =
+      document.View()->LayoutViewportScrollableArea();
+
+  Element* div = document.getElementById("d1");
+
+  ScrollableArea* div_scrollable =
+      ToLayoutBox(div->GetLayoutObject())->GetScrollableArea();
+
+  VisualViewport& viewport = WebView().GetPage()->GetVisualViewport();
+
+  DCHECK(root_scrollable->VerticalScrollbar());
+  DCHECK(root_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  DCHECK(!root_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  DCHECK(!root_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+
+  DCHECK(!viewport.LayerForHorizontalScrollbar()->Parent());
+
+  DCHECK(div_scrollable->VerticalScrollbar());
+  DCHECK(div_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  DCHECK(!div_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  DCHECK(!div_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+
+  // Turn on mobile emulator.
+  WebDeviceEmulationParams params;
+  params.screen_position = WebDeviceEmulationParams::kMobile;
+  WebView().EnableDeviceEmulation(params);
+
+  // For root Scrollbar, mobile emulator will change them to page VisualViewport
+  // scrollbar layer.
+  EXPECT_TRUE(viewport.LayerForVerticalScrollbar());
+  EXPECT_FALSE(root_scrollable->VerticalScrollbar());
+
+  EXPECT_TRUE(div_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+
+  // Turn off mobile emulator.
+  WebView().DisableDeviceEmulation();
+
+  EXPECT_TRUE(root_scrollable->VerticalScrollbar());
+  EXPECT_TRUE(root_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  EXPECT_FALSE(root_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  EXPECT_FALSE(root_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+
+  DCHECK(!viewport.LayerForHorizontalScrollbar()->Parent());
+
+  EXPECT_TRUE(div_scrollable->VerticalScrollbar());
+  EXPECT_TRUE(div_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  EXPECT_FALSE(div_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  EXPECT_FALSE(div_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+}
+
+// Ensure custom scrollbar recreate when style owner change,
+TEST_P(ScrollbarsTest, CustomScrollbarWhenStyleOwnerChange) {
+  ScopedOverlayScrollbarsForTest overlay_scrollbars(false);
+  ScrollbarTheme::SetMockScrollbarsEnabled(false);
+  WebView().Resize(WebSize(200, 200));
+
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style type='text/css'>
+    #d1 {
+      height: 200px;
+      width: 200px;
+      overflow: auto;
+    }
+    #d2 {
+      height: 2000px;
+    }
+    ::-webkit-scrollbar {
+      width: 10px;
+    }
+    .custom::-webkit-scrollbar {
+      width: 5px;
+    }
+    </style>
+    <div id='d1'>
+      <div id='d2'></div>
+    </div>
+  )HTML");
+
+  Compositor().BeginFrame();
+
+  Document& document = GetDocument();
+
+  Element* div = document.getElementById("d1");
+
+  ScrollableArea* div_scrollable =
+      ToLayoutBox(div->GetLayoutObject())->GetScrollableArea();
+
+  DCHECK(div_scrollable->VerticalScrollbar());
+  DCHECK(div_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  DCHECK_EQ(div_scrollable->VerticalScrollbar()->Width(), 10);
+  DCHECK(!div_scrollable->VerticalScrollbar()->IsOverlayScrollbar());
+  DCHECK(!div_scrollable->VerticalScrollbar()->GetTheme().IsMockTheme());
+
+  div->setAttribute(HTMLNames::classAttr, "custom");
+  Compositor().BeginFrame();
+
+  EXPECT_TRUE(div_scrollable->VerticalScrollbar()->IsCustomScrollbar());
+  EXPECT_EQ(div_scrollable->VerticalScrollbar()->Width(), 5);
+}
 
 // Make sure overlay scrollbars on non-composited scrollers fade out and set
 // the hidden bit as needed.
 // To avoid TSAN/ASAN race issue, this test use Virtual Time and give scrollbar
 // a huge fadeout delay.
+// Disable on Android since VirtualTime not work for Android.
+// http://crbug.com/633321
+#if defined(OS_ANDROID)
 TEST_P(ScrollbarsTestWithVirtualTimer,
-       DISABLE_ON_ANDROID(TestNonCompositedOverlayScrollbarsFade)) {
-  // Will crash if move EnableVirtualTime before test body.
-  WebView().Scheduler()->EnableVirtualTime();
+       DISABLED_TestNonCompositedOverlayScrollbarsFade) {
+#else
+TEST_P(ScrollbarsTestWithVirtualTimer, TestNonCompositedOverlayScrollbarsFade) {
+#endif
   TimeAdvance();
   constexpr double kMockOverlayFadeOutDelayInSeconds = 5.0;
   constexpr double kMockOverlayFadeOutDelayMS =
@@ -1092,7 +1321,7 @@ class ScrollbarAppearanceTest
   ScrollbarAppearanceTest() : mock_scrollbars_(false, GetParam()) {}
 
  private:
-  FrameTestHelpers::UseMockScrollbarSettings mock_scrollbars_;
+  UseMockScrollbarSettings mock_scrollbars_;
 };
 
 class StubWebThemeEngine : public WebThemeEngine {
@@ -1143,9 +1372,9 @@ TEST_P(ScrollbarAppearanceTest, ThemeEngineDefinesMinimumThumbLength) {
   WebView().Resize(WebSize(800, 600));
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  request.Complete(
-      "<!DOCTYPE html>"
-      "<style> body { width: 1000000px; height: 1000000px; } </style>");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style> body { width: 1000000px; height: 1000000px; } </style>)HTML");
   ScrollableArea* scrollable_area =
       GetDocument().View()->LayoutViewportScrollableArea();
 
@@ -1169,9 +1398,9 @@ TEST_P(ScrollbarAppearanceTest, HugeScrollingThumbPosition) {
   WebView().Resize(WebSize(1000, 1000));
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  request.Complete(
-      "<!DOCTYPE html>"
-      "<style> body { margin: 0px; height: 10000000px; } </style>");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style> body { margin: 0px; height: 10000000px; } </style>)HTML");
   ScrollableArea* scrollable_area =
       GetDocument().View()->LayoutViewportScrollableArea();
 

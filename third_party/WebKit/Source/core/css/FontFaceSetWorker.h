@@ -5,17 +5,17 @@
 #ifndef FontFaceSetWorker_h
 #define FontFaceSetWorker_h
 
+#include "base/macros.h"
 #include "bindings/core/v8/Iterable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "core/css/FontFace.h"
 #include "core/css/FontFaceSet.h"
 #include "core/css/OffscreenFontSelector.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/Vector.h"
 
 namespace blink {
 
@@ -25,7 +25,6 @@ class CORE_EXPORT FontFaceSetWorker final
     : public FontFaceSet,
       public Supplement<WorkerGlobalScope> {
   USING_GARBAGE_COLLECTED_MIXIN(FontFaceSetWorker);
-  WTF_MAKE_NONCOPYABLE(FontFaceSetWorker);
 
  public:
   ~FontFaceSetWorker() override;
@@ -54,7 +53,7 @@ class CORE_EXPORT FontFaceSetWorker final
     return GetWorker()->GetFontSelector();
   }
   // For workers, this is always an empty list.
-  const HeapListHashSet<Member<FontFace>>& CSSConnectedFontFaceList()
+  const HeapLinkedHashSet<Member<FontFace>>& CSSConnectedFontFaceList()
       const override {
     DCHECK(
         GetFontSelector()->GetFontFaceCache()->CssConnectedFontFaces().size() ==
@@ -72,6 +71,7 @@ class CORE_EXPORT FontFaceSetWorker final
   explicit FontFaceSetWorker(WorkerGlobalScope&);
 
   void FireDoneEventIfPossible() override;
+  DISALLOW_COPY_AND_ASSIGN(FontFaceSetWorker);
 };
 
 }  // namespace blink

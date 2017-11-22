@@ -188,6 +188,7 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
   void RestoreTextureUnitBindings(unsigned unit) const override;
   void RestoreVertexAttribArray(unsigned index) override;
   void RestoreAllExternalTextureBindingsIfNeeded() override;
+  void RestoreDeviceWindowRectangles() const override;
 
   void ClearAllAttributes() const override;
   void RestoreAllAttributes() const override;
@@ -384,6 +385,8 @@ class GPU_EXPORT GLES2DecoderPassthroughImpl : public GLES2Decoder {
   const FeatureInfo::FeatureFlags& features() const {
     return feature_info_->feature_flags();
   }
+
+  void ExitCommandProcessingEarly() { commands_to_process_ = 0; }
 
   GLES2DecoderClient* client_;
 

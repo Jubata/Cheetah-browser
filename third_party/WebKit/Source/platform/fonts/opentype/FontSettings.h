@@ -5,10 +5,10 @@
 #ifndef FontSettings_h
 #define FontSettings_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -79,7 +79,7 @@ class PLATFORM_EXPORT FontFeatureSettings
 
  public:
   static scoped_refptr<FontFeatureSettings> Create() {
-    return WTF::AdoptRef(new FontFeatureSettings());
+    return base::AdoptRef(new FontFeatureSettings());
   }
 
  private:
@@ -93,7 +93,7 @@ class PLATFORM_EXPORT FontVariationSettings
 
  public:
   static scoped_refptr<FontVariationSettings> Create() {
-    return WTF::AdoptRef(new FontVariationSettings());
+    return base::AdoptRef(new FontVariationSettings());
   }
 
   unsigned GetHash() const;

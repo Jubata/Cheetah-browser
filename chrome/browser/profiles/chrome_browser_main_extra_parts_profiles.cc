@@ -15,6 +15,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browsing_data/chrome_browsing_data_remover_delegate_factory.h"
 #include "chrome/browser/chrome_browser_main.h"
+#include "chrome/browser/consent_auditor/consent_auditor_factory.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
@@ -132,7 +133,7 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/data_usage/data_use_ui_tab_model_factory.h"
-#include "chrome/browser/android/search_geolocation/search_geolocation_service.h"
+#include "chrome/browser/android/search_permissions/search_permissions_service.h"
 #else
 #include "chrome/browser/cryptauth/chrome_cryptauth_service_factory.h"
 #include "chrome/browser/media/router/media_router_ui_service_factory.h"
@@ -224,6 +225,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
   CloudPrintProxyServiceFactory::GetInstance();
 #endif
+  ConsentAuditorFactory::GetInstance();
   CookieSettingsFactory::GetInstance();
   NotifierStateTrackerFactory::GetInstance();
   data_use_measurement::ChromeDataUseAscriberServiceFactory::GetInstance();
@@ -332,7 +334,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   ProfileSyncServiceFactory::GetInstance();
   ProtocolHandlerRegistryFactory::GetInstance();
 #if defined(OS_ANDROID)
-  SearchGeolocationService::Factory::GetInstance();
+  SearchPermissionsService::Factory::GetInstance();
 #endif
 #if BUILDFLAG(ENABLE_SESSION_SERVICE)
   SessionServiceFactory::GetInstance();

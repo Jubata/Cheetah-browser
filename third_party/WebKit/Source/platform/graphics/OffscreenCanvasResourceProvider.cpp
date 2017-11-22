@@ -4,7 +4,9 @@
 
 #include "platform/graphics/OffscreenCanvasResourceProvider.h"
 
+#include "base/numerics/checked_math.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "gpu/command_buffer/common/capabilities.h"
 #include "platform/graphics/gpu/SharedGpuContext.h"
 #include "platform/wtf/typed_arrays/ArrayBuffer.h"
 #include "platform/wtf/typed_arrays/Uint8Array.h"
@@ -14,6 +16,7 @@
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkSwizzle.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 
 namespace blink {
@@ -45,6 +48,8 @@ void OffscreenCanvasResourceProvider::TransferResource(
   resource->is_overlay_candidate = false;
 }
 
+// TODO(xlai): Handle error cases when, by any reason,
+// OffscreenCanvasResourceProvider fails to get image data.
 void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedBitmap(
     viz::TransferableResource& resource,
     scoped_refptr<StaticBitmapImage> image) {
@@ -61,11 +66,19 @@ void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedBitmap(
   SkImageInfo image_info = SkImageInfo::Make(
       width_, height_, kN32_SkColorType,
       image->IsPremultiplied() ? kPremul_SkAlphaType : kUnpremul_SkAlphaType);
+  if (image_info.isEmpty())
+    return;
   // TODO(xlai): Optimize to avoid copying pixels. See crbug.com/651456.
   // However, in the case when |image| is texture backed, this function call
   // does a GPU readback which is required.
-  image->PaintImageForCurrentFrame().GetSkImage()->readPixels(
-      image_info, pixels, image_info.minRowBytes(), 0, 0);
+  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSkImage();
+  if (sk_image->bounds().isEmpty())
+    return;
+  bool read_pixels_successful =
+      sk_image->readPixels(image_info, pixels, image_info.minRowBytes(), 0, 0);
+  DCHECK(read_pixels_successful);
+  if (!read_pixels_successful)
+    return;
   resource.mailbox_holder.mailbox = frame_resource->shared_bitmap_->id();
   resource.mailbox_holder.texture_target = 0;
   resource.is_software = true;
@@ -73,6 +86,8 @@ void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedBitmap(
   resources_.insert(next_resource_id_, std::move(frame_resource));
 }
 
+// TODO(xlai): Handle error cases when, by any reason,
+// OffscreenCanvasResourceProvider fails to get image data.
 void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedGPUContext(
     viz::TransferableResource& resource,
     scoped_refptr<StaticBitmapImage> image) {
@@ -91,10 +106,11 @@ void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedGPUContext(
   if (!context_provider_wrapper)
     return;
 
-  gpu::gles2::GLES2Interface* gl =
-      context_provider_wrapper->ContextProvider()->ContextGL();
-  GrContext* gr = context_provider_wrapper->ContextProvider()->GetGrContext();
-  if (!gl || !gr)
+  WebGraphicsContext3DProvider* provider =
+      context_provider_wrapper->ContextProvider();
+  gpu::gles2::GLES2Interface* gl = provider->ContextGL();
+  GrContext* gr = provider->GetGrContext();
+  if (!gr)
     return;
 
   std::unique_ptr<FrameResource> frame_resource =
@@ -103,6 +119,11 @@ void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedGPUContext(
   SkImageInfo info = SkImageInfo::Make(
       width_, height_, kN32_SkColorType,
       image->IsPremultiplied() ? kPremul_SkAlphaType : kUnpremul_SkAlphaType);
+  if (info.isEmpty())
+    return;
+  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSkImage();
+  if (sk_image->bounds().isEmpty())
+    return;
   scoped_refptr<ArrayBuffer> dst_buffer =
       ArrayBuffer::CreateOrNull(width_ * height_, info.bytesPerPixel());
   // If it fails to create a buffer for copying the pixel data, then exit early.
@@ -111,8 +132,11 @@ void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedGPUContext(
   unsigned byte_length = dst_buffer->ByteLength();
   scoped_refptr<Uint8Array> dst_pixels =
       Uint8Array::Create(std::move(dst_buffer), 0, byte_length);
-  image->PaintImageForCurrentFrame().GetSkImage()->readPixels(
-      info, dst_pixels->Data(), info.minRowBytes(), 0, 0);
+  bool read_pixels_successful =
+      sk_image->readPixels(info, dst_pixels->Data(), info.minRowBytes(), 0, 0);
+  DCHECK(read_pixels_successful);
+  if (!read_pixels_successful)
+    return;
   DCHECK(frame_resource->context_provider_wrapper_.get() ==
              context_provider_wrapper.get() ||
          !frame_resource->context_provider_wrapper_);
@@ -120,18 +144,36 @@ void OffscreenCanvasResourceProvider::SetTransferableResourceToSharedGPUContext(
   if (frame_resource->texture_id_ == 0u ||
       !frame_resource->context_provider_wrapper_) {
     frame_resource->context_provider_wrapper_ = context_provider_wrapper;
+
+    void* src = dst_pixels->Data();
+
+    // The bitmap in |src| uses the skia N32 byte order.
+    constexpr bool bitmap_is_bgra = kN32_SkColorType == kBGRA_8888_SkColorType;
+    bool texture_can_be_bgra =
+        provider->GetCapabilities().texture_format_bgra8888;
+
+    // Convert to RGBA if we can't upload BGRA. This is slow sad times.
+    std::unique_ptr<uint32_t[]> swizzled;
+    if (bitmap_is_bgra && !texture_can_be_bgra) {
+      size_t num_pixels =
+          (base::CheckedNumeric<size_t>(width_) * height_).ValueOrDie();
+      swizzled = std::make_unique<uint32_t[]>(num_pixels);
+      SkSwapRB(swizzled.get(), static_cast<uint32_t*>(src), num_pixels);
+      src = swizzled.get();
+    }
+
     gl->GenTextures(1, &frame_resource->texture_id_);
     gl->BindTexture(GL_TEXTURE_2D, frame_resource->texture_id_);
     GLenum format =
-        (kN32_SkColorType == kRGBA_8888_SkColorType) ? GL_RGBA : GL_BGRA_EXT;
-    gl->TexImage2D(GL_TEXTURE_2D, 0, format, width_, height_, 0, format,
-                   GL_UNSIGNED_BYTE, nullptr);
+        bitmap_is_bgra && texture_can_be_bgra ? GL_BGRA_EXT : GL_RGBA;
     gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    gl->TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, format,
-                      GL_UNSIGNED_BYTE, dst_pixels->Data());
+    gl->TexImage2D(GL_TEXTURE_2D, 0, format, width_, height_, 0, format,
+                   GL_UNSIGNED_BYTE, src);
+
+    swizzled.reset();
 
     gl->GenMailboxCHROMIUM(frame_resource->mailbox_.name);
     gl->ProduceTextureCHROMIUM(GL_TEXTURE_2D, frame_resource->mailbox_.name);

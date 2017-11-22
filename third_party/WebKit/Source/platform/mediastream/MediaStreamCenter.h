@@ -32,10 +32,10 @@
 #define MediaStreamCenter_h
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebMediaStreamCenterClient.h"
 
@@ -63,12 +63,10 @@ class PLATFORM_EXPORT MediaStreamCenter final
                                 MediaStreamComponent* clone);
   void DidSetMediaStreamTrackEnabled(MediaStreamComponent*);
   void DidSetContentHint(MediaStreamComponent*);
-  bool DidStopMediaStreamTrack(MediaStreamComponent*);
   std::unique_ptr<AudioSourceProvider> CreateWebAudioSourceFromMediaStreamTrack(
       MediaStreamComponent*);
 
   void DidCreateMediaStreamAndTracks(MediaStreamDescriptor*);
-  void DidStopLocalMediaStream(MediaStreamDescriptor*);
 
   void DidStopMediaStreamSource(MediaStreamSource*);
 

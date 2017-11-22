@@ -186,7 +186,7 @@ class ContentSandboxHelper : public gpu::GpuSandboxHelper {
 // Main function for starting the Gpu process.
 int GpuMain(const MainFunctionParams& parameters) {
   TRACE_EVENT0("gpu", "GpuMain");
-  base::trace_event::TraceLog::GetInstance()->SetProcessName("GPU Process");
+  base::trace_event::TraceLog::GetInstance()->set_process_name("GPU Process");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventGpuProcessSortIndex);
 
@@ -255,9 +255,10 @@ int GpuMain(const MainFunctionParams& parameters) {
 #elif defined(OS_LINUX)
 #error "Unsupported Linux platform."
 #elif defined(OS_MACOSX)
-    // This is necessary for CoreAnimation layers hosted in the GPU process to
-    // be drawn. See http://crbug.com/312462.
-    std::unique_ptr<base::MessagePump> pump(new base::MessagePumpCFRunLoop());
+    // Cross-process CoreAnimation requires a CFRunLoop to function at all, and
+    // requires a NSRunLoop to not starve under heavy load. See:
+    // https://crbug.com/312462#c51 and https://crbug.com/783298
+    std::unique_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
     main_message_loop.reset(new base::MessageLoop(std::move(pump)));
 #else
     main_message_loop.reset(
@@ -348,12 +349,12 @@ bool StartSandboxLinux(gpu::GpuWatchdogThread* watchdog_thread,
   if (watchdog_thread) {
     // SandboxLinux needs to be able to ensure that the thread
     // has really been stopped.
-    service_manager::SandboxLinux::StopThread(watchdog_thread);
+    service_manager::SandboxLinux::GetInstance()->StopThread(watchdog_thread);
   }
 
   // SandboxLinux::InitializeSandbox() must always be called
   // with only one thread.
-  service_manager::SandboxSeccompBPF::Options sandbox_options;
+  service_manager::SandboxLinux::Options sandbox_options;
   sandbox_options.use_amd_specific_policies =
       gpu_info && angle::IsAMD(gpu_info->active_gpu().vendor_id);
   sandbox_options.accelerated_video_decode_enabled =
@@ -364,11 +365,10 @@ bool StartSandboxLinux(gpu::GpuWatchdogThread* watchdog_thread,
       !gpu_prefs.disable_vaapi_accelerated_video_encode;
 #endif
 
-  bool res = service_manager::SandboxLinux::InitializeSandbox(
+  bool res = service_manager::SandboxLinux::GetInstance()->InitializeSandbox(
       service_manager::SandboxTypeFromCommandLine(
           *base::CommandLine::ForCurrentProcess()),
-      GetGpuProcessPreSandboxHook(sandbox_options.use_amd_specific_policies),
-      sandbox_options);
+      base::BindOnce(GpuProcessPreSandboxHook), sandbox_options);
 
   if (watchdog_thread) {
     base::Thread::Options thread_options;

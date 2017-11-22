@@ -32,8 +32,10 @@ UiScene::Elements GetVisibleElements(UiElement* root,
   for (auto& element : *root) {
     if (element.IsVisible() && predicate(&element)) {
       elements.push_back(&element);
-      if (target && target->id() == element.id())
+      if (target && target->id() == element.id()) {
         elements.push_back(reticle);
+        reticle->set_draw_phase(element.draw_phase());
+      }
     }
   }
   return elements;
@@ -48,7 +50,7 @@ void UiScene::AddUiElement(UiElementName parent,
   CHECK_GE(element->draw_phase(), 0);
   if (gl_initialized_) {
     for (auto& child : *element) {
-      child.Initialize();
+      child.Initialize(provider_);
     }
   }
   GetUiElementByName(parent)->AddChild(std::move(element));
@@ -71,39 +73,27 @@ bool UiScene::OnBeginFrame(const base::TimeTicks& current_time,
   is_dirty_ = false;
 
   {
+    TRACE_EVENT0("gpu", "UiScene::OnBeginFrame.UpdateBindings");
+
+    // Propagate updates across bindings.
+    for (auto& element : *root_element_) {
+      element.UpdateBindings();
+      element.set_update_phase(UiElement::kUpdatedBindings);
+    }
+  }
+
+  {
     TRACE_EVENT0("gpu", "UiScene::OnBeginFrame.UpdateAnimations");
 
     // Process all animations and pre-binding work. I.e., induce any
     // time-related "dirtiness" on the scene graph.
     for (auto& element : *root_element_) {
       element.set_update_phase(UiElement::kDirty);
-      if (element.DoBeginFrame(current_time, look_at))
+      if ((element.DoBeginFrame(current_time, look_at) ||
+           element.updated_bindings_this_frame()) &&
+          (element.IsVisible() || element.updated_visiblity_this_frame())) {
         scene_dirty = true;
-      element.set_update_phase(UiElement::kUpdatedAnimations);
-    }
-  }
-
-  {
-    TRACE_EVENT0("gpu", "UiScene::OnBeginFrame.UpdateBindings");
-
-    // Propagate updates across bindings.
-    for (auto& element : *root_element_) {
-      if (element.UpdateBindings())
-        scene_dirty = true;
-      element.set_update_phase(UiElement::kUpdatedBindings);
-    }
-  }
-
-  {
-    TRACE_EVENT0("gpu", "UiScene::OnBeginFrame.UpdateOpacity");
-
-    if (scene_dirty) {
-      // We must now update visibility since some texture update optimizations
-      // rely on accurate visibility information.
-      root_element_->UpdateComputedOpacityRecursive();
-    } else {
-      for (auto& element : *root_element_)
-        element.set_update_phase(UiElement::kUpdatedComputedOpacity);
+      }
     }
   }
 
@@ -142,7 +132,7 @@ bool UiScene::OnBeginFrame(const base::TimeTicks& current_time,
     // size of their children. This must be done in reverse order, such that
     // children are correctly sized when laid out by their parent.
     for (auto& element : base::Reversed(*root_element_)) {
-      element.LayOutChildren();
+      element.DoLayOutChildren();
       element.set_update_phase(UiElement::kUpdatedLayout);
     }
   }
@@ -231,7 +221,15 @@ UiScene::Elements UiScene::GetVisibleControllerElements() const {
           Reticle* reticle = static_cast<Reticle*>(element);
           // If the reticle has a non-null target element,
           // it would have been positioned elsewhere.
-          return !reticle->TargetElement();
+          bool need_to_add_reticle = !reticle->TargetElement();
+          if (need_to_add_reticle) {
+            // We must always update the reticle's draw phase when it is
+            // included in a list of elements we vend. The other controller
+            // elements are drawn in the foreground phase, so we will update the
+            // reticle to match here.
+            reticle->set_draw_phase(kPhaseForeground);
+          }
+          return need_to_add_reticle;
         }
         return element->draw_phase() == kPhaseForeground;
       });
@@ -249,10 +247,12 @@ UiScene::~UiScene() = default;
 
 // TODO(vollick): we should bind to gl-initialized state. Elements will
 // initialize when the binding fires, automatically.
-void UiScene::OnGlInitialized() {
+void UiScene::OnGlInitialized(SkiaSurfaceProvider* provider) {
   gl_initialized_ = true;
+  provider_ = provider;
+
   for (auto& element : *root_element_)
-    element.Initialize();
+    element.Initialize(provider);
 }
 
 }  // namespace vr

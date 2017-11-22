@@ -78,6 +78,54 @@
           "ignore_task_failure": false,
           "io_timeout": 3600
         }
+      },
+      {
+        "args": [
+          "loading.desktop",
+          "-v",
+          "--upload-results",
+          "--output-format=histograms",
+          "--output-format=json-test-results",
+          "--browser=release",
+          "--xvfb",
+          "--also-run-disabled-tests"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "loading.desktop",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 3600
+        }
+      },
+      {
+        "args": [
+          "loading.desktop",
+          "-v",
+          "--upload-results",
+          "--output-format=histograms",
+          "--output-format=json-test-results",
+          "--browser=reference",
+          "--xvfb",
+          "--also-run-disabled-tests"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "loading.desktop.reference",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 3600
+        }
       }
     ]
   },
@@ -98,11 +146,49 @@
         "override_compile_targets": [
           "telemetry_perf_tests_new"
         ],
+        "merge": {
+          "args": [
+            "--verbose"
+          ],
+          "script": "//tools/perf/core/merge_script.py"
+        },
         "swarming": {
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
               "id": "swarm823-c4",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 3600
+        }
+      }
+    ]
+  },
+  "Linux ChromeOS Perf (mus-viz)": {
+    "isolated_scripts": [
+      {
+        "args": [
+          "smoothness.top_25_smooth",
+          "-v",
+          "--upload-results",
+          "--output-format=chartjson",
+          "--browser=exact",
+          "--browser-executable=./chrome"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "smoothness.top_25_smooth",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "id": "build34-a1",
               "pool": "Chrome-perf-fyi"
             }
           ],

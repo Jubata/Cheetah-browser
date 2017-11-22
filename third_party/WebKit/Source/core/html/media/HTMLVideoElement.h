@@ -158,7 +158,7 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
 
   HTMLVideoElement(Document&);
 
-  // SuspendableObject functions.
+  // PausableObject functions.
   void ContextDestroyed(ExecutionContext*) final;
 
   bool LayoutObjectIsNeeded(const ComputedStyle&) override;
@@ -166,9 +166,10 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
   void AttachLayoutTree(AttachContext&) override;
   void ParseAttribute(const AttributeModificationParams&) override;
   bool IsPresentationAttribute(const QualifiedName&) const override;
-  void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                            const AtomicString&,
-                                            MutableStylePropertySet*) override;
+  void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) override;
   bool IsURLAttribute(const Attribute&) const override;
   const AtomicString ImageSourceURL() const override;
 

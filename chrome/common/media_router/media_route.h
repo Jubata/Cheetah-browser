@@ -32,7 +32,7 @@ class MediaRoute {
   // |media_route_id|: ID of the route.
   // |media_source|: Description of source of the route.
   // |media_sink|: The sink that is receiving the media.
-  // |description|: Description of the route to be displayed.
+  // |description|: Human readable description of the casting activity.
   // |is_local|: true if the route was created from this browser.
   // |custom_controller_path|: custom controller path if it is given by route
   //     provider. empty otherwise.
@@ -54,6 +54,11 @@ class MediaRoute {
     media_route_id_ = media_route_id;
   }
   const MediaRoute::Id& media_route_id() const { return media_route_id_; }
+
+  void set_presentation_id(const std::string& presentation_id) {
+    presentation_id_ = presentation_id;
+  }
+  const std::string& presentation_id() const { return presentation_id_; }
 
   void set_media_source(const MediaSource& media_source) {
     media_source_ = media_source;
@@ -112,14 +117,17 @@ class MediaRoute {
   // The media route identifier.
   MediaRoute::Id media_route_id_;
 
+  // The ID of the presentation that this route is associated with.
+  std::string presentation_id_;
+
   // The media source being routed.
   MediaSource media_source_;
 
   // The ID of sink being routed to.
   MediaSink::Id media_sink_id_;
 
-  // The description of the media route activity, for example
-  // "Playing Foo Bar Music All Access."
+  // Human readable description of the casting activity.  Examples:
+  // "Mirroring tab (www.example.com)", "Casting media", "Casting YouTube"
   std::string description_;
 
   // |true| if the route is created locally (versus discovered by a media route

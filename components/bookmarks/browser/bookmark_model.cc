@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <string>
 #include <utility>
 
 #include "base/bind.h"
@@ -117,8 +118,7 @@ BookmarkModel::BookmarkModel(std::unique_ptr<BookmarkClient> client)
       other_node_(nullptr),
       mobile_node_(nullptr),
       next_node_id_(1),
-      observers_(
-          base::ObserverList<BookmarkModelObserver>::NOTIFY_EXISTING_ONLY),
+      observers_(base::ObserverListPolicy::EXISTING_ONLY),
       loaded_signal_(base::WaitableEvent::ResetPolicy::MANUAL,
                      base::WaitableEvent::InitialState::NOT_SIGNALED),
       extensive_changes_(0),
@@ -327,9 +327,9 @@ const gfx::Image& BookmarkModel::GetFavicon(const BookmarkNode* node) {
   DCHECK(node);
   if (node->favicon_state() == BookmarkNode::INVALID_FAVICON) {
     BookmarkNode* mutable_node = AsMutable(node);
-    LoadFavicon(mutable_node,
-                client_->PreferTouchIcon() ? favicon_base::TOUCH_ICON
-                                           : favicon_base::FAVICON);
+    LoadFavicon(mutable_node, client_->PreferTouchIcon()
+                                  ? favicon_base::IconType::kTouchIcon
+                                  : favicon_base::IconType::kFavicon);
   }
   return node->favicon();
 }
@@ -355,10 +355,13 @@ void BookmarkModel::SetTitle(const BookmarkNode* node,
     observer.OnWillChangeBookmarkNode(this, node);
 
   // The title index doesn't support changing the title, instead we remove then
-  // add it back.
-  index_->Remove(node);
+  // add it back. Only do this for URL nodes. A directory node can have its
+  // title changed but should be excluded from the index.
+  if (node->is_url())
+    index_->Remove(node);
   AsMutable(node)->SetTitle(title);
-  index_->Add(node);
+  if (node->is_url())
+    index_->Add(node);
 
   if (store_.get())
     store_->ScheduleSave();
@@ -1021,10 +1024,13 @@ void BookmarkModel::OnFaviconDataAvailable(
     node->set_favicon(image_result.image);
     node->set_icon_url(image_result.icon_url);
     FaviconLoaded(node);
-  } else if (icon_type == favicon_base::TOUCH_ICON) {
+  } else if (icon_type == favicon_base::IconType::kTouchIcon) {
     // Couldn't load the touch icon, fallback to the regular favicon.
     DCHECK(client_->PreferTouchIcon());
-    LoadFavicon(node, favicon_base::FAVICON);
+    LoadFavicon(node, favicon_base::IconType::kFavicon);
+  } else {
+    // No favicon available, but we still notify observers.
+    FaviconLoaded(node);
   }
 }
 

@@ -13,14 +13,19 @@
 #include "build/build_config.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/common/chrome_features.h"
-#include "ui/base/test/user_interactive_test_case.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/shell.h"  // nogncheck
+#include "ash/public/cpp/config.h"
+#include "ash/shell.h"  // mash-ok
+#include "chrome/browser/chromeos/ash_config.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "chrome/browser/ui/test/test_browser_dialog_mac.h"
 #endif
 
 namespace {
@@ -52,8 +57,10 @@ class WidgetCloser : public views::WidgetObserver {
   void OnWidgetDestroyed(views::Widget* widget) override {
     widget_->RemoveObserver(this);
     widget_ = nullptr;
-    base::RunLoop::QuitCurrentDeprecated();
+    run_loop_.Quit();
   }
+
+  void Wait() { run_loop_.Run(); }
 
  private:
   void CloseAction() {
@@ -73,6 +80,7 @@ class WidgetCloser : public views::WidgetObserver {
     }
   }
 
+  base::RunLoop run_loop_;
   const DialogAction action_;
   views::Widget* widget_;
 
@@ -115,17 +123,22 @@ void TestBrowserDialog::RunDialog() {
       views::test::WidgetTest::GetAllWidgets();
 #if defined(OS_CHROMEOS)
   // GetAllWidgets() uses AuraTestHelper to find the aura root window, but
-  // that's not used on browser_tests, so ask ash.
-  views::Widget::GetAllChildWidgets(ash::Shell::GetPrimaryRootWindow(),
-                                    &widgets_before);
+  // that's not used on browser_tests, so ask ash. Under mash the MusClient
+  // provides the list of root windows, so this isn't needed.
+  if (chromeos::GetAshConfig() != ash::Config::MASH) {
+    views::Widget::GetAllChildWidgets(ash::Shell::GetPrimaryRootWindow(),
+                                      &widgets_before);
+  }
 #endif  // OS_CHROMEOS
 
   ShowDialog(NameFromTestCase());
   views::Widget::Widgets widgets_after =
       views::test::WidgetTest::GetAllWidgets();
 #if defined(OS_CHROMEOS)
-  views::Widget::GetAllChildWidgets(ash::Shell::GetPrimaryRootWindow(),
-                                    &widgets_after);
+  if (chromeos::GetAshConfig() != ash::Config::MASH) {
+    views::Widget::GetAllChildWidgets(ash::Shell::GetPrimaryRootWindow(),
+                                      &widgets_after);
+  }
 #endif  // OS_CHROMEOS
 
   auto added = base::STLSetDifference<std::vector<views::Widget*>>(
@@ -154,7 +167,10 @@ void TestBrowserDialog::RunDialog() {
   }
 
   WidgetCloser closer(added[0], action);
-  ::test::RunTestInteractively();
+#if defined(OS_MACOSX)
+  internal::TestBrowserDialogInteractiveSetUp();
+#endif
+  closer.Wait();
 }
 
 void TestBrowserDialog::UseMdOnly() {

@@ -90,6 +90,8 @@ class HEADLESS_EXPORT VirtualTimeController
   void NotifyTaskBudgetRequested(TaskEntry* entry, int budget_ms);
   void TaskReadyToAdvance(TaskEntry* entry);
 
+  void DeleteTasksIfRequested();
+
   void SetVirtualTimePolicy(const base::TimeDelta& next_budget);
   void SetVirtualTimePolicyDone(
       std::unique_ptr<emulation::SetVirtualTimePolicyResult>);
@@ -109,7 +111,9 @@ class HEADLESS_EXPORT VirtualTimeController
   base::TimeDelta accumulated_time_;
 
   std::list<TaskEntry> tasks_;
+  std::set<RepeatingTask*> tasks_to_delete_;
   bool in_notify_tasks_and_advance_ = false;
+  bool iterating_over_tasks_ = false;
 };
 
 }  // namespace headless

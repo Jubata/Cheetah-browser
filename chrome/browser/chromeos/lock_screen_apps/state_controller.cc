@@ -93,6 +93,7 @@ void StateController::RegisterProfilePrefs(PrefRegistrySimple* registry) {
 
 StateController::StateController()
     : binding_(this),
+      note_window_observer_(this),
       app_window_observer_(this),
       session_observer_(this),
       input_devices_observer_(this),
@@ -223,7 +224,8 @@ void StateController::InitializeWithCryptoKey(Profile* profile,
   lock_screen_data_ =
       base::MakeUnique<extensions::lock_screen_data::LockScreenItemStorage>(
           profile, g_browser_process->local_state(), crypto_key,
-          base_path.AppendASCII("lock_screen_app_data"));
+          base_path.AppendASCII("lock_screen_app_data"),
+          base_path.AppendASCII("lock_screen_app_data_v2"));
   lock_screen_data_->SetSessionLocked(false);
 
   chromeos::NoteTakingHelper::Get()->SetProfileWithEnabledLockScreenApps(
@@ -327,7 +329,7 @@ void StateController::RequestNewLockScreenNote(LockScreenNoteOrigin origin) {
   // This is not needed for requests that come from the lock UI as the lock
   // screen UI sends these requests *after* the note action launch animation.
   if (origin == LockScreenNoteOrigin::kStylusEject &&
-      !ash::switches::IsUsingMdLogin()) {
+      ash::switches::IsUsingWebUiLock()) {
     app_launch_delayed_for_animation_ = true;
     return;
   }
@@ -372,9 +374,27 @@ void StateController::OnSessionStateChanged() {
   OnNoteTakingAvailabilityChanged();
 }
 
+void StateController::OnWindowVisibilityChanged(aura::Window* window,
+                                                bool visible) {
+  if (lock_screen_note_state_ != TrayActionState::kLaunching)
+    return;
+
+  if (window != note_app_window_->GetNativeWindow() || !window->IsVisible())
+    return;
+
+  note_window_observer_.Remove(window);
+
+  UpdateLockScreenNoteState(TrayActionState::kActive);
+  if (focus_cycler_delegate_) {
+    focus_cycler_delegate_->RegisterLockScreenAppFocusHandler(base::Bind(
+        &StateController::FocusAppWindow, weak_ptr_factory_.GetWeakPtr()));
+  }
+}
+
 void StateController::OnAppWindowAdded(extensions::AppWindow* app_window) {
   if (note_app_window_ != app_window)
     return;
+  note_window_observer_.Add(note_app_window_->GetNativeWindow());
   first_app_run_toast_manager_->RunForAppWindow(note_app_window_);
   note_app_window_metrics_->AppWindowCreated(app_window);
 }
@@ -430,6 +450,9 @@ extensions::AppWindow* StateController::CreateAppWindowForLockScreenAction(
   if (action != extensions::api::app_runtime::ACTION_TYPE_NEW_NOTE)
     return nullptr;
 
+  if (note_app_window_)
+    return nullptr;
+
   if (lock_screen_note_state_ != TrayActionState::kLaunching)
     return nullptr;
 
@@ -454,11 +477,6 @@ extensions::AppWindow* StateController::CreateAppWindowForLockScreenAction(
       new extensions::AppWindow(context, app_delegate.release(), extension);
   app_window_observer_.Add(extensions::AppWindowRegistry::Get(
       lock_screen_profile_creator_->lock_screen_profile()));
-  UpdateLockScreenNoteState(TrayActionState::kActive);
-  if (focus_cycler_delegate_) {
-    focus_cycler_delegate_->RegisterLockScreenAppFocusHandler(base::Bind(
-        &StateController::FocusAppWindow, weak_ptr_factory_.GetWeakPtr()));
-  }
   return note_app_window_;
 }
 
@@ -535,6 +553,7 @@ void StateController::SetScreenState(ScreenState screen_state) {
 void StateController::ResetNoteTakingWindowAndMoveToNextState(
     bool close_window,
     CloseLockScreenNoteReason reason) {
+  note_window_observer_.RemoveAll();
   app_window_observer_.RemoveAll();
   stylus_eject_timestamp_ = base::TimeTicks();
   app_launch_delayed_for_animation_ = false;
@@ -551,10 +570,12 @@ void StateController::ResetNoteTakingWindowAndMoveToNextState(
         CloseLockScreenNoteReason::kCount);
   }
 
-  if (note_app_window_) {
-    if (focus_cycler_delegate_)
-      focus_cycler_delegate_->UnregisterLockScreenAppFocusHandler();
+  if (focus_cycler_delegate_ &&
+      lock_screen_note_state_ == TrayActionState::kActive) {
+    focus_cycler_delegate_->UnregisterLockScreenAppFocusHandler();
+  }
 
+  if (note_app_window_) {
     if (close_window && note_app_window_->GetBaseWindow()) {
       // Whenever we close the window we want to immediately hide it without
       // animating, as the underlying UI implements a special animation. If we

@@ -37,8 +37,8 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/CString.h"
 #include "public/web/WebSettings.h"
 
@@ -154,7 +154,7 @@ void ProgressTracker::WillStartLoading(unsigned long identifier,
           ProgressBarCompletion::kLoadEvent &&
       (HaveParsedAndPainted() || priority < kResourceLoadPriorityHigh))
     return;
-  progress_items_.Set(identifier, WTF::MakeUnique<ProgressItem>(
+  progress_items_.Set(identifier, std::make_unique<ProgressItem>(
                                       kProgressItemDefaultEstimatedLength));
 }
 

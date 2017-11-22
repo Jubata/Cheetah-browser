@@ -283,6 +283,23 @@ TEST_P(CompositedLayerMappingTest, LargeScaleInterestRect) {
             RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
 }
 
+TEST_P(CompositedLayerMappingTest, PerspectiveInterestRect) {
+  SetBodyInnerHTML(R"HTML(<div style='left: 400px; position: absolute;'>
+    <div id=target style='transform: perspective(1000px) rotateX(-100deg);'>
+      <div style='width: 1200px; height: 835px; background: lightblue;
+          border: 1px solid black'></div>
+    </div>
+  )HTML");
+
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  Element* element = GetDocument().getElementById("target");
+  PaintLayer* paint_layer =
+      ToLayoutBoxModelObject(element->GetLayoutObject())->Layer();
+  ASSERT_TRUE(!!paint_layer->GraphicsLayerBacking());
+  EXPECT_EQ(IntRect(0, 0, 1202, 837),
+            RecomputeInterestRect(paint_layer->GraphicsLayerBacking()));
+}
+
 TEST_P(CompositedLayerMappingTest, 3D90DegRotatedTallInterestRect) {
   // It's rotated 90 degrees about the X axis, which means its visual content
   // rect is empty, and so the interest rect is the default (0, 0, 4000, 4000)
@@ -2051,71 +2068,6 @@ TEST_P(CompositedLayerMappingTest,
   ASSERT_TRUE(child_mapping->AncestorClippingLayer());
   EXPECT_TRUE(child_mapping->AncestorClippingLayer()->MaskLayer());
   ASSERT_TRUE(child_mapping->AncestorClippingMaskLayer());
-}
-
-TEST_P(CompositedLayerMappingTest,
-       BorderRadiusPreventsSquashingWithInlineTransform) {
-  // When a node with inline transform has siblings with border radius and
-  // composited children, those siblings must not be squashed because it
-  // prevents application of a border radius clip mask.
-  SetBodyInnerHTML(R"HTML(
-    <style>
-      .precursor {
-        width: 100px;
-        height: 40px;
-      }
-      .container {
-        position: relative;
-        top: 20px;
-        width: 100px;
-        height: 40px;
-        border: 1px solid black;
-        border-radius: 10px;
-        overflow: hidden;
-      }
-      .contents {
-        height: 200px;
-        width: 200px;
-        position: relative;
-        top: -10px;
-        left: -10px;
-      }
-    </style>
-    <div id='precursor' class='precursor'
-     style='transform: translateZ(0);'>
-    </div>
-    <div id='container1' class='container'>
-      <div id='contents1' class='contents'></div>
-    </div>
-    <div id='container2' class='container'>
-      <div id='contents2' class='contents'></div>
-    </div>
-  )HTML");
-  GetDocument().View()->UpdateAllLifecyclePhases();
-
-  Element* first_child = GetDocument().getElementById("contents1");
-  ASSERT_TRUE(first_child);
-  PaintLayer* first_child_paint_layer =
-      ToLayoutBoxModelObject(first_child->GetLayoutObject())->Layer();
-  ASSERT_TRUE(first_child_paint_layer);
-  CompositedLayerMapping* first_child_mapping =
-      first_child_paint_layer->GetCompositedLayerMapping();
-  ASSERT_TRUE(first_child_mapping);
-  ASSERT_TRUE(first_child_mapping->AncestorClippingLayer());
-  EXPECT_TRUE(first_child_mapping->AncestorClippingLayer()->MaskLayer());
-  ASSERT_TRUE(first_child_mapping->AncestorClippingMaskLayer());
-
-  Element* second_child = GetDocument().getElementById("contents2");
-  ASSERT_TRUE(second_child);
-  PaintLayer* second_child_paint_layer =
-      ToLayoutBoxModelObject(second_child->GetLayoutObject())->Layer();
-  ASSERT_TRUE(second_child_paint_layer);
-  CompositedLayerMapping* second_child_mapping =
-      second_child_paint_layer->GetCompositedLayerMapping();
-  ASSERT_TRUE(second_child_mapping);
-  ASSERT_TRUE(second_child_mapping->AncestorClippingLayer());
-  EXPECT_TRUE(second_child_mapping->AncestorClippingLayer()->MaskLayer());
-  ASSERT_TRUE(second_child_mapping->AncestorClippingMaskLayer());
 }
 
 TEST_P(CompositedLayerMappingTest, StickyPositionMainThreadOffset) {

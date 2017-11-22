@@ -72,7 +72,6 @@ class WebDateTimeChooserCompletion;
 class WebGestureEvent;
 class WebMouseEvent;
 class WebSpeechRecognizer;
-class WebStorageNamespace;
 class WebTappedInfo;
 class WebURLRequest;
 struct WebDateTimeChooserParams;
@@ -280,8 +279,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                              blink::WebNavigationPolicy policy,
                              bool suppress_opener,
                              blink::WebSandboxFlags sandbox_flags) override;
-  blink::WebWidget* CreatePopupMenu(blink::WebPopupType popup_type) override;
-  blink::WebStorageNamespace* CreateSessionStorageNamespace() override;
+  blink::WebWidget* CreatePopup(blink::WebPopupType popup_type) override;
+  int64_t GetSessionStorageNamespaceId() override;
   void PrintPage(blink::WebLocalFrame* frame) override;
   bool EnumerateChosenDirectory(
       const blink::WebString& path,
@@ -506,6 +505,12 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnEnablePreferredSizeChangedMode();
   void OnEnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
   void OnDisableAutoResize(const gfx::Size& new_size);
+  void OnSetLocalSurfaceIdForAutoResize(
+      uint64_t sequence_number,
+      const gfx::Size& min_size,
+      const gfx::Size& max_size,
+      const content::ScreenInfo& screen_info,
+      const viz::LocalSurfaceId& local_surface_id);
   void OnEnumerateDirectoryResponse(int id,
                                     const std::vector<base::FilePath>& paths);
   void OnMediaPlayerActionAt(const gfx::Point& location,

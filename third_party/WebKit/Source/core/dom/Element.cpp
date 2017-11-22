@@ -37,6 +37,7 @@
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSSelectorWatch.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSValue.h"
@@ -44,7 +45,6 @@
 #include "core/css/SelectorQuery.h"
 #include "core/css/StyleChangeReason.h"
 #include "core/css/StyleEngine.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/resolver/SelectorFilterParentScope.h"
 #include "core/css/resolver/StyleResolver.h"
@@ -1708,10 +1708,6 @@ Node::InsertionNotificationRequest Element::InsertedInto(
   // by the time we reach updateId
   ContainerNode::InsertedInto(insertion_point);
 
-  if (ContainsFullScreenElement() && parentElement() &&
-      !parentElement()->ContainsFullScreenElement())
-    SetContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
-
   DCHECK(!HasRareData() || !GetElementRareData()->HasPseudoElements());
 
   if (!insertion_point->IsInTreeScope())
@@ -1850,7 +1846,8 @@ void Element::AttachLayoutTree(AttachContext& context) {
 
   AddCallbackSelectors();
 
-  if (HasRareData() && !GetLayoutObject()) {
+  if (HasRareData() && !GetLayoutObject() &&
+      !GetElementRareData()->GetComputedStyle()) {
     if (ElementAnimations* element_animations =
             GetElementRareData()->GetElementAnimations()) {
       element_animations->CssAnimations().Cancel();
@@ -1969,7 +1966,7 @@ scoped_refptr<ComputedStyle> Element::StyleForLayoutObject() {
   }
 
   if (style->HasTransform()) {
-    if (const StylePropertySet* inline_style = InlineStyle()) {
+    if (const CSSPropertyValueSet* inline_style = InlineStyle()) {
       style->SetHasInlineTransform(
           inline_style->HasProperty(CSSPropertyTransform) ||
           inline_style->HasProperty(CSSPropertyTranslate) ||
@@ -2577,7 +2574,7 @@ void Element::ChildrenChanged(const ChildrenChange& change) {
 
   // TODO(hayato): Confirm that we can skip this if a shadow tree is v1.
   if (ElementShadow* shadow = Shadow())
-    shadow->SetNeedsDistributionRecalc();
+    shadow->SetNeedsDistributionRecalcWillBeSetNeedsAssignmentRecalc();
 }
 
 void Element::FinishParsingChildren() {
@@ -2837,6 +2834,11 @@ bool Element::hasAttributeNS(const AtomicString& namespace_uri,
   return GetElementData()->Attributes().Find(q_name);
 }
 
+void Element::focus(FocusOptions options) {
+  focus(FocusParams(SelectionBehaviorOnFocus::kRestore, kWebFocusTypeNone,
+                    nullptr, options));
+}
+
 void Element::focus(const FocusParams& params) {
   if (!isConnected())
     return;
@@ -2867,7 +2869,7 @@ void Element::focus(const FocusParams& params) {
                          .FindFocusableElementInShadowHost(*this);
     if (found && IsShadowIncludingInclusiveAncestorOf(found)) {
       found->focus(FocusParams(SelectionBehaviorOnFocus::kReset,
-                               kWebFocusTypeForward, nullptr));
+                               kWebFocusTypeForward, nullptr, params.options));
       return;
     }
   }
@@ -2891,6 +2893,12 @@ void Element::focus(const FocusParams& params) {
 
 void Element::UpdateFocusAppearance(
     SelectionBehaviorOnFocus selection_behavior) {
+  UpdateFocusAppearanceWithOptions(selection_behavior, FocusOptions());
+}
+
+void Element::UpdateFocusAppearanceWithOptions(
+    SelectionBehaviorOnFocus selection_behavior,
+    const FocusOptions& options) {
   if (selection_behavior == SelectionBehaviorOnFocus::kNone)
     return;
   if (IsRootEditableElement(*this)) {
@@ -2918,10 +2926,13 @@ void Element::UpdateFocusAppearance(
             .SetShouldClearTypingStyle(true)
             .SetDoNotSetFocus(true)
             .Build());
-    frame->Selection().RevealSelection();
+    if (!options.preventScroll())
+      frame->Selection().RevealSelection();
   } else if (GetLayoutObject() &&
              !GetLayoutObject()->IsLayoutEmbeddedContent()) {
-    GetLayoutObject()->ScrollRectToVisible(BoundingBox());
+    if (!options.preventScroll()) {
+      GetLayoutObject()->ScrollRectToVisible(BoundingBox());
+    }
   }
 }
 
@@ -3093,12 +3104,6 @@ void Element::setInnerHTML(const StringOrTrustedHTML& string_or_html,
                     ? string_or_html.GetAsString()
                     : string_or_html.GetAsTrustedHTML()->toString();
 
-  // TODO(mkwst): This is an ugly hack that will be resolved once `TreatNullAs`
-  // is treated as an extended attribute on the `DOMString` type rather than
-  // as an extended attribute on the attribute. https://crbug.com/714866
-  if (html == "null")
-    html = "";
-
   SetInnerHTMLFromString(html, exception_state);
 }
 
@@ -3154,12 +3159,6 @@ void Element::setOuterHTML(const StringOrTrustedHTML& string_or_html,
   String html = string_or_html.IsString()
                     ? string_or_html.GetAsString()
                     : string_or_html.GetAsTrustedHTML()->toString();
-
-  // TODO(mkwst): This is an ugly hack that will be resolved once `TreatNullAs`
-  // is treated as an extended attribute on the `DOMString` type rather than
-  // as an extended attribute on the attribute. https://crbug.com/714866
-  if (html == "null")
-    html = "";
 
   SetOuterHTMLFromString(html, exception_state);
 }
@@ -3488,7 +3487,7 @@ const ComputedStyle* Element::EnsureComputedStyle(
 }
 
 const ComputedStyle* Element::NonLayoutObjectComputedStyle() const {
-  if (GetLayoutObject() || !HasRareData())
+  if (!HasRareData())
     return nullptr;
 
   return GetElementRareData()->GetComputedStyle();
@@ -3504,11 +3503,12 @@ bool Element::ShouldStoreNonLayoutObjectComputedStyle(
     const ComputedStyle& style) const {
 #if DCHECK_IS_ON()
   if (style.Display() == EDisplay::kContents)
-    DCHECK(!GetLayoutObject());
+    DCHECK(!GetLayoutObject() || IsPseudoElement());
 #endif
 
   return style.Display() == EDisplay::kContents ||
-         IsHTMLOptGroupElement(*this) || IsHTMLOptionElement(*this);
+         IsHTMLOptGroupElement(*this) || IsHTMLOptionElement(*this) ||
+         IsSVGStopElement(*this);
 }
 
 void Element::StoreNonLayoutObjectComputedStyle(
@@ -4076,7 +4076,7 @@ static bool NeedsURLResolutionForInlineStyle(const Element& element,
     return false;
   if (old_document.BaseURL() == new_document.BaseURL())
     return false;
-  const StylePropertySet* style = element.InlineStyle();
+  const CSSPropertyValueSet* style = element.InlineStyle();
   if (!style)
     return false;
   for (unsigned i = 0; i < style->PropertyCount(); ++i) {
@@ -4087,7 +4087,7 @@ static bool NeedsURLResolutionForInlineStyle(const Element& element,
 }
 
 static void ReResolveURLsInInlineStyle(const Document& document,
-                                       MutableStylePropertySet& style) {
+                                       MutableCSSPropertyValueSet& style) {
   for (unsigned i = 0; i < style.PropertyCount(); ++i) {
     const CSSValue& value = style.PropertyAt(i).Value();
     if (value.MayContainUrl())
@@ -4338,7 +4338,7 @@ void Element::SynchronizeStyleAttributeInternal() const {
   DCHECK(GetElementData());
   DCHECK(GetElementData()->style_attribute_is_dirty_);
   GetElementData()->style_attribute_is_dirty_ = false;
-  const StylePropertySet* inline_style = InlineStyle();
+  const CSSPropertyValueSet* inline_style = InlineStyle();
   const_cast<Element*>(this)->SetSynchronizedLazyAttribute(
       styleAttr,
       inline_style ? AtomicString(inline_style->AsText()) : g_empty_atom);
@@ -4350,25 +4350,25 @@ CSSStyleDeclaration* Element::style() {
   return &EnsureElementRareData().EnsureInlineCSSStyleDeclaration(this);
 }
 
-StylePropertyMap* Element::styleMap() {
+StylePropertyMap* Element::attributeStyleMap() {
   if (!IsStyledElement())
     return nullptr;
   return &EnsureElementRareData().EnsureInlineStylePropertyMap(this);
 }
 
-MutableStylePropertySet& Element::EnsureMutableInlineStyle() {
+MutableCSSPropertyValueSet& Element::EnsureMutableInlineStyle() {
   DCHECK(IsStyledElement());
-  Member<StylePropertySet>& inline_style =
+  Member<CSSPropertyValueSet>& inline_style =
       EnsureUniqueElementData().inline_style_;
   if (!inline_style) {
     CSSParserMode mode = (!IsHTMLElement() || GetDocument().InQuirksMode())
                              ? kHTMLQuirksMode
                              : kHTMLStandardMode;
-    inline_style = MutableStylePropertySet::Create(mode);
+    inline_style = MutableCSSPropertyValueSet::Create(mode);
   } else if (!inline_style->IsMutable()) {
     inline_style = inline_style->MutableCopy();
   }
-  return *ToMutableStylePropertySet(inline_style);
+  return *ToMutableCSSPropertyValueSet(inline_style);
 }
 
 void Element::ClearMutableInlineStyleIfEmpty() {
@@ -4380,7 +4380,7 @@ void Element::ClearMutableInlineStyleIfEmpty() {
 inline void Element::SetInlineStyleFromString(
     const AtomicString& new_style_string) {
   DCHECK(IsStyledElement());
-  Member<StylePropertySet>& inline_style = GetElementData()->inline_style_;
+  Member<CSSPropertyValueSet>& inline_style = GetElementData()->inline_style_;
 
   // Avoid redundant work if we're using shared attribute data with already
   // parsed inline style.
@@ -4397,8 +4397,9 @@ inline void Element::SetInlineStyleFromString(
         CSSParser::ParseInlineStyleDeclaration(new_style_string, this);
   } else {
     DCHECK(inline_style->IsMutable());
-    static_cast<MutableStylePropertySet*>(inline_style.Get())
+    static_cast<MutableCSSPropertyValueSet*>(inline_style.Get())
         ->ParseDeclarationList(new_style_string,
+                               GetDocument().SecureContextMode(),
                                GetDocument().ElementSheet().Contents());
   }
 }
@@ -4487,6 +4488,7 @@ bool Element::SetInlineStyleProperty(CSSPropertyID property_id,
   DCHECK(IsStyledElement());
   bool did_change = EnsureMutableInlineStyle()
                         .SetProperty(property_id, value, important,
+                                     GetDocument().SecureContextMode(),
                                      GetDocument().ElementSheet().Contents())
                         .did_change;
   if (did_change)
@@ -4523,7 +4525,7 @@ void Element::UpdatePresentationAttributeStyle() {
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     CSSValueID identifier) {
   DCHECK(IsStyledElement());
@@ -4531,7 +4533,7 @@ void Element::AddPropertyToPresentationAttributeStyle(
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     double value,
     CSSPrimitiveValue::UnitType unit) {
@@ -4540,15 +4542,16 @@ void Element::AddPropertyToPresentationAttributeStyle(
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     const String& value) {
   DCHECK(IsStyledElement());
-  style->SetProperty(property_id, value, false);
+  style->SetProperty(property_id, value, false,
+                     GetDocument().SecureContextMode());
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     const CSSValue* value) {
   DCHECK(IsStyledElement());
@@ -4561,7 +4564,7 @@ void Element::LogAddElementIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 2> argv;
@@ -4577,7 +4580,7 @@ void Element::LogAddElementIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 3> argv;
@@ -4595,7 +4598,7 @@ void Element::LogAddElementIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 4> argv;
@@ -4612,7 +4615,7 @@ void Element::LogUpdateAttributeIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 4> argv;

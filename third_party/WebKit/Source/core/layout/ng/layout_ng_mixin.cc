@@ -4,8 +4,10 @@
 
 #include "core/layout/ng/layout_ng_mixin.h"
 
+#include <memory>
+#include <utility>
+
 #include "core/layout/HitTestLocation.h"
-#include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/ng/inline/ng_inline_fragment_iterator.h"
 #include "core/layout/ng/inline/ng_inline_node_data.h"
 #include "core/layout/ng/ng_constraint_space.h"
@@ -32,7 +34,7 @@ NGInlineNodeData* LayoutNGMixin<Base>::GetNGInlineNodeData() const {
 
 template <typename Base>
 void LayoutNGMixin<Base>::ResetNGInlineNodeData() {
-  ng_inline_node_data_ = WTF::MakeUnique<NGInlineNodeData>();
+  ng_inline_node_data_ = std::make_unique<NGInlineNodeData>();
 }
 
 // The current fragment from the last layout cycle for this box.
@@ -142,7 +144,7 @@ LayoutNGMixin<Base>::CachedLayoutResultForTesting() {
 template <typename Base>
 void LayoutNGMixin<Base>::SetPaintFragment(
     scoped_refptr<const NGPhysicalFragment> fragment) {
-  paint_fragment_ = WTF::MakeUnique<NGPaintFragment>(std::move(fragment));
+  paint_fragment_ = std::make_unique<NGPaintFragment>(std::move(fragment));
 }
 
 template <typename Base>
@@ -168,7 +170,8 @@ bool LayoutNGMixin<Base>::NodeAtPoint(
     const HitTestLocation& location_in_container,
     const LayoutPoint& accumulated_offset,
     HitTestAction action) {
-  if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled()) {
+  if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled() ||
+      !PaintFragment()) {
     return LayoutBlockFlow::NodeAtPoint(result, location_in_container,
                                         accumulated_offset, action);
   }
@@ -189,6 +192,7 @@ bool LayoutNGMixin<Base>::NodeAtPoint(
                                                accumulated_offset, action);
 }
 
+template class LayoutNGMixin<LayoutTableCell>;
 template class LayoutNGMixin<LayoutBlockFlow>;
 
 }  // namespace blink

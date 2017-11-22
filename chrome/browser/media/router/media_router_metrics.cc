@@ -15,9 +15,6 @@ namespace media_router {
 
 namespace {
 
-constexpr char kLegacyCastPresentationUrlPrefix[] =
-    "https://google.com/cast#__castAppId__=";
-
 PresentationUrlType GetPresentationUrlType(const GURL& url) {
   if (url.SchemeIs(kDialPresentationUrlScheme))
     return PresentationUrlType::kDial;
@@ -111,12 +108,14 @@ void MediaRouterMetrics::RecordMediaRouterCastingSource(MediaCastMode source) {
   UMA_HISTOGRAM_SPARSE_SLOWLY(kHistogramMediaRouterCastingSource, source);
 }
 
+// static
 void MediaRouterMetrics::RecordMediaRouterFileFormat(
     const media::container_names::MediaContainerName format) {
   UMA_HISTOGRAM_ENUMERATION(kHistogramMediaRouterFileFormat, format,
                             media::container_names::CONTAINER_MAX);
 }
 
+// static
 void MediaRouterMetrics::RecordMediaRouterFileSize(int64_t size) {
   UMA_HISTOGRAM_MEMORY_LARGE_MB(kHistogramMediaRouterFileSize, size);
 }

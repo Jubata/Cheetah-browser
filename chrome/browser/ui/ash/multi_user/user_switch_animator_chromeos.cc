@@ -75,8 +75,9 @@ void PutMruWindowLast(std::vector<aura::Window*>* window_list) {
   if (it == window_list->end())
     return;
   // Move the active window to the end of the list.
+  aura::Window* active_window = *it;
   window_list->erase(it);
-  window_list->push_back(*it);
+  window_list->push_back(active_window);
 }
 
 }  // namespace
@@ -174,7 +175,7 @@ void UserSwitchAnimatorChromeOS::TransitionWallpaper(
     wallpaper_delegate->SetAnimationDurationOverride(
         std::max(duration, kMinimalAnimationTimeMS));
     if (screen_cover_ != NEW_USER_COVERS_SCREEN) {
-      chromeos::WallpaperManager::Get()->SetUserWallpaper(new_account_id_);
+      chromeos::WallpaperManager::Get()->ShowUserWallpaper(new_account_id_);
       wallpaper_user_id_for_test_ =
           (NO_USER_COVERS_SCREEN == screen_cover_ ? "->" : "") +
           new_account_id_.Serialize();
@@ -183,7 +184,7 @@ void UserSwitchAnimatorChromeOS::TransitionWallpaper(
     // Revert the wallpaper cross dissolve animation duration back to the
     // default.
     if (screen_cover_ == NEW_USER_COVERS_SCREEN)
-      chromeos::WallpaperManager::Get()->SetUserWallpaper(new_account_id_);
+      chromeos::WallpaperManager::Get()->ShowUserWallpaper(new_account_id_);
 
     // Coming here the wallpaper user id is the final result. No matter how we
     // got here.

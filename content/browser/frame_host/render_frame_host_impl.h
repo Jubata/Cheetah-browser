@@ -42,7 +42,7 @@
 #include "content/common/frame_replication_state.h"
 #include "content/common/image_downloader/image_downloader.mojom.h"
 #include "content/common/input/input_handler.mojom.h"
-#include "content/common/navigation_params.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "content/public/common/previews_state.h"
@@ -53,6 +53,7 @@
 #include "services/device/public/interfaces/wake_lock_context.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/interfaces/interface_provider.mojom.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
 #include "third_party/WebKit/public/platform/WebFocusType.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
 #include "third_party/WebKit/public/platform/WebSuddenTerminationDisablerType.h"
@@ -86,6 +87,7 @@ class ListValue;
 }
 
 namespace blink {
+struct FramePolicy;
 struct WebRemoteScrollProperties;
 }
 
@@ -98,7 +100,6 @@ namespace content {
 class AssociatedInterfaceProviderImpl;
 class AssociatedInterfaceRegistryImpl;
 class LegacyIPCFrameInputHandler;
-class FeaturePolicy;
 class FrameTree;
 class FrameTreeNode;
 class GeolocationServiceImpl;
@@ -120,13 +121,17 @@ class SensorProviderProxyImpl;
 class StreamHandle;
 class TimeoutMonitor;
 class WebBluetoothServiceImpl;
+struct BeginNavigationParams;
+struct CommonNavigationParams;
 struct ContextMenuParams;
 struct FileChooserParams;
 struct FrameOwnerProperties;
-struct FramePolicy;
 struct FileChooserParams;
+struct NavigationParams;
+struct RequestNavigationParams;
 struct ResourceResponse;
 struct SubresourceLoaderParams;
+struct StartNavigationParams;
 
 class CONTENT_EXPORT RenderFrameHostImpl
     : public RenderFrameHost,
@@ -192,7 +197,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   RenderViewHost* GetRenderViewHost() override;
   service_manager::InterfaceProvider* GetRemoteInterfaces() override;
   AssociatedInterfaceProvider* GetRemoteAssociatedInterfaces() override;
-  blink::WebPageVisibilityState GetVisibilityState() override;
+  blink::mojom::PageVisibilityState GetVisibilityState() override;
   bool IsRenderFrameLive() override;
   bool IsCurrent() override;
   int GetProxyCount() override;
@@ -210,7 +215,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   bool IsBeforeUnloadHangMonitorDisabledForTesting() override;
   bool GetSuddenTerminationDisablerState(
       blink::WebSuddenTerminationDisablerType disabler_type) override;
-  bool IsFeatureEnabled(blink::WebFeaturePolicyFeature feature) override;
+  bool IsFeatureEnabled(blink::FeaturePolicyFeature feature) override;
   void ViewSource() override;
 
   // IPC::Sender
@@ -284,11 +289,14 @@ class CONTENT_EXPORT RenderFrameHostImpl
                           const std::string& frame_name,
                           const std::string& frame_unique_name,
                           const base::UnguessableToken& devtools_frame_token,
-                          const FramePolicy& frame_policy,
+                          const blink::FramePolicy& frame_policy,
                           const FrameOwnerProperties& frame_owner_properties);
 
-  // Update this frame's last committed origin.
-  void SetLastCommittedOrigin(const url::Origin& origin);
+  // Update this frame's state at the appropriate time when a navigation
+  // commits. This is called by NavigatorImpl::DidNavigate as a helper, in the
+  // midst of a DidCommitProvisionalLoad call.
+  void DidNavigate(const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+                   bool is_same_document_navigation);
 
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
@@ -304,9 +312,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // The most recent non-net-error URL to commit in this frame.  In almost all
   // cases, use GetLastCommittedURL instead.
   const GURL& last_successful_url() { return last_successful_url_; }
-  void set_last_successful_url(const GURL& url) {
-    last_successful_url_ = url;
-  }
+
+  // Fetch the link-rel canonical URL to be used for sharing to external
+  // applications.
+  void GetCanonicalUrlForSharing(
+      mojom::Frame::GetCanonicalUrlForSharingCallback callback);
 
   // Returns the associated WebUI or null if none applies.
   WebUIImpl* web_ui() const { return web_ui_.get(); }
@@ -344,7 +354,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // This method crashes if this RenderFrameHostImpl does not own a
   // a RenderWidgetHost and nor does any of its ancestors. That would
   // typically mean that the frame has been detached from the frame tree.
-  RenderWidgetHostImpl* GetRenderWidgetHost();
+  virtual RenderWidgetHostImpl* GetRenderWidgetHost();
 
   GlobalFrameRoutingId GetGlobalFrameRoutingId();
 
@@ -557,7 +567,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const CommonNavigationParams& common_params,
       const RequestNavigationParams& request_params,
       bool is_view_source,
-      base::Optional<SubresourceLoaderParams> subresource_loader_params);
+      base::Optional<SubresourceLoaderParams> subresource_loader_params,
+      const base::UnguessableToken& devtools_navigation_token);
 
   // PlzNavigate
   // Indicates that a navigation failed and that this RenderFrame should display
@@ -613,11 +624,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void ResetLoadingState();
 
   // Returns the feature policy which should be enforced on this RenderFrame.
-  FeaturePolicy* feature_policy() { return feature_policy_.get(); }
-
-  // Clears any existing policy and constructs a new policy for this frame,
-  // based on its parent frame.
-  void ResetFeaturePolicy();
+  blink::FeaturePolicy* feature_policy() { return feature_policy_.get(); }
 
   // Tells the renderer that this RenderFrame will soon be swapped out, and thus
   // not to create any new modal dialogs until it happens.  This must be done
@@ -680,6 +687,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
   mojo::AssociatedBinding<mojom::FrameHost>& frame_host_binding_for_testing() {
     return frame_host_associated_binding_;
   }
+
+  void SetKeepAliveTimeoutForTesting(base::TimeDelta timeout);
 
  protected:
   friend class RenderFrameHostFactory;
@@ -776,7 +785,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnDidChangeOpener(int32_t opener_routing_id);
   void OnDidChangeName(const std::string& name, const std::string& unique_name);
   void OnDidSetFeaturePolicyHeader(
-      const ParsedFeaturePolicyHeader& parsed_header);
+      const blink::ParsedFeaturePolicy& parsed_header);
 
   // A new set of CSP |policies| has been added to the document.
   void OnDidAddContentSecurityPolicies(
@@ -785,7 +794,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   void OnEnforceInsecureRequestPolicy(blink::WebInsecureRequestPolicy policy);
   void OnUpdateToUniqueOrigin(bool is_potentially_trustworthy_unique_origin);
   void OnDidChangeFramePolicy(int32_t frame_routing_id,
-                              const FramePolicy& frame_policy);
+                              const blink::FramePolicy& frame_policy);
   void OnDidChangeFrameOwnerProperties(int32_t frame_routing_id,
                                        const FrameOwnerProperties& properties);
   void OnUpdateTitle(const base::string16& title,
@@ -804,9 +813,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
       const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
   void OnAccessibilityFindInPageResult(
       const AccessibilityHostMsg_FindInPageResultParams& params);
-  void OnAccessibilityChildFrameHitTestResult(const gfx::Point& point,
-                                              int hit_obj_id,
-                                              ui::AXEvent event_to_fire);
+  void OnAccessibilityChildFrameHitTestResult(
+      const gfx::Point& point,
+      int child_frame_routing_id,
+      int child_frame_browser_plugin_instance_id,
+      ui::AXEvent event_to_fire);
   void OnAccessibilitySnapshotResponse(
       int callback_id,
       const AXContentTreeUpdate& snapshot);
@@ -987,10 +998,17 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // Called by |beforeunload_timeout_| when the beforeunload timeout fires.
   void BeforeUnloadTimeout();
 
+  // Update this frame's last committed origin.
+  void SetLastCommittedOrigin(const url::Origin& origin);
+
   // Called when a navigation commits succesfully to |url|. This will update
   // |last_committed_site_url_| if it's not equal to the site url corresponding
   // to |url|.
   void SetLastCommittedSiteUrl(const GURL& url);
+
+  // Clears any existing policy and constructs a new policy for this frame,
+  // based on its parent frame.
+  void ResetFeaturePolicy();
 
   // PlzNavigate: Called when the frame has consumed the StreamHandle and it
   // can be released.
@@ -1277,7 +1295,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   typedef std::pair<CommonNavigationParams, BeginNavigationParams>
       PendingNavigation;
-  std::unique_ptr<PendingNavigation> pendinging_navigate_;
+  std::unique_ptr<PendingNavigation> pending_navigate_;
+
+  // A collection of non-network URLLoaderFactory implementations which are used
+  // to service any supported non-network subresource requests for the currently
+  // committed navigation.
+  ContentBrowserClient::NonNetworkURLLoaderFactoryMap
+      non_network_url_loader_factories_;
 
   // Bitfield for renderer-side state that blocks fast shutdown of the frame.
   blink::WebSuddenTerminationDisablerType
@@ -1304,7 +1328,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   int enabled_bindings_ = 0;
 
   // Tracks the feature policy which has been set on this frame.
-  std::unique_ptr<FeaturePolicy> feature_policy_;
+  std::unique_ptr<blink::FeaturePolicy> feature_policy_;
 
 #if defined(OS_ANDROID)
   // An InterfaceProvider for Java-implemented interfaces that are scoped to
@@ -1339,6 +1363,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   std::unique_ptr<LegacyIPCFrameInputHandler> legacy_frame_input_handler_;
 
   std::unique_ptr<KeepAliveHandleFactory> keep_alive_handle_factory_;
+  base::TimeDelta keep_alive_timeout_;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<RenderFrameHostImpl> weak_ptr_factory_;

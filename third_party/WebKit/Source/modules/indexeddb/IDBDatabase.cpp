@@ -212,7 +212,7 @@ void IDBDatabase::OnChanges(
             GetExecutionContext(), obs_txn.first, stores, this);
       }
 
-      observer->Callback()->call(
+      observer->Callback()->InvokeAndReportException(
           observer, IDBObserverChanges::Create(this, transaction, observations,
                                                map_entry.second, isolate_));
       if (transaction)
@@ -309,7 +309,7 @@ IDBObjectStore* IDBDatabase::createObjectStore(
                               object_store_id, name, key_path, auto_increment);
 
   scoped_refptr<IDBObjectStoreMetadata> store_metadata =
-      WTF::AdoptRef(new IDBObjectStoreMetadata(
+      base::AdoptRef(new IDBObjectStoreMetadata(
           name, object_store_id, key_path, auto_increment,
           WebIDBDatabase::kMinimumIndexId));
   IDBObjectStore* object_store =

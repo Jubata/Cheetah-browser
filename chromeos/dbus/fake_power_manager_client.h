@@ -37,6 +37,9 @@ class CHROMEOS_EXPORT FakePowerManagerClient : public PowerManagerClient {
   int num_set_is_projecting_calls() const {
     return num_set_is_projecting_calls_;
   }
+  double screen_brightness_percent() const {
+    return screen_brightness_percent_.value();
+  }
   bool is_projecting() const { return is_projecting_; }
   bool have_video_activity_report() const {
     return !video_activity_reports_.empty();
@@ -94,6 +97,9 @@ class CHROMEOS_EXPORT FakePowerManagerClient : public PowerManagerClient {
   // Emulates the power manager announcing that the system is changing
   // keyboard brightness to |level|.
   void SendKeyboardBrightnessChanged(int level, bool user_initiated);
+
+  // Notifies observers about the screen idle state changing.
+  void SendScreenIdleStateChanged(const power_manager::ScreenIdleState& proto);
 
   // Notifies observers that the power button has been pressed or released.
   void SendPowerButtonEvent(bool down, const base::TimeTicks& timestamp);

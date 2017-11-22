@@ -29,6 +29,7 @@ import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.firstrun.FirstRunUtils;
+import org.chromium.chrome.browser.locale.LocaleManager;
 import org.chromium.chrome.browser.metrics.UmaSessionStats;
 import org.chromium.chrome.browser.omnibox.OmniboxPlaceholderFieldTrial;
 import org.chromium.chrome.browser.preferences.ChromePreferenceManager;
@@ -212,6 +213,8 @@ public class FeatureUtilities {
      */
     public static void finalizePendingFeatures() {
         if (sChromeHomeNeedsUpdate) {
+            // Clear the Chrome Home flag so that it can be re-cached below.
+            sChromeHomeEnabled = null;
             // Re-cache the Chrome Home state.
             cacheChromeHomeEnabled();
             notifyChromeHomeStatusChanged(isChromeHomeEnabled());
@@ -272,19 +275,12 @@ public class FeatureUtilities {
         // Chrome Home doesn't work with tablets.
         if (DeviceFormFactor.isTablet()) return;
 
-        // Any time this method is called, clear the cached Chrome Home state so it can be set in
-        // isChromeHomeEnabled below.
-        sChromeHomeEnabled = null;
-
         boolean isChromeHomeEnabled = ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_HOME);
         ChromePreferenceManager manager = ChromePreferenceManager.getInstance();
         manager.setChromeHomeEnabled(isChromeHomeEnabled);
 
         PrefServiceBridge.getInstance().setChromeHomePersonalizedOmniboxSuggestionsEnabled(
-                !isChromeHomeEnabled()
-                        ? false
-                        : ChromeFeatureList.isEnabled(
-                                  ChromeFeatureList.CHROME_HOME_PERSONALIZED_OMNIBOX_SUGGESTIONS));
+                areChromeHomePersonalizedOmniboxSuggestionsEnabled());
 
         if (!ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_HOME_PROMO)
                 && manager.isChromeHomeUserPreferenceSet()) {
@@ -298,6 +294,14 @@ public class FeatureUtilities {
 
         UmaSessionStats.registerSyntheticFieldTrial(SYNTHETIC_CHROME_HOME_EXPERIMENT_NAME,
                 isChromeHomeEnabled() ? ENABLED_EXPERIMENT_GROUP : DISABLED_EXPERIMENT_GROUP);
+    }
+
+    private static boolean areChromeHomePersonalizedOmniboxSuggestionsEnabled() {
+        LocaleManager localeManager = LocaleManager.getInstance();
+        return isChromeHomeEnabled() && !localeManager.hasCompletedSearchEnginePromo()
+                && !localeManager.hasShownSearchEnginePromoThisSession()
+                && ChromeFeatureList.isEnabled(
+                           ChromeFeatureList.CHROME_HOME_PERSONALIZED_OMNIBOX_SUGGESTIONS);
     }
 
     /**
@@ -378,7 +382,8 @@ public class FeatureUtilities {
      */
     public static boolean shouldShowChromeHomePromoForStartup() {
         if (DeviceFormFactor.isTablet() || isChromeHomeEnabled()
-                || !ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_HOME_PROMO)) {
+                || !ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_HOME_PROMO)
+                || !ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_HOME_PROMO_ON_STARTUP)) {
             return false;
         }
 

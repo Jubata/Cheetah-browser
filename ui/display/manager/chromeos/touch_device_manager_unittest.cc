@@ -12,6 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/display/manager/chromeos/test/touch_device_manager_test_api.h"
 #include "ui/display/manager/display_manager.h"
 #include "ui/display/manager/managed_display_info.h"
 #include "ui/display/screen_base.h"
@@ -21,10 +22,6 @@
 
 namespace display {
 namespace {
-TouchDeviceIdentifier ToIdentifier(const ui::TouchscreenDevice& device) {
-  return TouchDeviceIdentifier::FromDevice(device);
-}
-
 ui::TouchscreenDevice CreateTouchscreenDevice(int id,
                                               ui::InputDeviceType type,
                                               const gfx::Size& size) {
@@ -32,6 +29,13 @@ ui::TouchscreenDevice CreateTouchscreenDevice(int id,
   device.vendor_id = id * id;
   device.product_id = device.vendor_id * id;
   return device;
+}
+
+TouchDeviceManager::TouchAssociationInfo CreateTouchAssociationInfo(
+    int days_old) {
+  TouchDeviceManager::TouchAssociationInfo info;
+  info.timestamp = base::Time::Now() - base::TimeDelta::FromDays(days_old);
+  return info;
 }
 
 }  // namespace
@@ -98,6 +102,21 @@ class TouchAssociationTest : public testing::Test {
 
   void TearDown() override { displays_.clear(); }
 
+  // Helper method to return the count of touch devices associated with the
+  // display |info|.
+  std::size_t GetTouchDeviceCount(const ManagedDisplayInfo& info) const {
+    test::TouchDeviceManagerTestApi tdm_api(touch_device_manager_);
+    return tdm_api.GetTouchDeviceCount(info);
+  }
+
+  // Helper method that returns true if the display |info| is associated with
+  // the touch device |device|.
+  bool AreAssociated(const ManagedDisplayInfo& info,
+                     const ui::TouchscreenDevice& device) const {
+    test::TouchDeviceManagerTestApi tdm_api(touch_device_manager_);
+    return tdm_api.AreAssociated(info, device);
+  }
+
  protected:
   DisplayInfoList displays_;
   std::unique_ptr<DisplayManager> display_manager_;
@@ -115,7 +134,7 @@ TEST_F(TouchAssociationTest, NoTouchscreens) {
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
   for (size_t i = 0; i < displays_.size(); ++i)
-    EXPECT_EQ(0u, displays_[i].touch_device_identifiers().size());
+    EXPECT_EQ(GetTouchDeviceCount(displays_[i]), 0u);
 }
 
 // Verify that if there are a lot of touchscreens, they will all get associated
@@ -135,7 +154,7 @@ TEST_F(TouchAssociationTest, ManyTouchscreens) {
   touch_device_manager()->AssociateTouchscreens(&displays, devices);
 
   for (int i = 0; i < 5; ++i)
-    EXPECT_TRUE(displays[0].HasTouchDevice(ToIdentifier(devices[i])));
+    EXPECT_TRUE(AreAssociated(displays[0], devices[i]));
 }
 
 TEST_F(TouchAssociationTest, OneToOneMapping) {
@@ -149,12 +168,12 @@ TEST_F(TouchAssociationTest, OneToOneMapping) {
                                                 displays_[0].id());
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
-  EXPECT_EQ(0u, displays_[0].touch_device_identifiers().size());
-  EXPECT_EQ(1u, displays_[1].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[1].HasTouchDevice(ToIdentifier(devices[0])));
-  EXPECT_EQ(0u, displays_[2].touch_device_identifiers().size());
-  EXPECT_EQ(1u, displays_[3].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[3].HasTouchDevice(ToIdentifier(devices[1])));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices[0]));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices[1]));
 }
 
 TEST_F(TouchAssociationTest, MapToCorrectDisplaySize) {
@@ -166,11 +185,11 @@ TEST_F(TouchAssociationTest, MapToCorrectDisplaySize) {
                                                 displays_[0].id());
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
-  EXPECT_EQ(0u, displays_[0].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[1].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[2].touch_device_identifiers().size());
-  EXPECT_EQ(1u, displays_[3].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[3].HasTouchDevice(ToIdentifier(devices[0])));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices[0]));
 }
 
 TEST_F(TouchAssociationTest, MapWhenSizeDiffersByOne) {
@@ -184,12 +203,12 @@ TEST_F(TouchAssociationTest, MapWhenSizeDiffersByOne) {
                                                 displays_[0].id());
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
-  EXPECT_EQ(0u, displays_[0].touch_device_identifiers().size());
-  EXPECT_EQ(1u, displays_[1].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[1].HasTouchDevice(ToIdentifier(devices[0])));
-  EXPECT_EQ(0u, displays_[2].touch_device_identifiers().size());
-  EXPECT_EQ(1u, displays_[3].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[3].HasTouchDevice(ToIdentifier(devices[1])));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices[0]));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices[1]));
 }
 
 TEST_F(TouchAssociationTest, MapWhenSizesDoNotMatch) {
@@ -209,10 +228,10 @@ TEST_F(TouchAssociationTest, MapWhenSizesDoNotMatch) {
 
   // The touch devices should match to the internal display if they were not
   // matched in any of the steps.
-  EXPECT_EQ(0u, displays[0].touch_device_identifiers().size());
-  EXPECT_EQ(2u, displays[1].touch_device_identifiers().size());
-  EXPECT_TRUE(displays[1].HasTouchDevice(ToIdentifier(devices[0])));
-  EXPECT_TRUE(displays[1].HasTouchDevice(ToIdentifier(devices[1])));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 2u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices[0]));
+  EXPECT_TRUE(AreAssociated(displays_[1], devices[1]));
 }
 
 TEST_F(TouchAssociationTest, MapInternalTouchscreen) {
@@ -231,10 +250,10 @@ TEST_F(TouchAssociationTest, MapInternalTouchscreen) {
   touch_device_manager()->AssociateTouchscreens(&displays, devices);
 
   // Internal touchscreen is always mapped to internal display.
-  EXPECT_EQ(1u, displays[0].touch_device_identifiers().size());
-  EXPECT_TRUE(displays[0].HasTouchDevice(ToIdentifier(devices[1])));
-  EXPECT_EQ(1u, displays[1].touch_device_identifiers().size());
-  EXPECT_TRUE(displays[1].HasTouchDevice(ToIdentifier(devices[0])));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 1u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices[1]));
+  EXPECT_TRUE(AreAssociated(displays_[1], devices[0]));
 }
 
 TEST_F(TouchAssociationTest, MultipleInternal) {
@@ -248,10 +267,10 @@ TEST_F(TouchAssociationTest, MultipleInternal) {
                                                 displays_[0].id());
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
-  EXPECT_EQ(2u, displays_[0].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[1].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[2].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[3].touch_device_identifiers().size());
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 2u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 0u);
 }
 
 TEST_F(TouchAssociationTest, MultipleInternalAndExternal) {
@@ -267,13 +286,13 @@ TEST_F(TouchAssociationTest, MultipleInternalAndExternal) {
                                                 displays_[0].id());
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
-  EXPECT_EQ(2u, displays_[0].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[0].HasTouchDevice(ToIdentifier(devices[0])));
-  EXPECT_TRUE(displays_[0].HasTouchDevice(ToIdentifier(devices[1])));
-  EXPECT_EQ(0u, displays_[1].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[2].touch_device_identifiers().size());
-  EXPECT_EQ(1u, displays_[3].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[3].HasTouchDevice(ToIdentifier(devices[2])));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 2u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices[0]));
+  EXPECT_TRUE(AreAssociated(displays_[0], devices[1]));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices[2]));
 }
 
 // crbug.com/515201
@@ -287,11 +306,11 @@ TEST_F(TouchAssociationTest, TestWithNoInternalDisplay) {
   // Internal touchscreen should not be associated with any display
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
-  EXPECT_EQ(1u, displays_[0].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[0].HasTouchDevice(ToIdentifier(devices[0])));
-  EXPECT_EQ(0u, displays_[1].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[2].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[3].touch_device_identifiers().size());
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices[0]));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 0u);
 }
 
 TEST_F(TouchAssociationTest, MatchRemainingDevicesToInternalDisplay) {
@@ -307,16 +326,17 @@ TEST_F(TouchAssociationTest, MatchRemainingDevicesToInternalDisplay) {
                                                 displays_[0].id());
   touch_device_manager()->AssociateTouchscreens(&displays_, devices);
 
-  EXPECT_EQ(3u, displays_[0].touch_device_identifiers().size());
-  EXPECT_TRUE(displays_[0].HasTouchDevice(ToIdentifier(devices[0])));
-  EXPECT_TRUE(displays_[0].HasTouchDevice(ToIdentifier(devices[1])));
-  EXPECT_TRUE(displays_[0].HasTouchDevice(ToIdentifier(devices[2])));
-  EXPECT_EQ(0u, displays_[1].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[2].touch_device_identifiers().size());
-  EXPECT_EQ(0u, displays_[3].touch_device_identifiers().size());
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 3u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices[0]));
+  EXPECT_TRUE(AreAssociated(displays_[0], devices[1]));
+  EXPECT_TRUE(AreAssociated(displays_[0], devices[2]));
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 0u);
 }
 
-TEST_F(TouchAssociationTest, MatchRemainingDevicesWithInternalDisplayPresent) {
+TEST_F(TouchAssociationTest,
+       MatchRemainingDevicesWithNoInternalDisplayPresent) {
   std::vector<ui::TouchscreenDevice> devices;
   devices.push_back(CreateTouchscreenDevice(
       1, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, gfx::Size(123, 456)));
@@ -329,10 +349,236 @@ TEST_F(TouchAssociationTest, MatchRemainingDevicesWithInternalDisplayPresent) {
 
   std::size_t total = 0;
   for (const auto& display : displays_)
-    total += display.touch_device_identifiers().size();
+    total += GetTouchDeviceCount(display);
 
   // Make sure all devices were matched.
   EXPECT_EQ(total, devices.size());
+}
+
+class TouchAssociationFromPrefTest : public TouchAssociationTest {
+ public:
+  TouchAssociationFromPrefTest() {}
+  ~TouchAssociationFromPrefTest() override {}
+
+  void SetUp() override {
+    TouchAssociationTest::SetUp();
+    TouchDeviceManager::TouchAssociationMap touch_associations;
+
+    devices_.push_back(CreateTouchscreenDevice(
+        1, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, gfx::Size(1920, 1080)));
+    devices_.push_back(CreateTouchscreenDevice(
+        2, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, gfx::Size(1024, 768)));
+    devices_.push_back(CreateTouchscreenDevice(
+        3, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, gfx::Size(640, 480)));
+    devices_.push_back(CreateTouchscreenDevice(
+        4, ui::InputDeviceType::INPUT_DEVICE_INTERNAL, gfx::Size(800, 600)));
+
+    // Create priority list for Device Id = 1
+    //   - Display Index 0
+    //   - Display Index 1
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[0])] =
+        TouchDeviceManager::AssociationInfoMap();
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[0])]
+                      [displays_[0].id()] = CreateTouchAssociationInfo(1);
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[0])]
+                      [displays_[1].id()] = CreateTouchAssociationInfo(2);
+
+    // Create priority list for Device Id = 2
+    //   - Display Index 3
+    //   - Display Index 1
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[1])] =
+        TouchDeviceManager::AssociationInfoMap();
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[1])]
+                      [displays_[3].id()] = CreateTouchAssociationInfo(1);
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[1])]
+                      [displays_[1].id()] = CreateTouchAssociationInfo(2);
+
+    // Craete priority list for Device Id = 3
+    //   - Display Index 2
+    //   - Display Index 3
+    //   - Display Index 0
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[2])] =
+        TouchDeviceManager::AssociationInfoMap();
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[2])]
+                      [displays_[2].id()] = CreateTouchAssociationInfo(1);
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[2])]
+                      [displays_[3].id()] = CreateTouchAssociationInfo(2);
+    touch_associations[TouchDeviceIdentifier::FromDevice(devices_[2])]
+                      [displays_[0].id()] = CreateTouchAssociationInfo(3);
+
+    touch_device_manager_->RegisterTouchAssociations(touch_associations);
+  }
+
+  void TearDown() override {
+    TouchAssociationTest::TearDown();
+    devices_.clear();
+  }
+
+ protected:
+  std::vector<ui::TouchscreenDevice> devices_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TouchAssociationFromPrefTest);
+};
+
+TEST_F(TouchAssociationFromPrefTest, CorrectMapping) {
+  test::ScopedSetInternalDisplayId set_internal(display_manager(),
+                                                displays_[1].id());
+
+  touch_device_manager()->AssociateTouchscreens(&displays_, devices_);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices_[0]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices_[3]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[2], devices_[2]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[1]));
+}
+
+TEST_F(TouchAssociationFromPrefTest, CorrectMappingWithSomeMissing) {
+  DisplayInfoList displays;
+  displays.push_back(displays_[1]);
+  displays.push_back(displays_[3]);
+
+  touch_device_manager()->AssociateTouchscreens(&displays, devices_);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 0u);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices_[0]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 2u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[1]));
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[2]));
+}
+
+TEST_F(TouchAssociationFromPrefTest, UpdateMappingBeforeAssociation) {
+  test::ScopedSetInternalDisplayId set_internal(display_manager(),
+                                                displays_[1].id());
+
+  // Reassociate display with id 4 to touch device with id 3. This will
+  // bring the display to the top of the priority list.
+  touch_device_manager()->AddTouchCalibrationData(
+      TouchDeviceIdentifier::FromDevice(devices_[2]), displays_[3].id(),
+      TouchCalibrationData());
+
+  touch_device_manager()->AssociateTouchscreens(&displays_, devices_);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices_[0]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices_[3]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 2u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[1]));
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[2]));
+}
+
+TEST_F(TouchAssociationFromPrefTest, UpdateMappingAfterAssociation) {
+  test::ScopedSetInternalDisplayId set_internal(display_manager(),
+                                                displays_[1].id());
+
+  touch_device_manager()->AssociateTouchscreens(&displays_, devices_);
+
+  // Reassociate display with id 4 to touch device with id 3. This will
+  // bring the display to the top of the priority list. This should work even
+  // though the association of devices and displays is complete.
+  touch_device_manager()->AddTouchCalibrationData(
+      TouchDeviceIdentifier::FromDevice(devices_[2]), displays_[3].id(),
+      TouchCalibrationData());
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices_[0]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices_[3]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 0u);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 2u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[1]));
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[2]));
+}
+
+TEST_F(TouchAssociationFromPrefTest, AssociatingDeviceToNewDisplay) {
+  test::ScopedSetInternalDisplayId set_internal(display_manager(),
+                                                displays_[1].id());
+
+  // Reassociate display with id 4 to touch device with id 3. This will
+  // bring the display to the top of the priority list.
+  touch_device_manager()->AddTouchCalibrationData(
+      TouchDeviceIdentifier::FromDevice(devices_[0]), displays_[2].id(),
+      TouchCalibrationData());
+
+  touch_device_manager()->AssociateTouchscreens(&displays_, devices_);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 0u);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices_[3]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 2u);
+  EXPECT_TRUE(AreAssociated(displays_[2], devices_[0]));
+  EXPECT_TRUE(AreAssociated(displays_[2], devices_[2]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[1]));
+}
+
+TEST_F(TouchAssociationFromPrefTest,
+       AssociatingDeviceToNewDisplayAfterAssociation) {
+  test::ScopedSetInternalDisplayId set_internal(display_manager(),
+                                                displays_[1].id());
+
+  touch_device_manager()->AssociateTouchscreens(&displays_, devices_);
+
+  // Reassociate display with id 4 to touch device with id 3. This will
+  // bring the display to the top of the priority list. This should work even
+  // though the association of devices and displays is already complete.
+  touch_device_manager()->AddTouchCalibrationData(
+      TouchDeviceIdentifier::FromDevice(devices_[0]), displays_[2].id(),
+      TouchCalibrationData());
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 0u);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices_[3]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 2u);
+  EXPECT_TRUE(AreAssociated(displays_[2], devices_[0]));
+  EXPECT_TRUE(AreAssociated(displays_[2], devices_[2]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[1]));
+}
+
+TEST_F(TouchAssociationFromPrefTest, InternalDisplayIsNotMatched) {
+  test::ScopedSetInternalDisplayId set_internal(display_manager(),
+                                                displays_[0].id());
+
+  touch_device_manager()->AssociateTouchscreens(&displays_, devices_);
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[0]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[0], devices_[3]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[1]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[1], devices_[0]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[2]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[2], devices_[2]));
+
+  EXPECT_EQ(GetTouchDeviceCount(displays_[3]), 1u);
+  EXPECT_TRUE(AreAssociated(displays_[3], devices_[1]));
 }
 
 }  // namespace display

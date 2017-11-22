@@ -9,15 +9,17 @@
 #include "bindings/core/v8/ToV8ForCore.h"
 #include "core/StylePropertyShorthand.h"
 #include "core/css/cssom/StyleValueFactory.h"
-#include "core/css/parser/CSSParser.h"
+#include "core/css/properties/CSSProperty.h"
 
 namespace blink {
 
 namespace {
 
-CSSStyleValueVector ParseCSSStyleValue(const String& property_name,
-                                       const String& value,
-                                       ExceptionState& exception_state) {
+CSSStyleValueVector ParseCSSStyleValue(
+    const ExecutionContext* execution_context,
+    const String& property_name,
+    const String& value,
+    ExceptionState& exception_state) {
   const CSSPropertyID property_id = cssPropertyID(property_name);
 
   // TODO(775804): Handle custom properties
@@ -26,15 +28,15 @@ CSSStyleValueVector ParseCSSStyleValue(const String& property_name,
     return CSSStyleValueVector();
   }
 
-  if (isShorthandProperty(property_id)) {
+  if (CSSProperty::Get(property_id).IsShorthand()) {
     exception_state.ThrowTypeError(
         "Parsing shorthand properties is not supported");
     return CSSStyleValueVector();
   }
 
-  const CSSValue* css_value =
-      CSSParser::ParseSingleValue(property_id, value, StrictCSSParserContext());
-  if (!css_value) {
+  const auto style_values = StyleValueFactory::FromString(
+      property_id, value, execution_context->SecureContextMode());
+  if (style_values.IsEmpty()) {
     exception_state.ThrowDOMException(
         kSyntaxError, "The value provided ('" + value +
                           "') could not be parsed as a '" + property_name +
@@ -42,19 +44,17 @@ CSSStyleValueVector ParseCSSStyleValue(const String& property_name,
     return CSSStyleValueVector();
   }
 
-  CSSStyleValueVector style_value_vector =
-      StyleValueFactory::CssValueToStyleValueVector(property_id, *css_value);
-  DCHECK(!style_value_vector.IsEmpty());
-  return style_value_vector;
+  return style_values;
 }
 
 }  // namespace
 
-CSSStyleValue* CSSStyleValue::parse(const String& property_name,
+CSSStyleValue* CSSStyleValue::parse(const ExecutionContext* execution_context,
+                                    const String& property_name,
                                     const String& value,
                                     ExceptionState& exception_state) {
-  CSSStyleValueVector style_value_vector =
-      ParseCSSStyleValue(property_name, value, exception_state);
+  CSSStyleValueVector style_value_vector = ParseCSSStyleValue(
+      execution_context, property_name, value, exception_state);
   if (style_value_vector.IsEmpty())
     return nullptr;
 
@@ -62,15 +62,24 @@ CSSStyleValue* CSSStyleValue::parse(const String& property_name,
 }
 
 Nullable<CSSStyleValueVector> CSSStyleValue::parseAll(
+    const ExecutionContext* execution_context,
     const String& property_name,
     const String& value,
     ExceptionState& exception_state) {
-  CSSStyleValueVector style_value_vector =
-      ParseCSSStyleValue(property_name, value, exception_state);
+  CSSStyleValueVector style_value_vector = ParseCSSStyleValue(
+      execution_context, property_name, value, exception_state);
   if (style_value_vector.IsEmpty())
     return nullptr;
 
   return style_value_vector;
+}
+
+String CSSStyleValue::toString(
+    const ExecutionContext* execution_context) const {
+  const CSSValue* result = ToCSSValue(execution_context->SecureContextMode());
+  // TODO(meade): Remove this once all the number and length types are
+  // rewritten.
+  return result ? result->CssText() : "";
 }
 
 String CSSStyleValue::StyleValueTypeToString(StyleValueType type) {

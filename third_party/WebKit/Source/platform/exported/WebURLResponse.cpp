@@ -31,12 +31,12 @@
 #include "public/platform/WebURLResponse.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/loader/fetch/ResourceLoadTiming.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/WebHTTPHeaderVisitor.h"
 #include "public/platform/WebHTTPLoadInfo.h"
 #include "public/platform/WebString.h"
@@ -51,7 +51,7 @@ class URLResponseExtraDataContainer : public ResourceResponse::ExtraData {
  public:
   static scoped_refptr<URLResponseExtraDataContainer> Create(
       WebURLResponse::ExtraData* extra_data) {
-    return WTF::AdoptRef(new URLResponseExtraDataContainer(extra_data));
+    return base::AdoptRef(new URLResponseExtraDataContainer(extra_data));
   }
 
   ~URLResponseExtraDataContainer() override {}

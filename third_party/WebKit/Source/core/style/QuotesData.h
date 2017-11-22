@@ -22,8 +22,8 @@
 #ifndef QuotesData_h
 #define QuotesData_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 
@@ -32,7 +32,7 @@ namespace blink {
 class QuotesData : public RefCounted<QuotesData> {
  public:
   static scoped_refptr<QuotesData> Create() {
-    return WTF::AdoptRef(new QuotesData());
+    return base::AdoptRef(new QuotesData());
   }
   static scoped_refptr<QuotesData> Create(UChar open1,
                                           UChar close1,

@@ -476,7 +476,10 @@ This file contains the strings for ash.
         The Google Assistant doesn’t speak this language.
       </message>
       <message name="IDS_ASH_VOICE_INTERACTION_SECONDARY_USER_TOAST_MESSAGE" desc="Message content on the toast that appears when the voice interaction shortcut is pressed but the active user profile is not the primary user profile.">
-        Assistant is only available for primary profile.
+        The Google Assistant is only available for primary profile.
+      </message>
+      <message name="IDS_ASH_VOICE_INTERACTION_DISABLED_BY_POLICY_MESSAGE" desc="Message content on the toast that appears when the voice interaction shortcut is pressed but the feature is disabled by enterprise policy.">
+        The Google Assistant is disabled by your administrator.
       </message>
 
       <message name="IDS_ASH_TOAST_DISMISS_BUTTON" desc="The text button shown in toasts to close the toast immediately without waiting timeout.">
@@ -1090,7 +1093,7 @@ This file contains the strings for ash.
       <message name="IDS_ASH_SPLIT_VIEW_GUIDANCE" desc="Message that shows up on overview mode telling users where to drag the window to use split view.">
         Drag here to use split screen
       </message>
-      <message name="IDS_ASH_SPLIT_VIEW_CANNOT_SNAP" desc="Message that shows up on overview mode telling users the window they are trying to drag cannot be snapped and thus cannot be used in split view mode.">
+      <message name="IDS_ASH_SPLIT_VIEW_CANNOT_SNAP" desc="Message that shows up on overview mode telling users the window they are trying to drag cannot be snapped and thus cannot be used in split view mode. Also shows up on a toast when a user tries to enter split view mode with an application that cannot be used in split view mode.">
         App does not support split-screen.
       </message>
 

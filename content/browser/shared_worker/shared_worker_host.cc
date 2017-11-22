@@ -9,10 +9,10 @@
 #include "base/metrics/histogram_macros.h"
 #include "content/browser/devtools/shared_worker_devtools_manager.h"
 #include "content/browser/interface_provider_filtering.h"
+#include "content/browser/renderer_interface_binders.h"
 #include "content/browser/shared_worker/shared_worker_content_settings_proxy_impl.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
-#include "content/browser/worker_interface_binders.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
@@ -93,7 +93,7 @@ void SharedWorkerHost::Start(mojom::SharedWorkerFactoryPtr factory,
   mojom::SharedWorkerInfoPtr info(mojom::SharedWorkerInfo::New(
       instance_->url(), instance_->name(), instance_->content_security_policy(),
       instance_->content_security_policy_type(),
-      instance_->creation_address_space(), instance_->data_saver_enabled()));
+      instance_->creation_address_space()));
 
   factory->CreateSharedWorker(
       std::move(info), pause_on_start, instance_->devtools_worker_token(),

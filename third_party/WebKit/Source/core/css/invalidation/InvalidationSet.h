@@ -32,12 +32,14 @@
 #define InvalidationSet_h
 
 #include <memory>
+
+#include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/HashSet.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/AtomicStringHash.h"
 #include "platform/wtf/text/StringHash.h"
 
@@ -89,7 +91,6 @@ struct CORE_EXPORT InvalidationSetDeleter {
 // We avoid virtual functions to minimize space consumption.
 class CORE_EXPORT InvalidationSet
     : public WTF::RefCounted<InvalidationSet, InvalidationSetDeleter> {
-  WTF_MAKE_NONCOPYABLE(InvalidationSet);
   USING_FAST_MALLOC_WITH_TYPE_NAME(blink::InvalidationSet);
 
  public:
@@ -219,12 +220,13 @@ class CORE_EXPORT InvalidationSet
 
   // If true, the instance is alive and can be used.
   unsigned is_alive_ : 1;
+  DISALLOW_COPY_AND_ASSIGN(InvalidationSet);
 };
 
 class CORE_EXPORT DescendantInvalidationSet final : public InvalidationSet {
  public:
   static scoped_refptr<DescendantInvalidationSet> Create() {
-    return WTF::AdoptRef(new DescendantInvalidationSet);
+    return base::AdoptRef(new DescendantInvalidationSet);
   }
 
  private:
@@ -235,7 +237,7 @@ class CORE_EXPORT SiblingInvalidationSet final : public InvalidationSet {
  public:
   static scoped_refptr<SiblingInvalidationSet> Create(
       scoped_refptr<DescendantInvalidationSet> descendants) {
-    return WTF::AdoptRef(new SiblingInvalidationSet(std::move(descendants)));
+    return base::AdoptRef(new SiblingInvalidationSet(std::move(descendants)));
   }
 
   unsigned MaxDirectAdjacentSelectors() const {

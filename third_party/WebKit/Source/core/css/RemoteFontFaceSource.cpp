@@ -19,7 +19,7 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceLoadPriority.h"
 #include "platform/network/NetworkStateNotifier.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/TaskType.h"
 #include "public/platform/WebEffectiveConnectionType.h"
 
@@ -95,15 +95,11 @@ void RemoteFontFaceSource::NotifyFinished(Resource* unused_resource) {
     }
   }
 
-  CSSFontFace::LoadFinishReason load_finish_reason =
-      font_->GetResourceError().IsCancellation()
-          ? CSSFontFace::LoadFinishReason::WasCancelled
-          : CSSFontFace::LoadFinishReason::NormalFinish;
   font_->RemoveClient(this);
   font_ = nullptr;
 
   PruneTable();
-  if (face_->FontLoaded(this, load_finish_reason))
+  if (face_->FontLoaded(this))
     font_selector_->FontFaceInvalidated();
 }
 

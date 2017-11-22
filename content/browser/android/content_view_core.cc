@@ -30,7 +30,9 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
+#include "content/browser/web_contents/web_contents_android.h"
 #include "content/browser/web_contents/web_contents_view_android.h"
+#include "content/common/content_switches_internal.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
@@ -363,12 +365,22 @@ void ContentViewCore::UpdateFrameInfo(
       viewport_size, page_scale_factor, content_offset,
   });
 
+  // Current viewport size in css.
+  gfx::SizeF view_size = gfx::SizeF(gfx::ScaleToCeiledSize(
+      GetViewportSizePix(), 1.0f / (dpi_scale() * page_scale_factor)));
+
+  // Adjust content size to be always at least as big as the actual
+  // viewport (as set by onSizeChanged).
+  float content_width = std::max(content_size.width(), view_size.width());
+  float content_height = std::max(content_size.height(), view_size.height());
+
   Java_ContentViewCore_updateFrameInfo(
       env, obj, scroll_offset.x(), scroll_offset.y(), page_scale_factor,
-      page_scale_factor_limits.x(), page_scale_factor_limits.y(),
-      content_size.width(), content_size.height(), viewport_size.width(),
-      viewport_size.height(), top_shown_pix, top_changed,
-      is_mobile_optimized_hint);
+      page_scale_factor_limits.x(), page_scale_factor_limits.y(), content_width,
+      content_height, top_shown_pix, top_changed, is_mobile_optimized_hint);
+  web_contents_->GetWebContentsAndroid()->UpdateFrameInfo(
+      scroll_offset, content_width, content_height, viewport_size,
+      page_scale_factor, page_scale_factor_limits, top_shown_pix);
 }
 
 void ContentViewCore::ShowSelectPopupMenu(RenderFrameHost* frame,
@@ -423,7 +435,12 @@ void ContentViewCore::ShowSelectPopupMenu(RenderFrameHost* frame,
   const ScopedJavaLocalRef<jobject> popup_view = select_popup_.view();
   if (popup_view.is_null())
     return;
-  view->SetAnchorRect(popup_view, gfx::RectF(bounds));
+  // |bounds| is in physical pixels if --use-zoom-for-dsf is enabled. Otherwise,
+  // it is in DIP pixels.
+  gfx::RectF bounds_dip = gfx::RectF(bounds);
+  if (IsUseZoomForDSFEnabled())
+    bounds_dip.Scale(1 / dpi_scale_);
+  view->SetAnchorRect(popup_view, bounds_dip);
   Java_ContentViewCore_showSelectPopup(
       env, j_obj, popup_view, reinterpret_cast<intptr_t>(frame), items_array,
       enabled_array, multiple, selected_array, right_aligned);
@@ -528,13 +545,6 @@ void ContentViewCore::DidStopFlinging() {
     Java_ContentViewCore_onNativeFlingStopped(env, obj);
 }
 
-gfx::Size ContentViewCore::GetViewSize() const {
-  gfx::Size size = GetViewportSizeDip();
-  if (DoBrowserControlsShrinkBlinkSize())
-    size.Enlarge(0, -GetTopControlsHeightDip() - GetBottomControlsHeightDip());
-  return size;
-}
-
 gfx::Size ContentViewCore::GetViewportSizePix() const {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
@@ -544,40 +554,12 @@ gfx::Size ContentViewCore::GetViewportSizePix() const {
                    Java_ContentViewCore_getViewportHeightPix(env, j_obj));
 }
 
-int ContentViewCore::GetTopControlsHeightPix() const {
+int ContentViewCore::GetMouseWheelMinimumGranularity() const {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
   if (j_obj.is_null())
     return 0;
-  return Java_ContentViewCore_getTopControlsHeightPix(env, j_obj);
-}
-
-int ContentViewCore::GetBottomControlsHeightPix() const {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
-  if (j_obj.is_null())
-    return 0;
-  return Java_ContentViewCore_getBottomControlsHeightPix(env, j_obj);
-}
-
-gfx::Size ContentViewCore::GetViewportSizeDip() const {
-  return gfx::ScaleToCeiledSize(GetViewportSizePix(), 1.0f / dpi_scale());
-}
-
-bool ContentViewCore::DoBrowserControlsShrinkBlinkSize() const {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
-  if (j_obj.is_null())
-    return false;
-  return Java_ContentViewCore_doBrowserControlsShrinkBlinkSize(env, j_obj);
-}
-
-float ContentViewCore::GetTopControlsHeightDip() const {
-  return GetTopControlsHeightPix() / dpi_scale();
-}
-
-float ContentViewCore::GetBottomControlsHeightDip() const {
-  return GetBottomControlsHeightPix() / dpi_scale();
+  return Java_ContentViewCore_getMouseWheelTickMultiplier(env, j_obj);
 }
 
 void ContentViewCore::SendScreenRectsAndResizeWidget() {
@@ -651,6 +633,15 @@ void ContentViewCore::SetFocusInternal(bool focused) {
     GetRenderWidgetHostViewAndroid()->GotFocus();
   else
     GetRenderWidgetHostViewAndroid()->LostFocus();
+}
+
+int ContentViewCore::GetTopControlsShrinkBlinkHeightPixForTesting(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj) {
+  RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
+  return !rwhv || !rwhv->DoBrowserControlsShrinkBlinkSize()
+             ? 0
+             : rwhv->GetTopControlsHeight() * dpi_scale_;
 }
 
 void ContentViewCore::SendOrientationChangeEvent(
@@ -938,12 +929,13 @@ void ContentViewCore::WebContentsDestroyed() {
 }
 
 // This is called for each ContentView.
-jlong Init(JNIEnv* env,
-           const JavaParamRef<jobject>& obj,
-           const JavaParamRef<jobject>& jweb_contents,
-           const JavaParamRef<jobject>& jview_android_delegate,
-           jlong jwindow_android,
-           jfloat dip_scale) {
+jlong JNI_ContentViewCore_Init(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    const JavaParamRef<jobject>& jweb_contents,
+    const JavaParamRef<jobject>& jview_android_delegate,
+    jlong jwindow_android,
+    jfloat dip_scale) {
   WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
       WebContents::FromJavaWebContents(jweb_contents));
   CHECK(web_contents)
@@ -961,7 +953,7 @@ jlong Init(JNIEnv* env,
   return reinterpret_cast<intptr_t>(view);
 }
 
-static ScopedJavaLocalRef<jobject> FromWebContentsAndroid(
+static ScopedJavaLocalRef<jobject> JNI_ContentViewCore_FromWebContentsAndroid(
     JNIEnv* env,
     const JavaParamRef<jclass>& clazz,
     const JavaParamRef<jobject>& jweb_contents) {

@@ -21,7 +21,7 @@ QuicPacketGenerator::QuicPacketGenerator(QuicConnectionId connection_id,
                                          DelegateInterface* delegate)
     : delegate_(delegate),
       packet_creator_(connection_id, framer, delegate),
-      batch_mode_(false),
+      flusher_attached_(false),
       should_send_ack_(false),
       should_send_stop_waiting_(false),
       random_generator_(random_generator) {}
@@ -55,6 +55,8 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
                                                   size_t write_length,
                                                   QuicStreamOffset offset,
                                                   StreamSendingState state) {
+  QUIC_BUG_IF(!flusher_attached_) << "Packet flusher is not attached when "
+                                     "generator tries to write stream data.";
   bool has_handshake = (id == kCryptoStreamId);
   bool fin = state != NO_FIN;
   QUIC_BUG_IF(has_handshake && fin)
@@ -105,10 +107,6 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
     DCHECK(total_bytes_consumed == write_length ||
            (bytes_consumed > 0 && packet_creator_.HasPendingFrames()));
 
-    if (!InBatchMode()) {
-      packet_creator_.Flush();
-    }
-
     if (total_bytes_consumed == write_length) {
       // We're done writing the data. Exit the loop.
       // We don't make this a precondition because we could have 0 bytes of data
@@ -133,7 +131,6 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(QuicStreamId id,
     SendQueuedFrames(/*flush=*/true);
   }
 
-  DCHECK(InBatchMode() || !packet_creator_.HasPendingFrames());
   return QuicConsumedData(total_bytes_consumed, fin_consumed);
 }
 
@@ -220,23 +217,24 @@ void QuicPacketGenerator::SendQueuedFrames(bool flush) {
       return;
     }
   }
-  if (flush || !InBatchMode()) {
+  if (flush) {
     packet_creator_.Flush();
   }
 }
 
-bool QuicPacketGenerator::InBatchMode() {
-  return batch_mode_;
+bool QuicPacketGenerator::PacketFlusherAttached() const {
+  return flusher_attached_;
 }
 
-void QuicPacketGenerator::StartBatchOperations() {
-  batch_mode_ = true;
+void QuicPacketGenerator::AttachPacketFlusher() {
+  flusher_attached_ = true;
 }
 
-void QuicPacketGenerator::FinishBatchOperations() {
-  batch_mode_ = false;
+void QuicPacketGenerator::Flush() {
   SendQueuedFrames(/*flush=*/false);
+  packet_creator_.Flush();
   SendRemainingPendingPadding();
+  flusher_attached_ = false;
 }
 
 void QuicPacketGenerator::FlushAllQueuedFrames() {
@@ -257,6 +255,8 @@ bool QuicPacketGenerator::HasPendingFrames() const {
 }
 
 bool QuicPacketGenerator::AddNextPendingFrame() {
+  QUIC_BUG_IF(!flusher_attached_) << "Packet flusher is not attached when "
+                                     "generator tries to write control frames.";
   if (should_send_ack_) {
     should_send_ack_ =
         !packet_creator_.AddSavedFrame(delegate_->GetUpdatedAckFrame());
@@ -311,6 +311,11 @@ QuicPacketGenerator::SerializeVersionNegotiationPacket(
   return packet_creator_.SerializeVersionNegotiationPacket(supported_versions);
 }
 
+std::unique_ptr<QuicEncryptedPacket>
+QuicPacketGenerator::SerializeConnectivityProbingPacket() {
+  return packet_creator_.SerializeConnectivityProbingPacket();
+}
+
 void QuicPacketGenerator::ReserializeAllFrames(
     const QuicPendingRetransmission& retransmission,
     char* buffer,
@@ -318,7 +323,7 @@ void QuicPacketGenerator::ReserializeAllFrames(
   packet_creator_.ReserializeAllFrames(retransmission, buffer, buffer_len);
 }
 
-void QuicPacketGenerator::UpdateSequenceNumberLength(
+void QuicPacketGenerator::UpdatePacketNumberLength(
     QuicPacketNumber least_packet_awaited_by_peer,
     QuicPacketCount max_packets_in_flight) {
   return packet_creator_.UpdatePacketNumberLength(least_packet_awaited_by_peer,
@@ -327,9 +332,9 @@ void QuicPacketGenerator::UpdateSequenceNumberLength(
 
 void QuicPacketGenerator::SetConnectionIdLength(uint32_t length) {
   if (length == 0) {
-    packet_creator_.set_connection_id_length(PACKET_0BYTE_CONNECTION_ID);
+    packet_creator_.SetConnectionIdLength(PACKET_0BYTE_CONNECTION_ID);
   } else {
-    packet_creator_.set_connection_id_length(PACKET_8BYTE_CONNECTION_ID);
+    packet_creator_.SetConnectionIdLength(PACKET_8BYTE_CONNECTION_ID);
   }
 }
 
@@ -357,6 +362,11 @@ void QuicPacketGenerator::SendRemainingPendingPadding() {
 bool QuicPacketGenerator::HasRetransmittableFrames() const {
   return !queued_control_frames_.empty() ||
          packet_creator_.HasPendingRetransmittableFrames();
+}
+
+bool QuicPacketGenerator::HasPendingStreamFramesOfStream(
+    QuicStreamId id) const {
+  return packet_creator_.HasPendingStreamFramesOfStream(id);
 }
 
 }  // namespace net

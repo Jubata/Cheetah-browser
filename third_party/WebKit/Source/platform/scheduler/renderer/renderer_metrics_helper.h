@@ -9,9 +9,9 @@
 #include "base/optional.h"
 #include "base/time/time.h"
 #include "platform/PlatformExport.h"
-#include "platform/scheduler/base/thread_load_tracker.h"
 #include "platform/scheduler/renderer/main_thread_task_queue.h"
 #include "platform/scheduler/renderer/task_duration_metric_reporter.h"
+#include "platform/scheduler/util/thread_load_tracker.h"
 
 namespace blink {
 
@@ -29,7 +29,7 @@ class RendererSchedulerImpl;
 // There are three main states:
 // VISIBLE describes frames which are visible to the user (both page and frame
 // are visible).
-// Without this service frame would have had BACKGROUNDED state.
+// Without this service frame would have had kBackgrounded state.
 // HIDDEN describes frames which are out of viewport but the page is visible
 // to the user.
 // BACKGROUND describes frames in background pages.
@@ -42,49 +42,67 @@ class RendererSchedulerImpl;
 // BACKGROUND_EXEMPT_SELF describes background frames which are
 // exempted from background throttling due to a special conditions being met
 // for this frame.
-// BACKGROUND_EXEMPT_OTHER describes background frames which are exempted from
+// BACKGROUND_EXEMPT_kOther describes background frames which are exempted from
 // background throttling due to other frames granting an exemption for
 // the whole page.
 //
 // Note that all these seven states are disjoint, e.g, when calculating
 // a metric for background BACKGROUND, BACKGROUND_EXEMPT_SELF and
-// BACKGROUND_EXEMPT_OTHER should be added together.
+// BACKGROUND_EXEMPT_kOther should be added together.
 enum class FrameType {
   // Used to describe a task queue which doesn't have a frame associated
   // (e.g. global task queue).
-  NONE = 0,
+  kNone = 0,
 
   // This frame was detached and does not have origin or visibility status
   // anymore.
-  DETACHED = 1,
+  kDetached = 1,
 
-  SPECIAL_CASES_COUNT = 2,
+  kSpecialCasesCount = 2,
 
-  MAIN_FRAME_VISIBLE = 2,
-  MAIN_FRAME_VISIBLE_SERVICE = 3,
-  MAIN_FRAME_HIDDEN = 4,
-  MAIN_FRAME_HIDDEN_SERVICE = 5,
-  MAIN_FRAME_BACKGROUND = 6,
-  MAIN_FRAME_BACKGROUND_EXEMPT_SELF = 7,
-  MAIN_FRAME_BACKGROUND_EXEMPT_OTHER = 8,
+  kMainFrameVisible = 2,
+  kMainFrameVisibleService = 3,
+  kMainFrameHidden = 4,
+  kMainFrameHiddenService = 5,
+  kMainFrameBackground = 6,
+  kMainFrameBackgroundExemptSelf = 7,
+  kMainFrameBackgroundExemptOther = 8,
 
-  SAME_ORIGIN_VISIBLE = 9,
-  SAME_ORIGIN_VISIBLE_SERVICE = 10,
-  SAME_ORIGIN_HIDDEN = 11,
-  SAME_ORIGIN_HIDDEN_SERVICE = 12,
-  SAME_ORIGIN_BACKGROUND = 13,
-  SAME_ORIGIN_BACKGROUND_EXEMPT_SELF = 14,
-  SAME_ORIGIN_BACKGROUND_EXEMPT_OTHER = 15,
+  kSameOriginVisible = 9,
+  kSameOriginVisibleService = 10,
+  kSameOriginHidden = 11,
+  kSameOriginHiddenService = 12,
+  kSameOriginBackground = 13,
+  kSameOriginBackgroundExemptSelf = 14,
+  kSameOriginBackgroundExemptOther = 15,
 
-  CROSS_ORIGIN_VISIBLE = 16,
-  CROSS_ORIGIN_VISIBLE_SERVICE = 17,
-  CROSS_ORIGIN_HIDDEN = 18,
-  CROSS_ORIGIN_HIDDEN_SERVICE = 19,
-  CROSS_ORIGIN_BACKGROUND = 20,
-  CROSS_ORIGIN_BACKGROUND_EXEMPT_SELF = 21,
-  CROSS_ORIGIN_BACKGROUND_EXEMPT_OTHER = 22,
+  kCrossOriginVisible = 16,
+  kCrossOriginVisibleService = 17,
+  kCrossOriginHidden = 18,
+  kCrossOriginHiddenService = 19,
+  kCrossOriginBackground = 20,
+  kCrossOriginBackgroundExemptSelf = 21,
+  kCrossOriginBackgroundExemptOther = 22,
 
-  COUNT = 23
+  kCount = 23
+};
+
+// This enum is used for histogram and should not be renumbered.
+// It tracks the following possible transitions:
+// -> kBackgrounded (-> [STOPPED_* -> kResumed])? -> kForegrounded
+enum class BackgroundedRendererTransition {
+  // Renderer is backgrounded
+  kBackgrounded = 0,
+  // Renderer is stopped after being backgrounded for a while
+  kStoppedAfterDelay = 1,
+  // Renderer is stopped due to critical resources, reserved for future use.
+  kStoppedDueToCriticalResources = 2,
+  // Renderer is resumed after being stopped
+  kResumed = 3,
+  // Renderer is foregrounded
+  kForegrounded = 4,
+
+  kCount = 5
 };
 
 PLATFORM_EXPORT FrameType GetFrameType(WebFrameScheduler* frame_scheduler);
@@ -93,12 +111,16 @@ PLATFORM_EXPORT FrameType GetFrameType(WebFrameScheduler* frame_scheduler);
 // This class should be used only on the main thread.
 class PLATFORM_EXPORT RendererMetricsHelper {
  public:
+  static void RecordBackgroundedTransition(
+      BackgroundedRendererTransition transition);
+
   RendererMetricsHelper(RendererSchedulerImpl* renderer_scheduler,
                         base::TimeTicks now,
                         bool renderer_backgrounded);
   ~RendererMetricsHelper();
 
   void RecordTaskMetrics(MainThreadTaskQueue* queue,
+                         const TaskQueue::Task& task,
                          base::TimeTicks start_time,
                          base::TimeTicks end_time);
 
@@ -122,34 +144,44 @@ class PLATFORM_EXPORT RendererMetricsHelper {
   using TaskDurationPerQueueTypeMetricReporter =
       TaskDurationMetricReporter<MainThreadTaskQueue::QueueType>;
 
-  TaskDurationPerQueueTypeMetricReporter task_duration_reporter;
-  TaskDurationPerQueueTypeMetricReporter foreground_task_duration_reporter;
+  TaskDurationPerQueueTypeMetricReporter per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      foreground_first_minute_task_duration_reporter;
+      foreground_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      foreground_second_minute_task_duration_reporter;
+      foreground_first_minute_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      foreground_third_minute_task_duration_reporter;
+      foreground_second_minute_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      foreground_after_third_minute_task_duration_reporter;
-  TaskDurationPerQueueTypeMetricReporter background_task_duration_reporter;
+      foreground_third_minute_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      background_first_minute_task_duration_reporter;
+      foreground_after_third_minute_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      background_second_minute_task_duration_reporter;
+      background_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      background_third_minute_task_duration_reporter;
+      background_first_minute_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      background_fourth_minute_task_duration_reporter;
+      background_second_minute_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      background_fifth_minute_task_duration_reporter;
+      background_third_minute_per_queue_type_task_duration_reporter;
   TaskDurationPerQueueTypeMetricReporter
-      background_after_fifth_minute_task_duration_reporter;
-  TaskDurationPerQueueTypeMetricReporter hidden_task_duration_reporter;
-  TaskDurationPerQueueTypeMetricReporter visible_task_duration_reporter;
-  TaskDurationPerQueueTypeMetricReporter hidden_music_task_duration_reporter;
+      background_fourth_minute_per_queue_type_task_duration_reporter;
+  TaskDurationPerQueueTypeMetricReporter
+      background_fifth_minute_per_queue_type_task_duration_reporter;
+  TaskDurationPerQueueTypeMetricReporter
+      background_after_fifth_minute_per_queue_type_task_duration_reporter;
+  TaskDurationPerQueueTypeMetricReporter
+      hidden_per_queue_type_task_duration_reporter;
+  TaskDurationPerQueueTypeMetricReporter
+      visible_per_queue_type_task_duration_reporter;
+  TaskDurationPerQueueTypeMetricReporter
+      hidden_music_per_queue_type_task_duration_reporter;
 
-  TaskDurationMetricReporter<FrameType> frame_type_duration_reporter;
+  TaskDurationMetricReporter<FrameType> per_frame_type_duration_reporter;
+
+  using TaskDurationPerTaskTypeMetricReporter =
+      TaskDurationMetricReporter<TaskType>;
+  TaskDurationPerTaskTypeMetricReporter per_task_type_duration_reporter;
+
   MainThreadTaskLoadState main_thread_task_load_state;
 
   DISALLOW_COPY_AND_ASSIGN(RendererMetricsHelper);

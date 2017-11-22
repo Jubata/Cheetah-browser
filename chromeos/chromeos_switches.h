@@ -85,7 +85,6 @@ CHROMEOS_EXPORT extern const char kEnableDataSaverPrompt[];
 CHROMEOS_EXPORT extern const char kEnableEncryptionMigration[];
 CHROMEOS_EXPORT extern const char kEnableExperimentalAccessibilityFeatures[];
 CHROMEOS_EXPORT extern const char kEnableExtensionAssetsSharing[];
-CHROMEOS_EXPORT extern const char kEnableExternalDriveRename[];
 CHROMEOS_EXPORT extern const char kEnableFirstRunUITransitions[];
 CHROMEOS_EXPORT extern const char kDisableLockScreenApps[];
 CHROMEOS_EXPORT extern const char kTetherStub[];
@@ -99,10 +98,12 @@ CHROMEOS_EXPORT extern const char kEnableTouchCalibrationSetting[];
 CHROMEOS_EXPORT extern const char kEnableTouchpadThreeFingerClick[];
 CHROMEOS_EXPORT extern const char kEnableFileManagerTouchMode[];
 CHROMEOS_EXPORT extern const char kDisableFileManagerTouchMode[];
+CHROMEOS_EXPORT extern const char kDisableFineGrainedTimeZoneDetection[];
 CHROMEOS_EXPORT extern const char kEnableVideoPlayerChromecastSupport[];
 CHROMEOS_EXPORT extern const char kEnableVoiceInteraction[];
 CHROMEOS_EXPORT extern const char kEnableZipArchiverPacker[];
 CHROMEOS_EXPORT extern const char kEnableZipArchiverUnpacker[];
+CHROMEOS_EXPORT extern const char kDisableZipArchiverUnpacker[];
 CHROMEOS_EXPORT extern const char kEnterpriseDisableArc[];
 CHROMEOS_EXPORT extern const char kEnterpriseEnableForcedReEnrollment[];
 CHROMEOS_EXPORT extern const char kEnterpriseEnableZeroTouchEnrollment[];
@@ -175,6 +176,9 @@ CHROMEOS_EXPORT bool IsVoiceInteractionFlagsEnabled();
 
 // Returns true if voice interaction is enabled.
 CHROMEOS_EXPORT bool IsVoiceInteractionEnabled();
+
+// Returns true if Zip Archiver is enabled for unpacking files.
+CHROMEOS_EXPORT bool IsZipArchiverUnpackerEnabled();
 
 }  // namespace switches
 }  // namespace chromeos

@@ -18,7 +18,6 @@
 #import "ios/chrome/browser/ui/commands/open_url_command.h"
 #import "ios/chrome/browser/ui/content_suggestions/ntp_home_constant.h"
 #import "ios/chrome/browser/ui/ntp/new_tab_page_controller.h"
-#include "ios/chrome/browser/ui/tools_menu/tools_menu_constants.h"
 #include "ios/chrome/browser/ui/ui_util.h"
 #include "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
@@ -465,9 +464,8 @@ void WaitForMatcher(id<GREYMatcher> matcher) {
 // Opens the sign in screen from the bookmarks and then cancel it by opening a
 // new tab. Ensures that the sign in screen is correctly dismissed.
 // Regression test for crbug.com/596029.
-// TODO(crbug.com/695749): Check if we need to rewrite this test for the new
-// Bookmarks UI.
 - (void)testSignInCancelFromBookmarks {
+  // TODO(crbug.com/782551): Rewrite this test for the new Bookmarks UI.
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndDisableFeature(kBookmarkNewGeneration);
 
@@ -476,14 +474,8 @@ void WaitForMatcher(id<GREYMatcher> matcher) {
       identity);
 
   // Open Bookmarks and tap on Sign In promo button.
-  const CGFloat scroll_displacement = 50.0;
   [ChromeEarlGreyUI openToolsMenu];
-  [[[EarlGrey
-      selectElementWithMatcher:grey_accessibilityID(kToolsMenuBookmarksId)]
-         usingSearchAction:grey_scrollInDirection(kGREYDirectionDown,
-                                                  scroll_displacement)
-      onElementWithMatcher:chrome_test_util::ToolsMenuView()]
-      performAction:grey_tap()];
+  [ChromeEarlGreyUI tapToolsMenuButton:chrome_test_util::BookmarksMenuButton()];
 
   if (!IsIPadIdiom()) {
     // Opens the bookmark manager sidebar on handsets.
@@ -515,12 +507,7 @@ void WaitForMatcher(id<GREYMatcher> matcher) {
   // Re-open the sign-in screen. If it wasn't correctly dismissed previously,
   // this will fail.
   [ChromeEarlGreyUI openToolsMenu];
-  [[[EarlGrey
-      selectElementWithMatcher:grey_accessibilityID(kToolsMenuBookmarksId)]
-         usingSearchAction:grey_scrollInDirection(kGREYDirectionDown,
-                                                  scroll_displacement)
-      onElementWithMatcher:chrome_test_util::ToolsMenuView()]
-      performAction:grey_tap()];
+  [ChromeEarlGreyUI tapToolsMenuButton:chrome_test_util::BookmarksMenuButton()];
   if (!IsIPadIdiom()) {
     [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Menu")]
         performAction:grey_tap()];

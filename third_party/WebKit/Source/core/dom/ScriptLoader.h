@@ -21,6 +21,7 @@
 #ifndef ScriptLoader_h
 #define ScriptLoader_h
 
+#include "bindings/core/v8/ScriptSourceLocationType.h"
 #include "core/CoreExport.h"
 #include "core/dom/PendingScript.h"
 #include "core/dom/Script.h"
@@ -74,6 +75,9 @@ class CORE_EXPORT ScriptLoader : public GarbageCollectedFinalized<ScriptLoader>,
       ScriptType& out_script_type);
 
   static bool BlockForNoModule(ScriptType, bool nomodule);
+
+  static network::mojom::FetchCredentialsMode ModuleScriptCredentialsMode(
+      CrossOriginAttributeValue);
 
   // https://html.spec.whatwg.org/#prepare-a-script
   bool PrepareScript(const TextPosition& script_start_position =

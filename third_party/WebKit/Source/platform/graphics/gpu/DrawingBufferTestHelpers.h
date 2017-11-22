@@ -41,6 +41,7 @@ class WebGraphicsContext3DProviderForTests
 
   // Not used by WebGL code.
   GrContext* GetGrContext() override { return nullptr; }
+  void InvalidateGrContext(uint32_t state) override {}
   bool BindToCurrentThread() override { return false; }
   const gpu::Capabilities& GetCapabilities() const override {
     return capabilities_;
@@ -48,6 +49,7 @@ class WebGraphicsContext3DProviderForTests
   const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const override {
     return gpu_feature_info_;
   }
+  viz::GLHelper* GetGLHelper() override { return nullptr; }
   void SetLostContextCallback(const base::Closure&) {}
   void SetErrorMessageCallback(
       const base::Callback<void(const char*, int32_t id)>&) {}
@@ -397,6 +399,7 @@ class DrawingBufferForTests : public DrawingBuffer {
  public:
   static scoped_refptr<DrawingBufferForTests> Create(
       std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
+      bool using_gpu_compositing,
       DrawingBuffer::Client* client,
       const IntSize& size,
       PreserveDrawingBuffer preserve,
@@ -404,9 +407,9 @@ class DrawingBufferForTests : public DrawingBuffer {
     std::unique_ptr<Extensions3DUtil> extensions_util =
         Extensions3DUtil::Create(context_provider->ContextGL());
     scoped_refptr<DrawingBufferForTests> drawing_buffer =
-        WTF::AdoptRef(new DrawingBufferForTests(std::move(context_provider),
-                                                std::move(extensions_util),
-                                                client, preserve));
+        base::AdoptRef(new DrawingBufferForTests(
+            std::move(context_provider), using_gpu_compositing,
+            std::move(extensions_util), client, preserve));
     if (!drawing_buffer->Initialize(
             size, use_multisampling != kDisableMultisampling)) {
       drawing_buffer->BeginDestruction();
@@ -417,16 +420,18 @@ class DrawingBufferForTests : public DrawingBuffer {
 
   DrawingBufferForTests(
       std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
+      bool using_gpu_compositing,
       std::unique_ptr<Extensions3DUtil> extensions_util,
       DrawingBuffer::Client* client,
       PreserveDrawingBuffer preserve)
       : DrawingBuffer(
             std::move(context_provider),
+            using_gpu_compositing,
             std::move(extensions_util),
             client,
             false /* discardFramebufferSupported */,
             true /* wantAlphaChannel */,
-            false /* premultipliedAlpha */,
+            true /* premultipliedAlpha */,
             preserve,
             kWebGL1,
             false /* wantDepth */,

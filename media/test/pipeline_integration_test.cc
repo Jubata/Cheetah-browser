@@ -35,6 +35,7 @@
 #include "media/test/mock_media_source.h"
 #include "media/test/pipeline_integration_test_base.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/libaom/av1_features.h"
 #include "url/gurl.h"
 
 #if defined(MOJO_RENDERER)
@@ -102,6 +103,12 @@ enum class BufferingApi { kLegacyByDts, kNewByPts };
 
 namespace media {
 
+#if BUILDFLAG(ENABLE_AV1_DECODER)
+// TODO(dalecurtis): This is not the correct final string. Fix before enabling
+// by default. http://crbug.com/784607
+const char kWebMAV1[] = "video/webm; codecs=\"av1\"";
+#endif
+
 const char kWebM[] = "video/webm; codecs=\"vp8,vorbis\"";
 const char kWebMVP9[] = "video/webm; codecs=\"vp9\"";
 const char kAudioOnlyWebM[] = "video/webm; codecs=\"vorbis\"";
@@ -120,6 +127,11 @@ const char kMP4Audio[] = "audio/mp4; codecs=\"mp4a.40.2\"";
 const char kMP4AudioFlac[] = "audio/mp4; codecs=\"flac\"";
 const char kMP3[] = "audio/mpeg";
 const char kMP2AudioSBR[] = "video/mp2t; codecs=\"avc1.4D4041,mp4a.40.5\"";
+#if BUILDFLAG(ENABLE_AV1_DECODER)
+// TODO(dalecurtis): This is not the correct final string. Fix before enabling
+// by default. http://crbug.com/784607
+const char kMP4AV1[] = "video/mp4; codecs=\"av1\"";
+#endif  // BUILDFLAG(ENABLE_AV1_DECODER)
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 
 // Constants for the Media Source config change tests.
@@ -652,6 +664,12 @@ base::TimeDelta TimestampMs(int milliseconds) {
   return base::TimeDelta::FromMilliseconds(milliseconds);
 }
 
+TEST_F(PipelineIntegrationTest, WaveLayoutChange) {
+  ASSERT_EQ(PIPELINE_OK, Start("layout_change.wav"));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+}
+
 TEST_F(PipelineIntegrationTest, PlaybackTooManyChannels) {
   EXPECT_EQ(PIPELINE_ERROR_INITIALIZATION_FAILED, Start("9ch.wav"));
 }
@@ -1133,6 +1151,28 @@ TEST_P(MSEPipelineIntegrationTest, BasicPlayback_Live) {
   Stop();
 }
 
+#if BUILDFLAG(ENABLE_AV1_DECODER)
+TEST_P(MSEPipelineIntegrationTest, BasicPlayback_AV1_WebM) {
+  base::test::ScopedFeatureList scoped_feature_list_;
+  scoped_feature_list_.InitAndEnableFeature(kAv1Decoder);
+
+  MockMediaSource source("bear-av1.webm", kWebMAV1, 79943);
+  EXPECT_EQ(PIPELINE_OK, StartPipelineWithMediaSource(&source));
+  source.EndOfStream();
+
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(kVP9WebMFileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+  source.Shutdown();
+  Stop();
+}
+#endif
+
 TEST_P(MSEPipelineIntegrationTest, BasicPlayback_VP9_WebM) {
   MockMediaSource source("bear-vp9.webm", kWebMVP9, 67504);
   EXPECT_EQ(PIPELINE_OK, StartPipelineWithMediaSource(&source));
@@ -1522,6 +1562,27 @@ TEST_F(PipelineIntegrationTest, BasicFallback) {
   ASSERT_TRUE(WaitUntilOnEnded());
 };
 
+#if BUILDFLAG(ENABLE_AV1_DECODER)
+TEST_P(MSEPipelineIntegrationTest, BasicPlayback_AV1_MP4) {
+  base::test::ScopedFeatureList scoped_feature_list_;
+  scoped_feature_list_.InitAndEnableFeature(kAv1Decoder);
+  MockMediaSource source("bear-av1.mp4", kMP4AV1, 80496);
+  EXPECT_EQ(PIPELINE_OK, StartPipelineWithMediaSource(&source));
+  source.EndOfStream();
+
+  EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
+  EXPECT_EQ(0, pipeline_->GetBufferedTimeRanges().start(0).InMilliseconds());
+  EXPECT_EQ(kVP9WebMFileDurationMs,
+            pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+  source.Shutdown();
+  Stop();
+}
+#endif
+
 TEST_P(MSEPipelineIntegrationTest, FlacInMp4_Hashed) {
   // The feature is disabled by default. Enable it.
   base::test::ScopedFeatureList features;
@@ -1544,7 +1605,8 @@ TEST_P(MSEPipelineIntegrationTest, FlacInMp4_Hashed) {
 
 TEST_P(MSEPipelineIntegrationTest, ADTS) {
   MockMediaSource source("sfx.adts", kADTS, kAppendWholeFile);
-  EXPECT_EQ(PIPELINE_OK, StartPipelineWithMediaSource(&source));
+  EXPECT_EQ(PIPELINE_OK,
+            StartPipelineWithMediaSource(&source, kHashed, nullptr));
   source.EndOfStream();
 
   EXPECT_EQ(1u, pipeline_->GetBufferedTimeRanges().size());
@@ -1554,6 +1616,9 @@ TEST_P(MSEPipelineIntegrationTest, ADTS) {
   Play();
 
   EXPECT_TRUE(WaitUntilOnEnded());
+
+  // Verify that nothing was stripped.
+  EXPECT_HASH_EQ("0.46,1.72,4.26,4.57,3.39,1.53,", GetAudioHash());
 }
 
 TEST_P(MSEPipelineIntegrationTest, ADTS_TimestampOffset) {
@@ -1584,7 +1649,7 @@ TEST_P(MSEPipelineIntegrationTest, ADTS_TimestampOffset) {
   EXPECT_EQ(592, pipeline_->GetBufferedTimeRanges().end(0).InMilliseconds());
 
   // Verify preroll is stripped.
-  EXPECT_HASH_EQ("-0.25,0.67,0.04,0.14,-0.49,-0.41,", GetAudioHash());
+  EXPECT_HASH_EQ("-1.76,-1.35,-0.72,0.70,1.24,0.52,", GetAudioHash());
 }
 
 TEST_F(PipelineIntegrationTest, BasicPlaybackHashed_MP3) {
@@ -1598,6 +1663,17 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackHashed_MP3) {
   EXPECT_HASH_EQ("1.30,2.72,4.56,5.08,3.74,2.03,", GetAudioHash());
 }
 
+TEST_F(PipelineIntegrationTest, BasicPlaybackHashed_ADTS) {
+  ASSERT_EQ(PIPELINE_OK, Start("sfx.adts", kHashed));
+
+  Play();
+
+  ASSERT_TRUE(WaitUntilOnEnded());
+
+  // Verify codec delay and preroll are stripped.
+  EXPECT_HASH_EQ("1.80,1.66,2.31,3.26,4.46,3.36,", GetAudioHash());
+}
+
 TEST_F(PipelineIntegrationTest, BasicPlaybackHashed_FlacInMp4) {
   ASSERT_EQ(PIPELINE_OK, Start("sfx-flac.mp4", kHashed));
   Play();
@@ -1605,6 +1681,16 @@ TEST_F(PipelineIntegrationTest, BasicPlaybackHashed_FlacInMp4) {
   EXPECT_HASH_EQ(std::string(kNullVideoHash), GetVideoHash());
   EXPECT_HASH_EQ(kSfxLosslessHash, GetAudioHash());
 }
+
+#if BUILDFLAG(ENABLE_AV1_DECODER)
+TEST_F(PipelineIntegrationTest, BasicPlayback_VideoOnly_AV1_Mp4) {
+  base::test::ScopedFeatureList scoped_feature_list_;
+  scoped_feature_list_.InitAndEnableFeature(kAv1Decoder);
+  ASSERT_EQ(PIPELINE_OK, Start("bear-av1.mp4"));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+}
+#endif
 
 class Mp3FastSeekParams {
  public:
@@ -2413,6 +2499,16 @@ TEST_F(PipelineIntegrationTest, BasicPlayback_VideoOnly_VP9_WebM) {
   Play();
   ASSERT_TRUE(WaitUntilOnEnded());
 }
+
+#if BUILDFLAG(ENABLE_AV1_DECODER)
+TEST_F(PipelineIntegrationTest, BasicPlayback_VideoOnly_AV1_WebM) {
+  base::test::ScopedFeatureList scoped_feature_list_;
+  scoped_feature_list_.InitAndEnableFeature(kAv1Decoder);
+  ASSERT_EQ(PIPELINE_OK, Start("bear-av1.webm"));
+  Play();
+  ASSERT_TRUE(WaitUntilOnEnded());
+}
+#endif
 
 // Verify that VP9 video and Opus audio in the same WebM container can be played
 // back.

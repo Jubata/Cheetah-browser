@@ -6,6 +6,7 @@
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/interfaces/tray_action.mojom.h"
 #include "base/command_line.h"
+#include "base/run_loop.h"
 #include "base/scoped_observer.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/chromeos/lock_screen_apps/lock_screen_profile_creator.h"
@@ -137,12 +138,6 @@ class LockScreenNoteTakingTest : public ExtensionBrowserTest {
       *error = catcher.message();
       if (ready_to_close.was_satisfied())
         ready_to_close.Reply("failed");
-      return false;
-    }
-
-    if (lock_screen_apps::StateController::Get()->GetLockScreenNoteState() !=
-        ash::mojom::TrayActionState::kActive) {
-      *error = "App not in active state.";
       return false;
     }
 

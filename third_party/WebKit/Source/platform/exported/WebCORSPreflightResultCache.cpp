@@ -30,9 +30,9 @@
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/network/http_names.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/ThreadSpecific.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/WebCORS.h"
 
 namespace blink {
@@ -97,8 +97,8 @@ bool ParseAccessControlAllowList(const std::string& string, SetType& set) {
 WebCORSPreflightResultCacheItem::WebCORSPreflightResultCacheItem(
     network::mojom::FetchCredentialsMode credentials_mode)
     : absolute_expiry_time_(0),
-      credentials_(
-          FetchUtils::ShouldTreatCredentialsModeAsInclude(credentials_mode)) {}
+      credentials_(credentials_mode ==
+                   network::mojom::FetchCredentialsMode::kInclude) {}
 
 // static
 std::unique_ptr<WebCORSPreflightResultCacheItem>
@@ -171,10 +171,10 @@ bool WebCORSPreflightResultCacheItem::AllowsCrossOriginMethod(
   if (!credentials_ && methods_.find("*") != methods_.end())
     return true;
 
-  error_description.Assign(WebString::FromASCII("Method " + method.Ascii() +
-                                                " is not allowed by "
-                                                "Access-Control-Allow-Methods "
-                                                "in preflight response."));
+  error_description = WebString::FromASCII("Method " + method.Ascii() +
+                                           " is not allowed by "
+                                           "Access-Control-Allow-Methods "
+                                           "in preflight response.");
 
   return false;
 }
@@ -189,10 +189,10 @@ bool WebCORSPreflightResultCacheItem::AllowsCrossOriginHeaders(
     if (headers_.find(header.key.Ascii().data()) == headers_.end() &&
         !FetchUtils::IsCORSSafelistedHeader(header.key, header.value) &&
         !FetchUtils::IsForbiddenHeaderName(header.key)) {
-      error_description.Assign(
-          String::Format("Request header field %s is not allowed by "
-                         "Access-Control-Allow-Headers in preflight response.",
-                         header.key.GetString().Utf8().data()));
+      error_description = String::Format(
+          "Request header field %s is not allowed by "
+          "Access-Control-Allow-Headers in preflight response.",
+          header.key.GetString().Utf8().data());
       return false;
     }
   }
@@ -208,7 +208,7 @@ bool WebCORSPreflightResultCacheItem::AllowsRequest(
   if (absolute_expiry_time_ < CurrentTime())
     return false;
   if (!credentials_ &&
-      FetchUtils::ShouldTreatCredentialsModeAsInclude(credentials_mode)) {
+      credentials_mode == network::mojom::FetchCredentialsMode::kInclude) {
     return false;
   }
   if (!AllowsCrossOriginMethod(method, ignored_explanation))

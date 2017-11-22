@@ -71,6 +71,7 @@ source_set("safe_browsing_api_handler") {
   deps = [
     ":safe_browsing_api_handler_util",
     "//base",
+    "//components/safe_browsing:features",
     "//components/safe_browsing/db:util",
     "//content/public/browser:browser",
     "//url",
@@ -105,8 +106,4 @@ source_set("unit_tests_mobile") {
     "//testing/gtest",
     "//url",
   ]
-  if (is_win) {
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    cflags = [ "/wd4267" ]  # Conversion from size_t to 'type'.
-  }
 }

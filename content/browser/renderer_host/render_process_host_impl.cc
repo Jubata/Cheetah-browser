@@ -100,6 +100,7 @@
 #include "content/browser/media/midi_host.h"
 #include "content/browser/memory/memory_coordinator_impl.h"
 #include "content/browser/mime_registry_impl.h"
+#include "content/browser/mus_util.h"
 #include "content/browser/net/reporting_service_proxy.h"
 #include "content/browser/notifications/notification_message_filter.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
@@ -158,7 +159,6 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/resource_context.h"
-#include "content/public/browser/worker_service.h"
 #include "content/public/common/bind_interface_helpers.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/connection_filter.h"
@@ -831,6 +831,16 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
         NOTREACHED();
         continue;
       }
+
+      // It's possible that |host| has become unsuitable for hosting
+      // |site_url|, for example if it was reused by a navigation to a
+      // different site, and |site_url| requires a dedicated process.  Do not
+      // allow such hosts to be reused.  See https://crbug.com/780661.
+      if (!host->MayReuseHost() ||
+          !RenderProcessHostImpl::IsSuitableHost(
+              host, host->GetBrowserContext(), site_url))
+        continue;
+
       if (host->VisibleWidgetCount())
         foreground_processes->insert(host);
       else
@@ -992,6 +1002,15 @@ class UnmatchedServiceWorkerProcessTracker
     RenderProcessHost* host = FindFreshestProcessForSite(site_url);
     if (!host)
       return nullptr;
+
+    // It's possible that |host| is currently unsuitable for hosting
+    // |site_url|, for example if it was used for a ServiceWorker for a
+    // nonexistent extension URL.  See https://crbug.com/782349 and
+    // https://crbug.com/780661.
+    if (!host->MayReuseHost() || !RenderProcessHostImpl::IsSuitableHost(
+                                     host, host->GetBrowserContext(), site_url))
+      return nullptr;
+
     site_process_set_.erase(SiteProcessIDPair(site_url, host->GetID()));
     if (!HasProcess(host))
       host->RemoveObserver(this);
@@ -1582,8 +1601,9 @@ void RenderProcessHostImpl::InitializeChannelProxy() {
   mojo::MessagePipe pipe;
   BindInterface(IPC::mojom::ChannelBootstrap::Name_, std::move(pipe.handle1));
   std::unique_ptr<IPC::ChannelFactory> channel_factory =
-      IPC::ChannelMojo::CreateServerFactory(std::move(pipe.handle0),
-                                            io_task_runner);
+      IPC::ChannelMojo::CreateServerFactory(
+          std::move(pipe.handle0), io_task_runner,
+          base::ThreadTaskRunnerHandle::Get());
 
   content::BindInterface(this, &child_control_interface_);
 
@@ -1595,12 +1615,14 @@ void RenderProcessHostImpl::InitializeChannelProxy() {
   // See crbug.com/526842 for details.
 #if defined(OS_ANDROID)
   if (GetContentClient()->UsingSynchronousCompositing()) {
-    channel_ = IPC::SyncChannel::Create(
-        this, io_task_runner.get(), &never_signaled_);
+    channel_ = IPC::SyncChannel::Create(this, io_task_runner.get(),
+                                        base::ThreadTaskRunnerHandle::Get(),
+                                        &never_signaled_);
   }
 #endif  // OS_ANDROID
   if (!channel_)
-    channel_.reset(new IPC::ChannelProxy(this, io_task_runner.get()));
+    channel_.reset(new IPC::ChannelProxy(this, io_task_runner.get(),
+                                         base::ThreadTaskRunnerHandle::Get()));
   channel_->Init(std::move(channel_factory), true /* create_pipe_now */);
 
   // Note that Channel send is effectively paused and unpaused at various points
@@ -1906,13 +1928,12 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
   associated_interfaces_.reset(new AssociatedInterfaceRegistryImpl());
   GetContentClient()->browser()->ExposeInterfacesToRenderer(
       registry.get(), associated_interfaces_.get(), this);
-  static_cast<AssociatedInterfaceRegistry*>(associated_interfaces_.get())
-      ->AddInterface(base::Bind(&RenderProcessHostImpl::BindRouteProvider,
-                                base::Unretained(this)));
-
-  AddUIThreadInterface(registry.get(),
-                       base::Bind(&RenderProcessHostImpl::CreateRendererHost,
-                                  base::Unretained(this)));
+  AssociatedInterfaceRegistry* associated_registry =
+      associated_interfaces_.get();
+  associated_registry->AddInterface(base::Bind(
+      &RenderProcessHostImpl::BindRouteProvider, base::Unretained(this)));
+  associated_registry->AddInterface(base::Bind(
+      &RenderProcessHostImpl::CreateRendererHost, base::Unretained(this)));
 
   if (base::FeatureList::IsEnabled(features::kNetworkService)) {
     AddUIThreadInterface(
@@ -2021,7 +2042,7 @@ void RenderProcessHostImpl::CreateStoragePartitionService(
 }
 
 void RenderProcessHostImpl::CreateRendererHost(
-    mojom::RendererHostRequest request) {
+    mojom::RendererHostAssociatedRequest request) {
   renderer_host_binding_.Bind(std::move(request));
 }
 
@@ -2589,7 +2610,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kIgnoreAutoplayRestrictionsForTests,
     switches::kIPCConnectionTimeout,
     switches::kIsolateOrigins,
-    switches::kIsRunningInMash,
     switches::kJavaScriptFlags,
     switches::kLoggingLevel,
     switches::kMainFrameResizesAreOrientationChanges,
@@ -2687,6 +2707,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kIpcDumpDirectory,
     switches::kIpcFuzzerTestcase,
 #endif
+#if BUILDFLAG(ENABLE_MUS)
+    switches::kMus,
+#endif
   };
   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames,
                                  arraysize(kSwitchNames));
@@ -2727,8 +2750,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
   // optimizes the common case to avoid wasted work.
   // Note: There is no ImageTransportFactory with Mash or Viz.
   // TODO(danakj): Get this info somewhere for viz mode.
-  if (!browser_cmd.HasSwitch(switches::kIsRunningInMash) &&
-      !browser_cmd.HasSwitch(switches::kEnableViz) &&
+  if (!IsUsingMus() && !browser_cmd.HasSwitch(switches::kEnableViz) &&
       ImageTransportFactory::GetInstance()->IsGpuCompositingDisabled())
     renderer_cmd->AppendSwitch(switches::kDisableGpuCompositing);
 #endif
@@ -2861,10 +2883,6 @@ bool RenderProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
   if (msg.routing_id() == MSG_ROUTING_CONTROL) {
     // Dispatch control messages.
     IPC_BEGIN_MESSAGE_MAP(RenderProcessHostImpl, msg)
-      IPC_MESSAGE_HANDLER(ChildProcessHostMsg_ShutdownRequest,
-                          OnShutdownRequest)
-      IPC_MESSAGE_HANDLER(RenderProcessHostMsg_SuddenTerminationChanged,
-                          SuddenTerminationChanged)
       IPC_MESSAGE_HANDLER(ViewHostMsg_UserMetricsRecordAction,
                           OnUserMetricsRecordAction)
       IPC_MESSAGE_HANDLER(ViewHostMsg_Close_ACK, OnCloseACK)
@@ -3306,8 +3324,9 @@ bool RenderProcessHostImpl::IsSuitableHost(RenderProcessHost* host,
       ChildProcessSecurityPolicyImpl::CheckOriginLockResult::NO_LOCK) {
     // If the process is already dedicated to a site, only allow the destination
     // URL to reuse this process if the URL has the same site.
-    return lock_state == ChildProcessSecurityPolicyImpl::CheckOriginLockResult::
-                             HAS_EQUAL_LOCK;
+    if (lock_state !=
+        ChildProcessSecurityPolicyImpl::CheckOriginLockResult::HAS_EQUAL_LOCK)
+      return false;
   } else if (!host->IsUnused() && SiteInstanceImpl::ShouldLockToOrigin(
                                       browser_context, host, site_url)) {
     // Otherwise, if this process has been used to host any other content, it
@@ -3547,6 +3566,22 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
     render_process_host = GetExistingProcessHost(browser_context, site_url);
   }
 
+  // If we found a process to reuse, sanity check that it is suitable for
+  // hosting |site_url|. For example, if |site_url| requires a dedicated
+  // process, we should never pick a process used by, or locked to, a different
+  // site.
+  if (render_process_host &&
+      !RenderProcessHostImpl::IsSuitableHost(render_process_host,
+                                             browser_context, site_url)) {
+    ChildProcessSecurityPolicyImpl* policy =
+        ChildProcessSecurityPolicyImpl::GetInstance();
+    base::debug::SetCrashKeyValue("requested_site_url", site_url.spec());
+    base::debug::SetCrashKeyValue(
+        "killed_process_origin_lock",
+        policy->GetOriginLock(render_process_host->GetID()).spec());
+    CHECK(false) << "Unsuitable process reused for site " << site_url;
+  }
+
   // Otherwise, use the spare RenderProcessHost or create a new one.
   if (!render_process_host) {
     // Pass a null StoragePartition. Tests with TestBrowserContext using a
@@ -3735,18 +3770,24 @@ void RenderProcessHostImpl::ReleaseOnCloseACK(
   holder->Hold(sessions, view_route_id);
 }
 
-void RenderProcessHostImpl::OnShutdownRequest() {
+void RenderProcessHostImpl::ShutdownRequest() {
+  // Notify any contents that the renderer might shut down.
+  for (auto& observer : observers_) {
+    observer.RenderProcessShutdownRequested(this);
+  }
+
   // Don't shut down if there are active RenderViews, or if there are pending
   // RenderViews being swapped back in.
   // In single process mode, we never shutdown the renderer.
-  if (pending_views_ || run_renderer_in_process() || GetActiveViewCount() > 0)
+  if (pending_views_ || run_renderer_in_process() || GetActiveViewCount() > 0) {
     return;
+  }
 
   // Notify any contents that might have swapped out renderers from this
   // process. They should not attempt to swap them back in.
-  for (auto& observer : observers_)
+  for (auto& observer : observers_) {
     observer.RenderProcessWillExit(this);
-
+  }
   child_control_interface_->ProcessShutdown();
 }
 

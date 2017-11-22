@@ -21,6 +21,15 @@
 #include "gpu/ipc/gpu_in_process_thread_service.h"
 #include "gpu/ipc/service/gpu_memory_buffer_factory.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
+#include "media/gpu/features.h"
+#include "services/metrics/public/cpp/delegating_ukm_recorder.h"
+#include "services/metrics/public/cpp/mojo_ukm_recorder.h"
+#include "services/metrics/public/interfaces/constants.mojom.h"
+#include "services/service_manager/public/cpp/connector.h"
+
+#if defined(OS_CHROMEOS) && BUILDFLAG(USE_VAAPI)
+#include "media/gpu/vaapi_wrapper.h"
+#endif
 
 namespace {
 
@@ -90,6 +99,14 @@ VizMainImpl::VizMainImpl(Delegate* delegate,
       bool success = gpu::SwitchValueToGpuPreferences(value, &gpu_preferences);
       CHECK(success);
     }
+#if defined(OS_CHROMEOS) && BUILDFLAG(USE_VAAPI)
+    // Initialize media codec. The UI service is running in a priviliged
+    // process. We don't need care when to initialize media codec. When we have
+    // a separate GPU (or VIZ) service process, we should initialize them
+    // before sandboxing
+    media::VaapiWrapper::PreSandboxInitialization();
+#endif
+
     // Initialize GpuInit before starting the IO or compositor threads.
     gpu_init_ = std::make_unique<gpu::GpuInit>();
     gpu_init_->set_sandbox_helper(this);
@@ -105,6 +122,8 @@ VizMainImpl::VizMainImpl(Delegate* delegate,
     compositor_thread_task_runner_ = compositor_thread_->task_runner();
   }
 
+  CreateUkmRecorderIfNeeded(dependencies.connector);
+
   gpu_service_ = base::MakeUnique<GpuServiceImpl>(
       gpu_init_->gpu_info(), gpu_init_->TakeWatchdogThread(),
       io_thread_ ? io_thread_->task_runner()
@@ -114,6 +133,8 @@ VizMainImpl::VizMainImpl(Delegate* delegate,
 
 VizMainImpl::~VizMainImpl() {
   DCHECK(gpu_thread_task_runner_->BelongsToCurrentThread());
+  if (ukm_recorder_)
+    ukm::DelegatingUkmRecorder::Get()->RemoveDelegate(ukm_recorder_.get());
   if (io_thread_)
     io_thread_->Stop();
 }
@@ -185,35 +206,45 @@ void VizMainImpl::CreateGpuService(
       gpu::GpuProcessActivityFlags(std::move(activity_flags)),
       dependencies_.sync_point_manager, dependencies_.shutdown_event);
 
-  if (pending_frame_sink_manager_request_.is_pending()) {
+  if (!pending_frame_sink_manager_params_.is_null()) {
     CreateFrameSinkManagerInternal(
-        std::move(pending_frame_sink_manager_request_),
-        std::move(pending_frame_sink_manager_client_info_));
+        std::move(pending_frame_sink_manager_params_));
+    pending_frame_sink_manager_params_.reset();
   }
   if (delegate_)
     delegate_->OnGpuServiceConnection(gpu_service_.get());
 }
 
+void VizMainImpl::CreateUkmRecorderIfNeeded(
+    service_manager::Connector* connector) {
+  // If GPU is running in the browser process, we can use browser's UKMRecorder.
+  if (gpu_init_->gpu_info().in_process_gpu)
+    return;
+
+  DCHECK(connector) << "Unable to initialize UKMRecorder in the GPU process - "
+                    << "no valid connector.";
+  ukm_recorder_ = ukm::MojoUkmRecorder::Create(connector);
+  ukm::DelegatingUkmRecorder::Get()->AddDelegate(ukm_recorder_->GetWeakPtr());
+}
+
 void VizMainImpl::CreateFrameSinkManager(
-    mojom::FrameSinkManagerRequest request,
-    mojom::FrameSinkManagerClientPtr client) {
+    mojom::FrameSinkManagerParamsPtr params) {
   DCHECK(compositor_thread_task_runner_);
   DCHECK(gpu_thread_task_runner_->BelongsToCurrentThread());
   if (!gpu_service_ || !gpu_service_->is_initialized()) {
-    pending_frame_sink_manager_request_ = std::move(request);
-    pending_frame_sink_manager_client_info_ = client.PassInterface();
+    DCHECK(pending_frame_sink_manager_params_.is_null());
+    pending_frame_sink_manager_params_ = std::move(params);
     return;
   }
-  CreateFrameSinkManagerInternal(std::move(request), client.PassInterface());
+  CreateFrameSinkManagerInternal(std::move(params));
 }
 
 void VizMainImpl::CreateFrameSinkManagerInternal(
-    mojom::FrameSinkManagerRequest request,
-    mojom::FrameSinkManagerClientPtrInfo client_info) {
+    mojom::FrameSinkManagerParamsPtr params) {
   DCHECK(!gpu_command_service_);
   DCHECK(gpu_service_);
   DCHECK(gpu_thread_task_runner_->BelongsToCurrentThread());
-  gpu_command_service_ = new gpu::GpuInProcessThreadService(
+  gpu_command_service_ = base::MakeRefCounted<gpu::GpuInProcessThreadService>(
       gpu_thread_task_runner_, gpu_service_->sync_point_manager(),
       gpu_service_->mailbox_manager(), gpu_service_->share_group(),
       gpu_service_->gpu_feature_info());
@@ -221,24 +252,23 @@ void VizMainImpl::CreateFrameSinkManagerInternal(
   compositor_thread_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&VizMainImpl::CreateFrameSinkManagerOnCompositorThread,
-                 base::Unretained(this), base::Passed(std::move(request)),
-                 base::Passed(std::move(client_info))));
+                 base::Unretained(this), base::Passed(&params)));
 }
 
 void VizMainImpl::CreateFrameSinkManagerOnCompositorThread(
-    mojom::FrameSinkManagerRequest request,
-    mojom::FrameSinkManagerClientPtrInfo client_info) {
+    mojom::FrameSinkManagerParamsPtr params) {
   DCHECK(!frame_sink_manager_);
   mojom::FrameSinkManagerClientPtr client;
-  client.Bind(std::move(client_info));
+  client.Bind(std::move(params->frame_sink_manager_client));
 
   display_provider_ = base::MakeUnique<GpuDisplayProvider>(
-      gpu_command_service_, gpu_service_->gpu_channel_manager());
+      params->restart_id, gpu_command_service_,
+      gpu_service_->gpu_channel_manager());
 
   frame_sink_manager_ = base::MakeUnique<FrameSinkManagerImpl>(
       SurfaceManager::LifetimeType::REFERENCES, display_provider_.get());
-  frame_sink_manager_->BindAndSetClient(std::move(request), nullptr,
-                                        std::move(client));
+  frame_sink_manager_->BindAndSetClient(std::move(params->frame_sink_manager),
+                                        nullptr, std::move(client));
 }
 
 void VizMainImpl::CloseVizMainBindingOnGpuThread(base::WaitableEvent* wait) {

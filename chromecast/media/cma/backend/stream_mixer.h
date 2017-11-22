@@ -21,10 +21,6 @@
 #include "chromecast/public/media/media_pipeline_backend.h"
 #include "chromecast/public/volume_control.h"
 
-namespace base {
-class ListValue;
-}  // namespace base
-
 namespace media {
 class AudioBus;
 }  // namespace media
@@ -32,8 +28,8 @@ class AudioBus;
 namespace chromecast {
 namespace media {
 
-class MixerOutputStream;
 class FilterGroup;
+class MixerOutputStream;
 class PostProcessingPipelineParser;
 class PostProcessingPipelineFactory;
 
@@ -151,11 +147,13 @@ class StreamMixer {
     // Sets whether or not this stream should be muted.
     virtual void SetMuted(bool muted) = 0;
 
-    // Returns the volume multiplier of the stream.
-    virtual float EffectiveVolume() = 0;
+    // Returns the target volume multiplier of the stream. Fading in or out may
+    // cause this to be different from the actual multiplier applied in the last
+    // buffer. For the actual multiplier applied, use InstantaneousVolume().
+    virtual float TargetVolume() = 0;
 
     // Returns the largest volume multiplier applied to the last buffer
-    // retrieved. This differs from EffectiveVolume() during transients.
+    // retrieved. This differs from TargetVolume() during transients.
     virtual float InstantaneousVolume() = 0;
   };
 
@@ -215,12 +213,17 @@ class StreamMixer {
   void SetPostProcessorConfig(const std::string& name,
                               const std::string& config);
 
-  // Sets active channel in multichannel group.
-  void UpdatePlayoutChannel(int playout_channel);
-
   // Sets filter data alignment, required by some processors.
   // Must be called before audio playback starts.
   void SetFilterFrameAlignmentForTest(int filter_frame_alignment);
+
+  // StreamMixerInputs may request to have one or all channels played on this
+  // device. In the event that there are multiple different channels requested,
+  // |kChannelAll| takes precidence, and only one other channel type may be
+  // requested at a time.
+  // When StreamMixerInputs remove themselves, they must clear their request.
+  void AddPlayoutChannelRequest(int channel);
+  void RemovePlayoutChannelRequest(int channel);
 
  protected:
   StreamMixer();
@@ -241,12 +244,6 @@ class StreamMixer {
   void FinishFinalize();
 
   void CreatePostProcessors(PostProcessingPipelineParser* pipeline_parser);
-  std::unique_ptr<FilterGroup> CreateFilterGroup(
-      bool mix_to_mono,
-      const std::string& name,
-      const base::ListValue* filter_list,
-      const std::unordered_set<std::string>& device_ids,
-      const std::vector<FilterGroup*>& mixed_inputs);
 
   bool Start();
   void Stop();
@@ -269,6 +266,9 @@ class StreamMixer {
   void UpdateRenderingDelay(int newly_pushed_frames);
   void ResizeBuffersIfNecessary(int chunk_size);
 
+  // Sets active channel in multichannel group.
+  void UpdatePlayoutChannel();
+
   static bool single_threaded_for_test_;
 
   std::unique_ptr<MixerOutputStream> output_;
@@ -283,6 +283,10 @@ class StreamMixer {
   int low_sample_rate_cutoff_ = 0;
 
   State state_;
+
+  // Stores the number of inputs requesting a PlayoutChannel.
+  // Size is kNumChannels - kChannelAll = 2 - -1 = 3.
+  std::vector<int> requested_channel_counts_;
 
   std::vector<std::unique_ptr<InputQueue>> inputs_;
   std::vector<std::unique_ptr<InputQueue>> ignored_inputs_;

@@ -111,7 +111,7 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
 
   base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIMain");
-  base::trace_event::TraceLog::GetInstance()->SetProcessName("PPAPI Process");
+  base::trace_event::TraceLog::GetInstance()->set_process_name("PPAPI Process");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventPpapiProcessSortIndex);
 
@@ -121,10 +121,10 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
 #endif
 
 #if defined(OS_LINUX)
-  service_manager::SandboxLinux::InitializeSandbox(
+  service_manager::SandboxLinux::GetInstance()->InitializeSandbox(
       service_manager::SandboxTypeFromCommandLine(command_line),
-      service_manager::SandboxSeccompBPF::PreSandboxHook(),
-      service_manager::SandboxSeccompBPF::Options());
+      service_manager::SandboxLinux::PreSandboxHook(),
+      service_manager::SandboxLinux::Options());
 #endif
 
   ChildProcess ppapi_process;

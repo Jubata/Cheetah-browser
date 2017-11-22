@@ -26,8 +26,8 @@
 #include "core/inspector/V8InspectorString.h"
 #include "core/probe/CoreProbes.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 
 namespace blink {
 
@@ -82,11 +82,13 @@ void ThreadDebugger::IdleFinished(v8::Isolate* isolate) {
 void ThreadDebugger::AsyncTaskScheduled(const String& operation_name,
                                         void* task,
                                         bool recurring) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskScheduled(ToV8InspectorStringView(operation_name),
                                     task, recurring);
 }
 
 void ThreadDebugger::AsyncTaskCanceled(void* task) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskCanceled(task);
 }
 
@@ -95,10 +97,12 @@ void ThreadDebugger::AllAsyncTasksCanceled() {
 }
 
 void ThreadDebugger::AsyncTaskStarted(void* task) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskStarted(task);
 }
 
 void ThreadDebugger::AsyncTaskFinished(void* task) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskFinished(task);
 }
 

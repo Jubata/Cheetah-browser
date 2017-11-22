@@ -18,6 +18,18 @@ be describing additional metrics about the same event.
 
 <ukm-configuration>
 
+<event name="AbusiveExperienceHeuristic">
+  <summary>
+    Various metrics recording experiences which are commonly used for abusive
+    purposes.
+  </summary>
+  <metric name="DidTabUnder">
+    <summary>
+      True if the page attempted a tab-under navigation.
+    </summary>
+  </metric>
+</event>
+
 <event name="Autofill.CardUploadDecision">
   <owner>sebsg@chromium.org</owner>
   <metric name="UploadDecision">
@@ -275,6 +287,21 @@ be describing additional metrics about the same event.
     <summary>
       Field's |ServerFieldType| returned by server. See
       |AutofillField.server_type()|.
+    </summary>
+  </metric>
+</event>
+
+<event name="Blink.UseCounter">
+  <owner>loonybear@chromium.org</owner>
+  <summary>
+    Collects data for a subset of UseCounter features. When UMA UseCounter data
+    shows a behaviour that is rare but too common to blindly change. This metric
+    should be used to reason about whether a breaking change is acceptable or
+    not.
+  </summary>
+  <metric name="Feature">
+    <summary>
+      Opt-in UseCounter feature.
     </summary>
   </metric>
 </event>
@@ -638,6 +665,21 @@ be describing additional metrics about the same event.
   <metric name="Visits.Total"/>
 </event>
 
+<event name="Media.SiteMuted" singular="True">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <summary>
+    Event recorded when a website tries to play audio but is muted by the sound
+    content setting.
+  </summary>
+  <metric name="MuteReason">
+    <summary>
+      Enum value giving the reason the site was muted. Defined as
+      |SoundContentSettingObserver::MuteReason|.
+    </summary>
+  </metric>
+</event>
+
 <event name="Media.WatchTime">
   <obsolete>
     Deprecated 8/2017 in favor Media.BasicPlayback
@@ -728,6 +770,14 @@ be describing additional metrics about the same event.
     <summary>
       Boolean value indicating if this event is for an MSE playback. If false it
       means this was a SRC playback.
+    </summary>
+  </metric>
+  <metric name="IsTopFrame">
+    <summary>
+      Flag indicating whether the report comes from the top frame or some inner
+      frame. For privacy, metrics from inner frames are recorded with the top
+      frame's origin, so this flag helps separate top frame vs. embedded
+      playbacks.
     </summary>
   </metric>
   <metric name="LastPipelineStatus">
@@ -853,7 +903,7 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="PrivateMemoryFootprint">
     <summary>
-      Measure of total memory consumed by process.
+      Measure of total private memory consumed by process.
     </summary>
   </metric>
   <metric name="ProcessType">
@@ -866,6 +916,11 @@ be describing additional metrics about the same event.
   <metric name="Resident">
     <summary>
       Size of process' working set.
+    </summary>
+  </metric>
+  <metric name="SharedMemoryFootprint">
+    <summary>
+      Measure of total shared memory consumed by process.
     </summary>
   </metric>
   <metric name="TimeSinceLastNavigation">
@@ -882,7 +937,12 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="Total2.PrivateMemoryFootprint">
     <summary>
-      Measure of total memory consumed by all processes.
+      Measure of total private memory consumed by all processes.
+    </summary>
+  </metric>
+  <metric name="Total2.SharedMemoryFootprint">
+    <summary>
+      Measure of total shared memory consumed by all processes.
     </summary>
   </metric>
   <metric name="Uptime">

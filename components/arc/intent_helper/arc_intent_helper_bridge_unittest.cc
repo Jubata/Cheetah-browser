@@ -290,22 +290,78 @@ TEST_F(ArcIntentHelperTest, TestOnOpenUrl_ChromeScheme) {
   instance_->OnOpenUrl("chrome://www.google.com");
   EXPECT_FALSE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
 
-  instance_->OnOpenUrl("chrome://settings");
+  instance_->OnOpenUrl("chrome://help");
   EXPECT_FALSE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
 
-  instance_->OnOpenUrl("about:");
+  instance_->OnOpenUrl("chrome://version");
   EXPECT_FALSE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:");  // this redirects to chrome://version
+  EXPECT_FALSE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  // Some of the about/chrome URLs are whitelisted (for now).
+  instance_->OnOpenUrl("about:blank");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:downloads");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:history");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
 
   instance_->OnOpenUrl("about:settings");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:settings/accounts");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:settings/keyboard-overlay");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:settings/networks?type=VPN");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:settings/networks?type=this_is_not_whitelisted");
   EXPECT_FALSE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:settings/syncSetup");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("about:settings/thisIsNotWhitelisted");
+  EXPECT_FALSE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
+
+  instance_->OnOpenUrl("chrome://settings");
+  EXPECT_TRUE(test_open_url_delegate_->TakeLastOpenedUrl().is_valid());
 }
 
-// Tests that OnOpenChromeSettingsMultideviceUrl opens the multidevice settings
-// section in the Chrome browser.
-TEST_F(ArcIntentHelperTest, TestOnOpenChromeSettingsMultideviceUrl) {
-  instance_->OnOpenChromeSettingsMultideviceUrl();
-  EXPECT_EQ(GURL(ArcIntentHelperBridge::kMultideviceSettingsUrl),
+// Tests that OnOpenChromeSettings opens the specified settings section in the
+// Chrome browser.
+TEST_F(ArcIntentHelperTest, TestOnOpenChromeSettings) {
+  instance_->OnOpenChromeSettings(mojom::SettingsPage::MAIN);
+  EXPECT_EQ(GURL("chrome://settings"),
             test_open_url_delegate_->TakeLastOpenedUrl());
+
+  instance_->OnOpenChromeSettings(mojom::SettingsPage::MULTIDEVICE);
+  EXPECT_EQ(GURL("chrome://settings/multidevice"),
+            test_open_url_delegate_->TakeLastOpenedUrl());
+
+  instance_->OnOpenChromeSettings(mojom::SettingsPage::WIFI);
+  EXPECT_EQ(GURL("chrome://settings/networks/?type=WiFi"),
+            test_open_url_delegate_->TakeLastOpenedUrl());
+}
+
+// Tests that AppendStringToIntentHelperPackageName works.
+TEST_F(ArcIntentHelperTest, TestAppendStringToIntentHelperPackageName) {
+  std::string package_name = ArcIntentHelperBridge::kArcIntentHelperPackageName;
+  std::string fake_activity = "this_is_a_fake_activity";
+  EXPECT_EQ(ArcIntentHelperBridge::AppendStringToIntentHelperPackageName(
+                fake_activity),
+            package_name + "." + fake_activity);
+
+  std::string empty_string = "";
+  EXPECT_EQ(ArcIntentHelperBridge::AppendStringToIntentHelperPackageName(
+                empty_string),
+            package_name + ".");
 }
 
 }  // namespace arc

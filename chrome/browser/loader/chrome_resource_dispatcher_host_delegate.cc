@@ -36,6 +36,7 @@
 #include "chrome/browser/prerender/prerender_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
+#include "chrome/browser/renderer_host/chrome_navigation_ui_data.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/signin/chrome_signin_helper.h"
 #include "chrome/browser/tab_contents/tab_util.h"
@@ -52,11 +53,13 @@
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_util.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/nacl/common/features.h"
+#include "components/offline_pages/core/request_header/offline_page_navigation_ui_data.h"
 #include "components/offline_pages/features/features.h"
 #include "components/policy/core/common/cloud/policy_header_io_helper.h"
 #include "components/previews/content/previews_content_util.h"
+#include "components/previews/content/previews_io_data.h"
 #include "components/previews/core/previews_experiments.h"
-#include "components/previews/core/previews_io_data.h"
+#include "components/previews/core/previews_user_data.h"
 #include "components/variations/net/variations_http_headers.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_data.h"
@@ -83,6 +86,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/ssl/client_cert_store.h"
 #include "net/url_request/url_request.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/protobuf/src/google/protobuf/repeated_field.h"
 
 #if BUILDFLAG(ENABLE_NACL)
@@ -265,8 +269,8 @@ void AppendComponentUpdaterThrottles(
     content::ResourceContext* resource_context,
     ResourceType resource_type,
     std::vector<std::unique_ptr<content::ResourceThrottle>>* throttles) {
-  bool is_prerendering =
-      info.GetVisibilityState() == blink::kWebPageVisibilityStatePrerender;
+  bool is_prerendering = info.GetVisibilityState() ==
+                         blink::mojom::PageVisibilityState::kPrerender;
   if (is_prerendering)
     return;
 
@@ -671,7 +675,8 @@ void ChromeResourceDispatcherHostDelegate::AppendStandardResourceThrottles(
 #endif
 
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
-  if (info->GetVisibilityState() == blink::kWebPageVisibilityStatePrerender) {
+  if (info->GetVisibilityState() ==
+      blink::mojom::PageVisibilityState::kPrerender) {
     throttles->push_back(
         base::MakeUnique<prerender::PrerenderResourceThrottle>(request));
   }
@@ -887,7 +892,7 @@ void ChromeResourceDispatcherHostDelegate::RequestComplete(
 
 content::PreviewsState
 ChromeResourceDispatcherHostDelegate::DeterminePreviewsState(
-    const net::URLRequest& url_request,
+    net::URLRequest* url_request,
     content::ResourceContext* resource_context,
     content::PreviewsState previews_to_allow) {
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
@@ -898,19 +903,21 @@ ChromeResourceDispatcherHostDelegate::DeterminePreviewsState(
 
   previews::PreviewsIOData* previews_io_data = io_data->previews_io_data();
   if (data_reduction_proxy_io_data && previews_io_data) {
-    if (data_reduction_proxy_io_data->ShouldEnableLoFi(url_request,
+    previews::PreviewsUserData::Create(url_request,
+                                       previews_io_data->GeneratePageId());
+    if (data_reduction_proxy_io_data->ShouldEnableLoFi(*url_request,
                                                        previews_io_data)) {
       previews_state |= content::SERVER_LOFI_ON;
     }
-    if (data_reduction_proxy_io_data->ShouldEnableLitePages(url_request,
+    if (data_reduction_proxy_io_data->ShouldEnableLitePages(*url_request,
                                                             previews_io_data)) {
       previews_state |= content::SERVER_LITE_PAGE_ON;
     }
 
     // Check for enabled client-side previews if data saver is enabled.
     if (data_reduction_proxy_io_data->IsEnabled()) {
-      previews_state |=
-          previews::DetermineClientPreviewsState(url_request, previews_io_data);
+      previews_state |= previews::DetermineClientPreviewsState(
+          *url_request, previews_io_data);
     }
   }
 
@@ -959,6 +966,12 @@ ChromeResourceDispatcherHostDelegate::GetNavigationData(
   // when content makes a clone of NavigationData for the UI thread.
   if (data_reduction_proxy_data)
     data->SetDataReductionProxyData(data_reduction_proxy_data->DeepCopy());
+
+  previews::PreviewsUserData* previews_user_data =
+      previews::PreviewsUserData::GetData(*request);
+  if (previews_user_data)
+    data->set_previews_user_data(previews_user_data->DeepCopy());
+
   return data;
 }
 
@@ -967,4 +980,21 @@ ChromeResourceDispatcherHostDelegate::CreateClientCertStore(
     content::ResourceContext* resource_context) {
   return ProfileIOData::FromResourceContext(resource_context)->
       CreateClientCertStore();
+}
+
+bool ChromeResourceDispatcherHostDelegate::AllowRenderingMhtmlOverHttp(
+    net::URLRequest* request) const {
+#if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+  // It is OK to load the saved offline copy, in MHTML format.
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
+  ChromeNavigationUIData* navigation_data =
+      static_cast<ChromeNavigationUIData*>(info->GetNavigationUIData());
+  if (!navigation_data)
+    return false;
+  offline_pages::OfflinePageNavigationUIData* offline_page_data =
+      navigation_data->GetOfflinePageNavigationUIData();
+  return offline_page_data && offline_page_data->is_offline_page();
+#else
+  return false;
+#endif
 }

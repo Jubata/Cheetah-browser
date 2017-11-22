@@ -68,10 +68,8 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
 
   // Queries of current notification list status.
   virtual size_t NotificationCount() const = 0;
-  virtual size_t UnreadNotificationCount() const = 0;
   virtual bool HasPopupNotifications() const = 0;
   virtual bool IsQuietMode() const = 0;
-  virtual bool IsLockedState() const = 0;
 
   // Find the notification with the corresponding id. Returns null if not
   // found. The returned instance is owned by the message center.
@@ -133,6 +131,14 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   virtual void ClickOnNotificationButton(const std::string& id,
                                          int button_index) = 0;
 
+  // This should be called by UI classes when a notification button with an
+  // input is clicked to trigger the notification's delegate callback and also
+  // update the message center observers.
+  virtual void ClickOnNotificationButtonWithReply(
+      const std::string& id,
+      int button_index,
+      const base::string16& reply) = 0;
+
   // Called by the UI classes when the settings buttons is clicked
   // to trigger the notification's delegate and update the message
   // center observers.
@@ -154,9 +160,6 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
 
   // This can be called to change the quiet mode state (without a timeout).
   virtual void SetQuietMode(bool in_quiet_mode) = 0;
-
-  // This can be called to change the lock mode state.
-  virtual void SetLockedState(bool locked) = 0;
 
   // Temporarily enables quiet mode for |expires_in| time.
   virtual void EnterQuietModeWithExpire(const base::TimeDelta& expires_in) = 0;
@@ -187,7 +190,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   friend class MessageCenterImplTest;
   friend class MessageCenterImplTestWithChangeQueue;
   friend class MessageCenterImplTestWithoutChangeQueue;
-  friend class MessageCenterTrayTest;
+  friend class UiControllerTest;
   friend class TrayViewControllerTest;
   friend class test::MessagePopupCollectionTest;
   virtual void DisableTimersForTest() = 0;

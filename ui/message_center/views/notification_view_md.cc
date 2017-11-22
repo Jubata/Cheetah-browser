@@ -25,7 +25,7 @@
 #include "ui/message_center/vector_icons.h"
 #include "ui/message_center/views/bounded_label.h"
 #include "ui/message_center/views/constants.h"
-#include "ui/message_center/views/message_center_controller.h"
+#include "ui/message_center/views/message_view_delegate.h"
 #include "ui/message_center/views/notification_control_buttons_view.h"
 #include "ui/message_center/views/notification_header_view.h"
 #include "ui/message_center/views/padded_button.h"
@@ -343,7 +343,7 @@ views::View* NotificationViewMD::TargetForRect(views::View* root,
                                                const gfx::Rect& rect) {
   CHECK_EQ(root, this);
 
-  // TODO(tdanderson): Modify this function to support rect-based event
+  // TODO(tetsui): Modify this function to support rect-based event
   // targeting. Using the center point of |rect| preserves this function's
   // expected behavior for the time being.
   gfx::Point point = rect.CenterPoint();
@@ -383,7 +383,7 @@ void NotificationViewMD::CreateOrUpdateViews(const Notification& notification) {
   CreateOrUpdateActionButtonViews(notification);
 }
 
-NotificationViewMD::NotificationViewMD(MessageCenterController* controller,
+NotificationViewMD::NotificationViewMD(MessageViewDelegate* controller,
                                        const Notification& notification)
     : MessageView(controller, notification),
       clickable_(notification.clickable()) {
@@ -487,6 +487,22 @@ void NotificationViewMD::OnMouseExited(const ui::MouseEvent& event) {
   UpdateControlButtonsVisibility();
 }
 
+bool NotificationViewMD::OnMousePressed(const ui::MouseEvent& event) {
+  if (!event.IsOnlyLeftMouseButton())
+    return false;
+
+  // Ignore click of actions row outside action buttons.
+  if (expanded_) {
+    DCHECK(actions_row_);
+    gfx::Point point_in_child = event.location();
+    ConvertPointToTarget(this, actions_row_, &point_in_child);
+    if (actions_row_->HitTestPoint(point_in_child))
+      return true;
+  }
+
+  return MessageView::OnMousePressed(event);
+}
+
 void NotificationViewMD::UpdateWithNotification(
     const Notification& notification) {
   MessageView::UpdateWithNotification(notification);
@@ -525,7 +541,7 @@ void NotificationViewMD::ButtonPressed(views::Button* sender,
   // See if the button pressed was an action button.
   for (size_t i = 0; i < action_buttons_.size(); ++i) {
     if (sender == action_buttons_[i]) {
-      controller()->ClickOnNotificationButton(id, i);
+      delegate()->ClickOnNotificationButton(id, i);
       return;
     }
   }
@@ -921,8 +937,8 @@ void NotificationViewMD::SetExpanded(bool expanded) {
 
   UpdateViewForExpandedState(expanded_);
   content_row_->InvalidateLayout();
-  if (controller())
-    controller()->UpdateNotificationSize(notification_id());
+  if (delegate())
+    delegate()->UpdateNotificationSize(notification_id());
 }
 
 void NotificationViewMD::Activate() {

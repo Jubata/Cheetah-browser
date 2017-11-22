@@ -127,12 +127,13 @@ public class InfoBarContainer extends SwipableOverlayView {
         }
 
         @Override
-        public void onReparentingFinished(Tab tab) {
+        public void onActivityAttachmentChanged(Tab tab, boolean isAttached) {
+            if (!isAttached) return;
+
             setParentView((ViewGroup) tab.getActivity().findViewById(R.id.bottom_container));
             mTab = tab;
         }
     };
-
 
     /**
      * Adds/removes the {@link InfoBarContainer} when the tab's view is attached/detached. This is
@@ -213,7 +214,8 @@ public class InfoBarContainer extends SwipableOverlayView {
         addView(mLayout, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
 
-        mIPHSupport = new IPHInfoBarSupport(context);
+        mIPHSupport = new IPHInfoBarSupport(new IPHBubbleDelegateImpl(context));
+
         mLayout.addAnimationListener(mIPHSupport);
         addObserver(mIPHSupport);
 

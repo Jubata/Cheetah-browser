@@ -13,11 +13,11 @@ namespace blink {
 const int FontFaceSet::kDefaultFontSize = 10;
 const char FontFaceSet::kDefaultFontFamily[] = "sans-serif";
 
-void FontFaceSet::Suspend() {
+void FontFaceSet::Pause() {
   async_runner_->Pause();
 }
 
-void FontFaceSet::Resume() {
+void FontFaceSet::Unpause() {
   async_runner_->Unpause();
 }
 
@@ -82,7 +82,7 @@ bool FontFaceSet::deleteForBinding(ScriptState*,
   DCHECK(font_face);
   if (!InActiveContext())
     return false;
-  HeapListHashSet<Member<FontFace>>::iterator it =
+  HeapLinkedHashSet<Member<FontFace>>::iterator it =
       non_css_connected_faces_.find(font_face);
   if (it != non_css_connected_faces_.end()) {
     non_css_connected_faces_.erase(it);
@@ -113,7 +113,7 @@ void FontFaceSet::Trace(blink::Visitor* visitor) {
   visitor->Trace(failed_fonts_);
   visitor->Trace(ready_);
   visitor->Trace(async_runner_);
-  SuspendableObject::Trace(visitor);
+  PausableObject::Trace(visitor);
   EventTargetWithInlineData::Trace(visitor);
   FontFace::LoadFontCallback::Trace(visitor);
 }
@@ -297,7 +297,7 @@ FontFaceSetIterable::IterationSource* FontFaceSet::StartIteration(
   // modification, take a snapshot here, and make it ordered as follows.
   HeapVector<Member<FontFace>> font_faces;
   if (InActiveContext()) {
-    const HeapListHashSet<Member<FontFace>>& css_connected_faces =
+    const HeapLinkedHashSet<Member<FontFace>>& css_connected_faces =
         CSSConnectedFontFaceList();
     font_faces.ReserveInitialCapacity(css_connected_faces.size() +
                                       non_css_connected_faces_.size());

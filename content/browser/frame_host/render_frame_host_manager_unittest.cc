@@ -13,8 +13,10 @@
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
@@ -26,7 +28,6 @@
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
-#include "content/common/frame_policy.h"
 #include "content/common/input_messages.h"
 #include "content/common/site_isolation_policy.h"
 #include "content/common/view_messages.h"
@@ -41,6 +42,7 @@
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "content/public/common/previews_state.h"
 #include "content/public/common/url_constants.h"
@@ -50,13 +52,16 @@
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "content/public/test/test_utils.h"
+#include "content/test/mock_widget_input_handler.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
+#include "content/test/test_render_widget_host.h"
 #include "content/test/test_web_contents.h"
 #include "net/base/load_flags.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/common/frame_policy.h"
 #include "third_party/WebKit/public/platform/WebInsecureRequestPolicy.h"
 #include "ui/base/page_transition_types.h"
 
@@ -75,6 +80,17 @@ void VerifyPageFocusMessage(MockRenderProcessHost* rph,
   InputMsg_SetFocus::Param params;
   EXPECT_TRUE(InputMsg_SetFocus::Read(message, &params));
   EXPECT_EQ(expected_focus, std::get<0>(params));
+}
+
+// VerifyPageFocusMessage from the mojo input handler.
+void VerifyPageFocusMessage(TestRenderWidgetHost* twh, bool expected_focus) {
+  MockWidgetInputHandler::MessageVector events =
+      twh->GetMockWidgetInputHandler()->GetAndResetDispatchedMessages();
+  EXPECT_EQ(1u, events.size());
+  MockWidgetInputHandler::DispatchedFocusMessage* focus_message =
+      events.at(0)->ToFocus();
+  EXPECT_TRUE(focus_message);
+  EXPECT_EQ(expected_focus, focus_message->focused());
 }
 
 // Helper function for strict mixed content checking tests.
@@ -304,6 +320,7 @@ class PluginFaviconMessageObserver : public WebContentsObserver {
 class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
  public:
   void SetUp() override {
+    mojo_feature_list_.InitAndEnableFeature(features::kMojoInputMessages);
     RenderViewHostImplTestHarness::SetUp();
     WebUIControllerFactory::RegisterFactory(&factory_);
   }
@@ -492,6 +509,7 @@ class RenderFrameHostManagerTest : public RenderViewHostImplTestHarness {
                                RenderFrameHostManager*)>& commit_lambda);
 
  private:
+  base::test::ScopedFeatureList mojo_feature_list_;
   RenderFrameHostManagerTestWebUIControllerFactory factory_;
 };
 
@@ -1946,12 +1964,14 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation, DetachPendingChild) {
       contents()->GetMainFrame()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame_name", "uniqueName1",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
   contents()->GetMainFrame()->OnCreateChildFrame(
       contents()->GetMainFrame()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame_name", "uniqueName2",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
   RenderFrameHostManager* root_manager =
       contents()->GetFrameTree()->root()->render_manager();
   RenderFrameHostManager* iframe1 =
@@ -2086,7 +2106,8 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
       contents1->GetMainFrame()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame_name", "uniqueName1",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
   RenderFrameHostManager* iframe =
       contents()->GetFrameTree()->root()->child_at(0)->render_manager();
   NavigationEntryImpl entry(nullptr /* instance */, kUrl2,
@@ -2136,7 +2157,8 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
       main_rfh->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, std::string(), "uniqueName1",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
   RenderFrameHostManager* subframe_rfhm =
       contents()->GetFrameTree()->root()->child_at(0)->render_manager();
 
@@ -2296,12 +2318,12 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName0", base::UnguessableToken::Create(),
-                  FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties());
   tree1->AddFrame(root1, process_id, 13,
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName1", base::UnguessableToken::Create(),
-                  FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties());
 
   std::unique_ptr<TestWebContents> tab2(
       TestWebContents::Create(browser_context(), nullptr));
@@ -2313,12 +2335,12 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName2", base::UnguessableToken::Create(),
-                  FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties());
   tree2->AddFrame(root2, process_id, 23,
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName3", base::UnguessableToken::Create(),
-                  FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties());
 
   std::unique_ptr<TestWebContents> tab3(
       TestWebContents::Create(browser_context(), nullptr));
@@ -2335,7 +2357,7 @@ TEST_F(RenderFrameHostManagerTest, TraverseComplexOpenerChain) {
                   TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
                   blink::WebTreeScopeType::kDocument, std::string(),
                   "uniqueName4", base::UnguessableToken::Create(),
-                  FramePolicy(), FrameOwnerProperties());
+                  blink::FramePolicy(), FrameOwnerProperties());
 
   root1->child_at(1)->SetOpener(root1->child_at(1));
   root1->SetOpener(root2->child_at(1));
@@ -2385,17 +2407,20 @@ TEST_F(RenderFrameHostManagerTest, PageFocusPropagatesToSubframeProcesses) {
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame1", "uniqueName1",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
   main_test_rfh()->OnCreateChildFrame(
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame2", "uniqueName2",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
   main_test_rfh()->OnCreateChildFrame(
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame3", "uniqueName3",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
 
   FrameTreeNode* root = contents()->GetFrameTree()->root();
   RenderFrameHostManager* child1 = root->child_at(0)->render_manager();
@@ -2439,6 +2464,7 @@ TEST_F(RenderFrameHostManagerTest, PageFocusPropagatesToSubframeProcesses) {
   RenderFrameProxyHost* proxyC =
       root->render_manager()->GetRenderFrameProxyHost(host3->GetSiteInstance());
   EXPECT_TRUE(proxyC);
+  base::RunLoop().RunUntilIdle();
 
   // Focus the main page, and verify that the focus message was sent to all
   // processes.  The message to A should be sent through the main frame's
@@ -2448,8 +2474,8 @@ TEST_F(RenderFrameHostManagerTest, PageFocusPropagatesToSubframeProcesses) {
   host1->GetProcess()->sink().ClearMessages();
   host3->GetProcess()->sink().ClearMessages();
   main_test_rfh()->GetRenderWidgetHost()->Focus();
-  VerifyPageFocusMessage(main_test_rfh()->GetProcess(), true,
-                         main_test_rfh()->GetRenderViewHost()->GetRoutingID());
+  base::RunLoop().RunUntilIdle();
+  VerifyPageFocusMessage(main_test_rfh()->GetRenderWidgetHost(), true);
   VerifyPageFocusMessage(host1->GetProcess(), true, proxyB->GetRoutingID());
   VerifyPageFocusMessage(host3->GetProcess(), true, proxyC->GetRoutingID());
 
@@ -2459,8 +2485,8 @@ TEST_F(RenderFrameHostManagerTest, PageFocusPropagatesToSubframeProcesses) {
   host1->GetProcess()->sink().ClearMessages();
   host3->GetProcess()->sink().ClearMessages();
   main_test_rfh()->GetRenderWidgetHost()->Blur();
-  VerifyPageFocusMessage(main_test_rfh()->GetProcess(), false,
-                         main_test_rfh()->GetRenderViewHost()->GetRoutingID());
+  base::RunLoop().RunUntilIdle();
+  VerifyPageFocusMessage(main_test_rfh()->GetRenderWidgetHost(), false);
   VerifyPageFocusMessage(host1->GetProcess(), false, proxyB->GetRoutingID());
   VerifyPageFocusMessage(host3->GetProcess(), false, proxyC->GetRoutingID());
 }
@@ -2486,7 +2512,8 @@ TEST_F(RenderFrameHostManagerTest,
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame1", "uniqueName1",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
 
   FrameTreeNode* root = contents()->GetFrameTree()->root();
   RenderFrameHostManager* child = root->child_at(0)->render_manager();
@@ -3029,7 +3056,8 @@ TEST_F(RenderFrameHostManagerTestWithSiteIsolation,
       main_test_rfh()->GetProcess()->GetNextRoutingID(),
       TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
       blink::WebTreeScopeType::kDocument, "frame1", "uniqueName1",
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+      base::UnguessableToken::Create(), blink::FramePolicy(),
+      FrameOwnerProperties());
 
   FrameTreeNode* root = contents()->GetFrameTree()->root();
   RenderFrameHostManager* child = root->child_at(0)->render_manager();

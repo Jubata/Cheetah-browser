@@ -31,7 +31,6 @@
 #include "core/dom/Element.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
 #include "core/dom/ScriptLoader.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/parser/HTMLInputStream.h"
 #include "core/html/parser/HTMLParserScriptRunnerHost.h"
@@ -43,6 +42,7 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/instrumentation/tracing/TracedValue.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -74,12 +74,10 @@ std::unique_ptr<TracedValue> GetTraceArgsForScriptElement(
 
 std::unique_ptr<TracedValue> GetTraceArgsForScriptElement(
     const PendingScript* pending_script) {
-  return GetTraceArgsForScriptElement(
-      pending_script->GetElement(), pending_script->StartingPosition(),
-      (pending_script &&
-       pending_script->GetScriptType() == ScriptType::kClassic)
-          ? pending_script->UrlForClassicScript()
-          : NullURL());
+  DCHECK(pending_script);
+  return GetTraceArgsForScriptElement(pending_script->GetElement(),
+                                      pending_script->StartingPosition(),
+                                      pending_script->UrlForTracing());
 }
 
 void DoExecuteScript(PendingScript* pending_script, const KURL& document_url) {

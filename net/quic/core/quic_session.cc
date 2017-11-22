@@ -83,6 +83,20 @@ QuicSession::~QuicSession() {
 void QuicSession::OnStreamFrame(const QuicStreamFrame& frame) {
   // TODO(rch) deal with the error case of stream id 0.
   QuicStreamId stream_id = frame.stream_id;
+  if (stream_id == kInvalidStreamId) {
+    connection()->CloseConnection(
+        QUIC_INVALID_STREAM_ID, "Recevied data for an invalid stream",
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return;
+  }
+
+  if (frame.fin && QuicContainsKey(static_stream_map_, stream_id)) {
+    connection()->CloseConnection(
+        QUIC_INVALID_STREAM_ID, "Attempt to close a static stream",
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return;
+  }
+
   QuicStream* stream = GetOrCreateStream(stream_id);
   if (!stream) {
     // The stream no longer exists, but we may still be interested in the
@@ -98,7 +112,15 @@ void QuicSession::OnStreamFrame(const QuicStreamFrame& frame) {
 }
 
 void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
-  if (QuicContainsKey(static_stream_map_, frame.stream_id)) {
+  QuicStreamId stream_id = frame.stream_id;
+  if (stream_id == kInvalidStreamId) {
+    connection()->CloseConnection(
+        QUIC_INVALID_STREAM_ID, "Recevied data for an invalid stream",
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return;
+  }
+
+  if (QuicContainsKey(static_stream_map_, stream_id)) {
     connection()->CloseConnection(
         QUIC_INVALID_STREAM_ID, "Attempt to reset a static stream",
         ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
@@ -109,7 +131,7 @@ void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
     visitor_->OnRstStreamReceived(frame);
   }
 
-  QuicStream* stream = GetOrCreateDynamicStream(frame.stream_id);
+  QuicStream* stream = GetOrCreateDynamicStream(stream_id);
   if (!stream) {
     HandleRstOnValidNonexistentStream(frame);
     return;  // Errors are handled by GetOrCreateStream.
@@ -118,9 +140,7 @@ void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
   stream->OnStreamReset(frame);
 }
 
-void QuicSession::OnGoAway(const QuicGoAwayFrame& frame) {
-  DCHECK(frame.last_good_stream_id < next_outgoing_stream_id_);
-}
+void QuicSession::OnGoAway(const QuicGoAwayFrame& frame) {}
 
 void QuicSession::OnConnectionClosed(QuicErrorCode error,
                                      const string& error_details,
@@ -162,6 +182,16 @@ void QuicSession::OnWriteBlocked() {
 
 void QuicSession::OnSuccessfulVersionNegotiation(
     const QuicTransportVersion& /*version*/) {}
+
+void QuicSession::OnConnectivityProbeReceived(
+    const QuicSocketAddress& self_address,
+    const QuicSocketAddress& peer_address) {
+  if (perspective() == Perspective::IS_SERVER) {
+    // Server only sends back a connectivity probe after received a
+    // connectivity probe from a new peer address.
+    connection_->SendConnectivityProbingPacket(nullptr, peer_address);
+  }
+}
 
 void QuicSession::OnPathDegrading() {}
 
@@ -250,7 +280,7 @@ void QuicSession::OnCanWrite() {
     return;
   }
 
-  QuicConnection::ScopedPacketBundler ack_bundler(
+  QuicConnection::ScopedPacketFlusher flusher(
       connection_, QuicConnection::SEND_ACK_IF_QUEUED);
   for (size_t i = 0; i < num_writes; ++i) {
     if (!(write_blocked_streams_.HasWriteBlockedCryptoOrHeadersStream() ||

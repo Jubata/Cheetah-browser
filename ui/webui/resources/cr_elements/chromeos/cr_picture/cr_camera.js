@@ -35,7 +35,8 @@ Polymer({
   properties: {
     /** Strings provided by host */
     takePhotoLabel: String,
-    switchModeLabel: String,
+    switchModeToCameraLabel: String,
+    switchModeToVideoLabel: String,
 
     /** True if video mode is enabled. */
     videoModeEnabled: {
@@ -64,6 +65,12 @@ Polymer({
     },
   },
 
+  /** @private {boolean} */
+  cameraStartInProgress_: false,
+
+  /** @private {boolean} */
+  cameraCaptureInProgress_: false,
+
   /** @override */
   attached: function() {
     this.$.cameraVideo.addEventListener('canplay', function() {
@@ -78,14 +85,21 @@ Polymer({
     this.stopCamera();
   },
 
+  /** Only focuses the button if it's not disabled. */
+  focusTakePhotoButton: function() {
+    if (this.cameraOnline_)
+      this.$.takePhoto.focus();
+  },
+
   /**
    * Performs photo capture from the live camera stream. A 'photo-taken' event
    * will be fired as soon as captured photo is available, with the
    * 'photoDataURL' property containing the photo encoded as a data URL.
    */
   takePhoto: function() {
-    if (!this.cameraOnline_)
+    if (!this.cameraOnline_ || this.cameraCaptureInProgress_)
       return;
+    this.cameraCaptureInProgress_ = true;
 
     /** Pre-allocate all frames needed for capture. */
     var frames = [];
@@ -117,6 +131,7 @@ Polymer({
             'photo-taken',
             {photoDataUrl: this.convertFramesToPng_(capturedFrames)});
         this.$.userImageStreamCrop.classList.remove('capture');
+        this.cameraCaptureInProgress_ = false;
       }
     }, CAPTURE_INTERVAL_MS);
   },
@@ -258,6 +273,15 @@ Polymer({
     /** Convert image sequence to animated PNG. */
     return CrPngBehavior.convertImageSequenceToPng(
         forwardBackwardImageSequence);
+  },
+
+  /**
+   * Returns the label to use for switch mode button.
+   * @return {string}
+   * @private
+   */
+  getSwitchModeLabel_: function(videomode, cameraLabel, videoLabel) {
+    return videomode ? cameraLabel : videoLabel;
   },
 });
 

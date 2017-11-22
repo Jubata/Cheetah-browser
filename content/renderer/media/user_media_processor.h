@@ -113,10 +113,6 @@ class CONTENT_EXPORT UserMediaProcessor
                                 MediaStreamRequestResult result) override;
   void OnDeviceStopped(const std::string& label,
                        const MediaStreamDevice& device) override;
-  void OnDeviceOpened(int request_id,
-                      const std::string& label,
-                      const MediaStreamDevice& device) override;
-  void OnDeviceOpenFailed(int request_id) override;
 
  protected:
   // These methods are virtual for test purposes. A test can override them to
@@ -125,8 +121,9 @@ class CONTENT_EXPORT UserMediaProcessor
   virtual void GetUserMediaRequestSucceeded(
       const blink::WebMediaStream& stream,
       blink::WebUserMediaRequest web_request);
-  virtual void GetUserMediaRequestFailed(MediaStreamRequestResult result,
-                                         const blink::WebString& result_name);
+  virtual void GetUserMediaRequestFailed(
+      MediaStreamRequestResult result,
+      const blink::WebString& constraint_name = blink::WebString());
 
   // Creates a MediaStreamAudioSource/MediaStreamVideoSource objects.
   // These are virtual for test purposes.
@@ -156,9 +153,10 @@ class CONTENT_EXPORT UserMediaProcessor
   void DelayedGetUserMediaRequestSucceeded(
       const blink::WebMediaStream& stream,
       blink::WebUserMediaRequest web_request);
-  void DelayedGetUserMediaRequestFailed(blink::WebUserMediaRequest web_request,
-                                        MediaStreamRequestResult result,
-                                        const blink::WebString& result_name);
+  void DelayedGetUserMediaRequestFailed(
+      blink::WebUserMediaRequest web_request,
+      MediaStreamRequestResult result,
+      const blink::WebString& constraint_name);
 
   // Called when |source| has been stopped from JavaScript.
   void OnLocalSourceStopped(const blink::WebMediaStreamSource& source);
@@ -280,7 +278,7 @@ class CONTENT_EXPORT UserMediaProcessor
 
   const scoped_refptr<base::TaskRunner> worker_task_runner_;
 
-  RenderFrame* const render_frame_;
+  const int render_frame_id_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 

@@ -94,7 +94,7 @@ const char kDisableBackingStoreLimit[]      = "disable-backing-store-limit";
 
 // Disable backgrounding renders for occluded windows. Done for tests to avoid
 // nondeterministic behavior.
-extern const char kDisableBackgroundingOccludedWindowsForTesting[] =
+const char kDisableBackgroundingOccludedWindowsForTesting[] =
     "disable-backgrounding-occluded-windows";
 
 // Disable task throttling of timer tasks from background pages.
@@ -262,6 +262,10 @@ const char kDisableRendererBackgrounding[]  = "disable-renderer-backgrounding";
 // Whether the resize lock is disabled. Default is false. This is generally only
 // useful for tests that want to force disabling.
 const char kDisableResizeLock[] = "disable-resize-lock";
+
+// Whether the ResourceScheduler is disabled.  Note this is only useful for C++
+// Headless embedders who need to implement their own resource scheduling.
+const char kDisableResourceScheduler[] = "disable-resource-scheduler";
 
 // Disable shared workers.
 const char kDisableSharedWorkers[]          = "disable-shared-workers";
@@ -585,9 +589,6 @@ const char kIPCConnectionTimeout[]          = "ipc-connection-timeout";
 //   --isolate-origins=https://www.foo.com,https://www.bar.com
 const char kIsolateOrigins[] = "isolate-origins";
 
-// Chrome is running in Mash.
-const char kIsRunningInMash[] = "is-running-in-mash";
-
 // Disable latest shipping ECMAScript 6 features.
 const char kDisableJavaScriptHarmonyShipping[] =
     "disable-javascript-harmony-shipping";
@@ -609,7 +610,9 @@ const char kLoggingLevel[]                  = "log-level";
 // affect which events are logged).
 const char kLogFile[] = "log-file";
 
-// Enables saving net log events to a file and sets the file name to use.
+// Enables saving net log events to a file. If a value is given, it used as the
+// path the the file, otherwise the file is named netlog.json and placed in the
+// user data directory.
 const char kLogNetLog[]                     = "log-net-log";
 
 // Resizes of the main frame are caused by changing between landscape and
@@ -881,8 +884,6 @@ const char kUtilityProcess[]                = "utility";
 // When utility process is sandboxed, there is still access to one directory.
 // This flag specifies the directory that can be accessed.
 const char kUtilityProcessAllowedDir[]      = "utility-allowed-dir";
-
-const char kUtilityProcessRunningElevated[] = "utility-run-elevated";
 
 // Causes the utility process to display a dialog on launch.
 const char kUtilityStartupDialog[] = "utility-startup-dialog";

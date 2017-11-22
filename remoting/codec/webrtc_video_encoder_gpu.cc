@@ -26,6 +26,8 @@ const int kWebrtcVideoEncoderGpuOutputBufferCount = 1;
 constexpr media::VideoCodecProfile kH264Profile =
     media::VideoCodecProfile::H264PROFILE_MAIN;
 
+constexpr int kH264MinimumTargetBitrateKbpsPerMegapixel = 1800;
+
 void ArgbToI420(const webrtc::DesktopFrame& frame,
                 scoped_refptr<media::VideoFrame> video_frame) {
   const uint8_t* rgb_data = frame.data();
@@ -40,6 +42,15 @@ void ArgbToI420(const webrtc::DesktopFrame& frame,
                      v_data, uv_stride, video_frame->visible_rect().width(),
                      video_frame->visible_rect().height());
 }
+
+gpu::GpuPreferences CreateGpuPreferences() {
+  gpu::GpuPreferences gpu_preferences;
+#if defined(OS_WIN)
+  gpu_preferences.enable_media_foundation_vea_on_windows7 = true;
+#endif
+  return gpu_preferences;
+}
+
 }  // namespace
 
 namespace remoting {
@@ -48,6 +59,7 @@ WebrtcVideoEncoderGpu::WebrtcVideoEncoderGpu(
     media::VideoCodecProfile codec_profile)
     : state_(UNINITIALIZED),
       codec_profile_(codec_profile),
+      bitrate_filter_(kH264MinimumTargetBitrateKbpsPerMegapixel),
       weak_factory_(this) {}
 
 WebrtcVideoEncoderGpu::~WebrtcVideoEncoderGpu() {}
@@ -61,6 +73,8 @@ void WebrtcVideoEncoderGpu::Encode(std::unique_ptr<webrtc::DesktopFrame> frame,
   DCHECK(frame);
   DCHECK(done);
   DCHECK_GT(params.duration, base::TimeDelta::FromMilliseconds(0));
+
+  bitrate_filter_.SetFrameSize(frame->size().width(), frame->size().height());
 
   if (state_ == INITIALIZATION_ERROR) {
     // TODO(zijiehe): The screen resolution limitation of H264 encoder is much
@@ -115,10 +129,11 @@ void WebrtcVideoEncoderGpu::Encode(std::unique_ptr<webrtc::DesktopFrame> frame,
 
   callbacks_[video_frame->timestamp()] = std::move(done);
 
-  if (params.bitrate_kbps > 0) {
+  if (params.bitrate_kbps > 0 && params.fps > 0) {
     // TODO(zijiehe): Forward frame_rate from FrameParams.
+    bitrate_filter_.SetBandwidthEstimateKbps(params.bitrate_kbps);
     video_encode_accelerator_->RequestEncodingParametersChange(
-        params.bitrate_kbps * 1024, 30);
+        bitrate_filter_.GetTargetBitrateKbps() * 1000, params.fps);
   }
   video_encode_accelerator_->Encode(video_frame, params.key_frame);
 }
@@ -177,6 +192,7 @@ void WebrtcVideoEncoderGpu::BitstreamBufferReady(int32_t bitstream_buffer_id,
   encoded_frame->size = webrtc::DesktopSize(input_coded_size_.width(),
                                             input_coded_size_.height());
   encoded_frame->quantizer = 0;
+  encoded_frame->codec = webrtc::kVideoCodecH264;
 
   UseOutputBitstreamBufferId(bitstream_buffer_id);
 
@@ -202,15 +218,11 @@ void WebrtcVideoEncoderGpu::BeginInitialization() {
   // Currently we set the bitrate to 8M bits / 1M bytes per frame, and 30 frames
   // per second.
   uint32_t initial_bitrate = kTargetFrameRate * 1024 * 1024 * 8;
-  gpu::GpuPreferences gpu_preferences;
-#if defined(OS_WIN)
-  gpu_preferences.enable_media_foundation_vea_on_windows7 = true;
-#endif
 
   video_encode_accelerator_ =
       media::GpuVideoEncodeAcceleratorFactory::CreateVEA(
           input_format, input_visible_size_, codec_profile_, initial_bitrate,
-          this, gpu_preferences);
+          this, CreateGpuPreferences());
 
   if (!video_encode_accelerator_) {
     LOG(ERROR) << "Could not create VideoEncodeAccelerator";
@@ -251,7 +263,7 @@ bool WebrtcVideoEncoderGpu::IsSupportedByH264(
     const WebrtcVideoEncoderSelector::Profile& profile) {
   media::VideoEncodeAccelerator::SupportedProfiles profiles =
       media::GpuVideoEncodeAcceleratorFactory::GetSupportedProfiles(
-          gpu::GpuPreferences());
+          CreateGpuPreferences());
   for (const auto& supported_profile : profiles) {
     if (supported_profile.profile != kH264Profile) {
       continue;

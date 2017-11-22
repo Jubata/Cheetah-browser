@@ -30,6 +30,8 @@
 
 #include "core/frame/Frame.h"
 
+#include <memory>
+
 #include "bindings/core/v8/WindowProxyManager.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/UserGestureIndicator.h"
@@ -200,7 +202,7 @@ std::unique_ptr<UserGestureIndicator> Frame::NotifyUserActivation(
     UserGestureToken::Status status) {
   if (frame)
     frame->NotifyUserActivation();
-  return WTF::MakeUnique<UserGestureIndicator>(status);
+  return std::make_unique<UserGestureIndicator>(status);
 }
 
 // static
@@ -230,8 +232,8 @@ bool Frame::ConsumeTransientUserActivation(Frame* frame,
              : UserGestureIndicator::ConsumeUserGesture();
 }
 
-bool Frame::IsFeatureEnabled(WebFeaturePolicyFeature feature) const {
-  WebFeaturePolicy* feature_policy = GetSecurityContext()->GetFeaturePolicy();
+bool Frame::IsFeatureEnabled(FeaturePolicyFeature feature) const {
+  FeaturePolicy* feature_policy = GetSecurityContext()->GetFeaturePolicy();
   // The policy should always be initialized before checking it to ensure we
   // properly inherit the parent policy.
   DCHECK(feature_policy);

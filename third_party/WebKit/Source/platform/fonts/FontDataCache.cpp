@@ -108,17 +108,6 @@ void FontDataCache::Release(const SimpleFontData* font_data) {
     inactive_font_data_.insert(it->value.first);
 }
 
-void FontDataCache::MarkAllVerticalData() {
-  Cache::iterator end = cache_.end();
-  for (Cache::iterator font_data = cache_.begin(); font_data != end;
-       ++font_data) {
-    OpenTypeVerticalData* vertical_data = const_cast<OpenTypeVerticalData*>(
-        font_data->value.first->VerticalData());
-    if (vertical_data)
-      vertical_data->SetInFontCache(true);
-  }
-}
-
 bool FontDataCache::Purge(PurgeSeverity purge_severity) {
   if (purge_severity == kForcePurge)
     return PurgeLeastRecentlyUsed(INT_MAX);
@@ -140,9 +129,8 @@ bool FontDataCache::PurgeLeastRecentlyUsed(int count) {
   is_purging = true;
 
   Vector<scoped_refptr<SimpleFontData>, 20> font_data_to_delete;
-  ListHashSet<scoped_refptr<SimpleFontData>>::iterator end = inactive_font_data_.end();
-  ListHashSet<scoped_refptr<SimpleFontData>>::iterator it =
-      inactive_font_data_.begin();
+  auto end = inactive_font_data_.end();
+  auto it = inactive_font_data_.begin();
   for (int i = 0; i < count && it != end; ++it, ++i) {
     scoped_refptr<SimpleFontData>& font_data = *it.Get();
     cache_.erase(&(font_data->PlatformData()));

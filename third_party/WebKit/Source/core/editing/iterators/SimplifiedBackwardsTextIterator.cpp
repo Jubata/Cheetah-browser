@@ -67,6 +67,7 @@ SimplifiedBackwardsTextIteratorAlgorithm<Strategy>::
         const EphemeralRangeTemplate<Strategy>& range,
         const TextIteratorBehavior& behavior)
     : behavior_(behavior),
+      text_state_(behavior),
       node_(nullptr),
       offset_(0),
       handled_node_(false),
@@ -393,12 +394,6 @@ SimplifiedBackwardsTextIteratorAlgorithm<Strategy>::EndPosition() const {
   }
   return PositionTemplate<Strategy>::EditingPositionOf(start_node_,
                                                        start_offset_);
-}
-
-template <typename Strategy>
-bool SimplifiedBackwardsTextIteratorAlgorithm<Strategy>::IsInTextSecurityMode()
-    const {
-  return IsTextSecurityNode(GetNode());
 }
 
 template <typename Strategy>

@@ -57,8 +57,6 @@
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/ipc/host/shader_disk_cache.h"
 #include "gpu/ipc/service/switches.h"
-#include "ipc/ipc_channel_handle.h"
-#include "ipc/message_filter.h"
 #include "media/base/media_switches.h"
 #include "media/media_features.h"
 #include "mojo/edk/embedder/embedder.h"
@@ -154,6 +152,7 @@ static const char* const kSwitchNames[] = {
 #endif
 #if defined(USE_OZONE)
     switches::kOzonePlatform,
+    switches::kOzoneDumpFile,
 #endif
 #if defined(USE_X11)
     switches::kX11Display,
@@ -690,7 +689,8 @@ void GpuProcessHost::EstablishGpuChannel(
   // If GPU features are already blacklisted, no need to establish the channel.
   if (!GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(nullptr)) {
     DVLOG(1) << "GPU blacklisted, refusing to open a GPU channel.";
-    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo(), gpu::GpuFeatureInfo(),
+    callback.Run(mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
+                 gpu::GpuFeatureInfo(),
                  EstablishChannelStatus::GPU_ACCESS_DENIED);
     return;
   }
@@ -740,7 +740,12 @@ void GpuProcessHost::ConnectFrameSinkManager(
     viz::mojom::FrameSinkManagerRequest request,
     viz::mojom::FrameSinkManagerClientPtr client) {
   TRACE_EVENT0("gpu", "GpuProcessHost::ConnectFrameSinkManager");
-  gpu_main_ptr_->CreateFrameSinkManager(std::move(request), std::move(client));
+  viz::mojom::FrameSinkManagerParamsPtr params =
+      viz::mojom::FrameSinkManagerParams::New();
+  params->restart_id = host_id_;
+  params->frame_sink_manager = std::move(request);
+  params->frame_sink_manager_client = client.PassInterface();
+  gpu_main_ptr_->CreateFrameSinkManager(std::move(params));
 }
 
 void GpuProcessHost::RequestGPUInfo(RequestGPUInfoCallback request_cb) {
@@ -788,15 +793,15 @@ void GpuProcessHost::OnChannelEstablished(
   if (channel_handle.is_valid() &&
       !gpu_data_manager->GpuAccessAllowed(nullptr)) {
     gpu_service_ptr_->CloseChannel(client_id);
-    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo(), gpu::GpuFeatureInfo(),
+    callback.Run(mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
+                 gpu::GpuFeatureInfo(),
                  EstablishChannelStatus::GPU_ACCESS_DENIED);
     RecordLogMessage(logging::LOG_WARNING, "WARNING",
                      "Hardware acceleration is unavailable.");
     return;
   }
 
-  callback.Run(IPC::ChannelHandle(channel_handle.release()),
-               gpu_data_manager->GetGPUInfo(),
+  callback.Run(std::move(channel_handle), gpu_data_manager->GetGPUInfo(),
                gpu_data_manager->GetGpuFeatureInfo(),
                EstablishChannelStatus::SUCCESS);
 }
@@ -1099,7 +1104,8 @@ void GpuProcessHost::SendOutstandingReplies() {
   while (!channel_requests_.empty()) {
     auto callback = channel_requests_.front();
     channel_requests_.pop();
-    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo(), gpu::GpuFeatureInfo(),
+    callback.Run(mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
+                 gpu::GpuFeatureInfo(),
                  EstablishChannelStatus::GPU_HOST_INVALID);
   }
 

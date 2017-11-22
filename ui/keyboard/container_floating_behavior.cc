@@ -29,12 +29,10 @@ constexpr float kAnimationStartOrAfterHideOpacity = 0.01f;
 // Distance the keyboard moves during the animation
 constexpr int kAnimationDistance = 30;
 
-// Temporary value designating the size of the square in the top left corner of
-// the keyboard that should be a drag handle. This will be replaced once real
-// drag handles are added to the extension.
-constexpr int kDragHandleSquareMargin = 60;
-
-ContainerFloatingBehavior::ContainerFloatingBehavior() {}
+ContainerFloatingBehavior::ContainerFloatingBehavior(
+    KeyboardController* controller) {
+  controller_ = controller;
+}
 ContainerFloatingBehavior::~ContainerFloatingBehavior() {}
 
 ContainerType ContainerFloatingBehavior::GetType() const {
@@ -166,15 +164,16 @@ void ContainerFloatingBehavior::SavePosition(const gfx::Point& position) {
 bool ContainerFloatingBehavior::IsDragHandle(
     const gfx::Vector2d& offset,
     const gfx::Size& keyboard_size) const {
-  return offset.x() < kDragHandleSquareMargin &&
-         offset.y() < kDragHandleSquareMargin;
+  return false;
 }
 
 void ContainerFloatingBehavior::HandlePointerEvent(
     bool isMouseButtonPressed,
     const gfx::Vector2d& kb_offset) {
-  KeyboardController* controller = KeyboardController::GetInstance();
-  aura::Window* container = controller->GetContainerWindow();
+  // Cannot call UI-backed operations without a KeyboardController
+  DCHECK(controller_);
+
+  aura::Window* container = controller_->GetContainerWindow();
 
   const gfx::Rect& keyboard_bounds = container->bounds();
 
@@ -204,7 +203,7 @@ void ContainerFloatingBehavior::HandlePointerEvent(
           cumulative_drag_offset;
       const gfx::Rect new_bounds =
           gfx::Rect(new_keyboard_location, keyboard_bounds.size());
-      controller->MoveKeyboard(new_bounds);
+      controller_->MoveKeyboard(new_bounds);
     }
 
     // re-query the container for the new bounds
@@ -227,6 +226,14 @@ void ContainerFloatingBehavior::SetCanonicalBounds(
   gfx::Point keyboard_location =
       GetPositionForShowingKeyboard(keyboard_size, display_bounds);
   container->SetBounds(gfx::Rect(keyboard_location, keyboard_size));
+}
+
+bool ContainerFloatingBehavior::TextBlurHidesKeyboard() const {
+  return true;
+}
+
+bool ContainerFloatingBehavior::BoundsAffectWorkspaceLayout() const {
+  return false;
 }
 
 }  //  namespace keyboard

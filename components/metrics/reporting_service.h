@@ -84,13 +84,16 @@ class ReportingService {
 
   // Getters for MetricsLogUploader parameters.
   virtual std::string GetUploadUrl() const = 0;
+  virtual std::string GetInsecureUploadUrl() const = 0;
   virtual base::StringPiece upload_mime_type() const = 0;
   virtual MetricsLogUploader::MetricServiceType service_type() const = 0;
 
   // Methods for recording data to histograms.
   virtual void LogActualUploadInterval(base::TimeDelta interval) {}
   virtual void LogCellularConstraint(bool upload_canceled) {}
-  virtual void LogResponseOrErrorCode(int response_code, int error_code) {}
+  virtual void LogResponseOrErrorCode(int response_code,
+                                      int error_code,
+                                      bool was_https) {}
   virtual void LogSuccess(size_t log_size) {}
   virtual void LogLargeRejection(size_t log_size) {}
 
@@ -102,7 +105,7 @@ class ReportingService {
   void SendStagedLog();
 
   // Called after transmission completes (either successfully or with failure).
-  void OnLogUploadComplete(int response_code, int error_code);
+  void OnLogUploadComplete(int response_code, int error_code, bool was_https);
 
   // Used to interact with the embedder. Weak pointer; must outlive |this|
   // instance.

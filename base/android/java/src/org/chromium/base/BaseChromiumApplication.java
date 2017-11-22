@@ -10,7 +10,6 @@ import android.content.Context;
 import android.os.Bundle;
 import android.view.Window;
 
-import org.chromium.base.annotations.SuppressFBWarnings;
 import org.chromium.base.multidex.ChromiumMultiDexInstaller;
 
 import java.lang.reflect.InvocationHandler;
@@ -29,6 +28,8 @@ public class BaseChromiumApplication extends Application {
     // include the "internal" package.
     private static final String TOOLBAR_CALLBACK_WRAPPER_CLASS =
             "android.support.v7.app.ToolbarActionBar$ToolbarCallbackWrapper";
+    private static final String WINDOW_PROFILER_CALLBACK =
+            "com.android.tools.profiler.support.event.WindowProfilerCallback";
     private final boolean mShouldInitializeApplicationStatusTracking;
 
     public BaseChromiumApplication() {
@@ -149,7 +150,6 @@ public class BaseChromiumApplication extends Application {
     }
 
     /** Ensure this application object is not out-of-date. */
-    @SuppressFBWarnings("DM_EXIT")
     private void checkAppBeingReplaced() {
         // During app update the old apk can still be triggered by broadcasts and spin up an
         // out-of-date application. Kill old applications in this bad state. See
@@ -174,67 +174,42 @@ public class BaseChromiumApplication extends Application {
 
             @Override
             public void onActivityDestroyed(Activity activity) {
-                if (BuildConfig.DCHECK_IS_ON) {
-                    assert (Proxy.isProxyClass(activity.getWindow().getCallback().getClass())
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_WRAPPER_CLASS)
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_INTERNAL_WRAPPER_CLASS));
-                }
+                checkCallback(activity);
             }
 
             @Override
             public void onActivityPaused(Activity activity) {
-                if (BuildConfig.DCHECK_IS_ON) {
-                    assert (Proxy.isProxyClass(activity.getWindow().getCallback().getClass())
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_WRAPPER_CLASS)
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_INTERNAL_WRAPPER_CLASS));
-                }
+                checkCallback(activity);
             }
 
             @Override
             public void onActivityResumed(Activity activity) {
-                if (BuildConfig.DCHECK_IS_ON) {
-                    assert (Proxy.isProxyClass(activity.getWindow().getCallback().getClass())
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_WRAPPER_CLASS)
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_INTERNAL_WRAPPER_CLASS));
-                }
+                checkCallback(activity);
             }
 
             @Override
             public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
-                if (BuildConfig.DCHECK_IS_ON) {
-                    assert (Proxy.isProxyClass(activity.getWindow().getCallback().getClass())
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_WRAPPER_CLASS)
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_INTERNAL_WRAPPER_CLASS));
-                }
+                checkCallback(activity);
             }
 
             @Override
             public void onActivityStarted(Activity activity) {
-                if (BuildConfig.DCHECK_IS_ON) {
-                    assert (Proxy.isProxyClass(activity.getWindow().getCallback().getClass())
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_WRAPPER_CLASS)
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_INTERNAL_WRAPPER_CLASS));
-                }
+                checkCallback(activity);
             }
 
             @Override
             public void onActivityStopped(Activity activity) {
+                checkCallback(activity);
+            }
+
+            private void checkCallback(Activity activity) {
                 if (BuildConfig.DCHECK_IS_ON) {
-                    assert (Proxy.isProxyClass(activity.getWindow().getCallback().getClass())
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_WRAPPER_CLASS)
-                            || activity.getWindow().getCallback().getClass().getName().equals(
-                                    TOOLBAR_CALLBACK_INTERNAL_WRAPPER_CLASS));
+                    Class<? extends Window.Callback> callback =
+                            activity.getWindow().getCallback().getClass();
+                    assert(Proxy.isProxyClass(callback)
+                            || callback.getName().equals(TOOLBAR_CALLBACK_WRAPPER_CLASS)
+                            || callback.getName().equals(TOOLBAR_CALLBACK_INTERNAL_WRAPPER_CLASS)
+                            || callback.getName().equals(WINDOW_PROFILER_CALLBACK));
                 }
             }
         });

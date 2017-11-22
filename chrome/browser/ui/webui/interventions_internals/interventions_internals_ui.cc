@@ -5,6 +5,8 @@
 #include "chrome/browser/ui/webui/interventions_internals/interventions_internals_ui.h"
 
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "chrome/browser/net/nqe/ui_network_quality_estimator_service.h"
 #include "chrome/browser/net/nqe/ui_network_quality_estimator_service_factory.h"
@@ -13,7 +15,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/browser_resources.h"
-#include "components/previews/core/previews_ui_service.h"
+#include "components/previews/content/previews_ui_service.h"
 #include "content/public/browser/web_ui_data_source.h"
 
 namespace {
@@ -43,7 +45,7 @@ content::WebUIDataSource* GetUnsupportedSource() {
 }  // namespace
 
 InterventionsInternalsUI::InterventionsInternalsUI(content::WebUI* web_ui)
-    : MojoWebUIController(web_ui), logger_(nullptr) {
+    : MojoWebUIController(web_ui), previews_ui_service_(nullptr) {
   // Set up the chrome://interventions-internals/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
 
@@ -55,23 +57,17 @@ InterventionsInternalsUI::InterventionsInternalsUI(content::WebUI* web_ui)
     return;
   }
   content::WebUIDataSource::Add(profile, GetSource());
-  logger_ = previews_service->previews_ui_service()->previews_logger();
+  previews_ui_service_ = previews_service->previews_ui_service();
   ui_nqe_service_ =
       UINetworkQualityEstimatorServiceFactory::GetForProfile(profile);
 }
 
-InterventionsInternalsUI::~InterventionsInternalsUI() {
-  if (page_handler_) {
-    // |page_handler_| was not initialized in Guest Mode or Incognito Mode.
-    ui_nqe_service_->RemoveEffectiveConnectionTypeObserver(page_handler_.get());
-  }
-}
+InterventionsInternalsUI::~InterventionsInternalsUI() {}
 
 void InterventionsInternalsUI::BindUIHandler(
     mojom::InterventionsInternalsPageHandlerRequest request) {
-  DCHECK(logger_);
+  DCHECK(previews_ui_service_);
   DCHECK(ui_nqe_service_);
-  page_handler_.reset(
-      new InterventionsInternalsPageHandler(std::move(request), logger_));
-  ui_nqe_service_->AddEffectiveConnectionTypeObserver(page_handler_.get());
+  page_handler_.reset(new InterventionsInternalsPageHandler(
+      std::move(request), previews_ui_service_, ui_nqe_service_));
 }

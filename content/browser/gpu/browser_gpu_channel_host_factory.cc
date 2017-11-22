@@ -19,6 +19,7 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/shader_cache_factory.h"
+#include "content/browser/mus_util.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -26,15 +27,8 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
-#include "gpu/ipc/common/gpu_messages.h"
-#include "ipc/ipc_channel_handle.h"
-#include "ipc/message_filter.h"
 #include "services/resource_coordinator/public/interfaces/memory_instrumentation/constants.mojom.h"
 #include "services/service_manager/runner/common/client_util.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/env.h"
-#endif
 
 namespace content {
 
@@ -56,7 +50,9 @@ class BrowserGpuChannelHostFactory::EstablishRequest
   void Wait();
   void Cancel();
 
-  IPC::ChannelHandle& channel_handle() { return channel_handle_; }
+  mojo::ScopedMessagePipeHandle TakeChannelHandle() {
+    return std::move(channel_handle_);
+  }
   const gpu::GPUInfo& gpu_info() const { return gpu_info_; }
   const gpu::GpuFeatureInfo& gpu_feature_info() const {
     return gpu_feature_info_;
@@ -68,7 +64,7 @@ class BrowserGpuChannelHostFactory::EstablishRequest
   ~EstablishRequest() {}
   void RestartTimeout();
   void EstablishOnIO();
-  void OnEstablishedOnIO(const IPC::ChannelHandle& channel_handle,
+  void OnEstablishedOnIO(mojo::ScopedMessagePipeHandle channel_handle,
                          const gpu::GPUInfo& gpu_info,
                          const gpu::GpuFeatureInfo& gpu_feature_info,
                          GpuProcessHost::EstablishChannelStatus status);
@@ -78,7 +74,7 @@ class BrowserGpuChannelHostFactory::EstablishRequest
   base::WaitableEvent event_;
   const int gpu_client_id_;
   const uint64_t gpu_client_tracing_id_;
-  IPC::ChannelHandle channel_handle_;
+  mojo::ScopedMessagePipeHandle channel_handle_;
   gpu::GPUInfo gpu_info_;
   gpu::GpuFeatureInfo gpu_feature_info_;
   bool finished_;
@@ -138,11 +134,11 @@ void BrowserGpuChannelHostFactory::EstablishRequest::EstablishOnIO() {
 }
 
 void BrowserGpuChannelHostFactory::EstablishRequest::OnEstablishedOnIO(
-    const IPC::ChannelHandle& channel_handle,
+    mojo::ScopedMessagePipeHandle channel_handle,
     const gpu::GPUInfo& gpu_info,
     const gpu::GpuFeatureInfo& gpu_feature_info,
     GpuProcessHost::EstablishChannelStatus status) {
-  if (!channel_handle.mojo_handle.is_valid() &&
+  if (!channel_handle.is_valid() &&
       status == GpuProcessHost::EstablishChannelStatus::GPU_HOST_INVALID) {
     DVLOG(1) << "Failed to create channel on existing GPU process. Trying to "
                 "restart GPU process.";
@@ -154,7 +150,7 @@ void BrowserGpuChannelHostFactory::EstablishRequest::OnEstablishedOnIO(
     EstablishOnIO();
     return;
   }
-  channel_handle_ = channel_handle;
+  channel_handle_ = std::move(channel_handle);
   gpu_info_ = gpu_info;
   gpu_feature_info_ = gpu_feature_info;
   FinishOnIO();
@@ -223,9 +219,6 @@ BrowserGpuChannelHostFactory::BrowserGpuChannelHostFactory()
     : gpu_client_id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
       gpu_client_tracing_id_(
           memory_instrumentation::mojom::kServiceTracingProcessId),
-      shutdown_event_(new base::WaitableEvent(
-          base::WaitableEvent::ResetPolicy::MANUAL,
-          base::WaitableEvent::InitialState::NOT_SIGNALED)),
       gpu_memory_buffer_manager_(
           new BrowserGpuMemoryBufferManager(gpu_client_id_,
                                             gpu_client_tracing_id_)) {
@@ -245,18 +238,13 @@ BrowserGpuChannelHostFactory::BrowserGpuChannelHostFactory()
 }
 
 BrowserGpuChannelHostFactory::~BrowserGpuChannelHostFactory() {
-  DCHECK(IsMainThread());
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (pending_request_.get())
     pending_request_->Cancel();
-  shutdown_event_->Signal();
   if (gpu_channel_) {
     gpu_channel_->DestroyChannel();
     gpu_channel_ = nullptr;
   }
-}
-
-bool BrowserGpuChannelHostFactory::IsMainThread() {
-  return BrowserThread::CurrentlyOn(BrowserThread::UI);
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>
@@ -275,9 +263,9 @@ BrowserGpuChannelHostFactory::AllocateSharedMemory(size_t size) {
 void BrowserGpuChannelHostFactory::EstablishGpuChannel(
     const gpu::GpuChannelEstablishedCallback& callback) {
 #if defined(USE_AURA)
-  DCHECK_EQ(aura::Env::Mode::LOCAL, aura::Env::GetInstance()->mode());
+  DCHECK(!IsMusHostingViz());
 #endif
-  DCHECK(IsMainThread());
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (gpu_channel_.get() && gpu_channel_->IsLost()) {
     DCHECK(!pending_request_.get());
     // Recreate the channel if it has been lost.
@@ -332,16 +320,16 @@ gpu::GpuChannelHost* BrowserGpuChannelHostFactory::GetGpuChannel() {
 }
 
 void BrowserGpuChannelHostFactory::GpuChannelEstablished() {
-  DCHECK(IsMainThread());
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(pending_request_.get());
-  if (!pending_request_->channel_handle().mojo_handle.is_valid()) {
+  mojo::ScopedMessagePipeHandle handle(pending_request_->TakeChannelHandle());
+  if (!handle.is_valid()) {
     DCHECK(!gpu_channel_.get());
   } else {
     GetContentClient()->SetGpuInfo(pending_request_->gpu_info());
-    gpu_channel_ = gpu::GpuChannelHost::Create(
+    gpu_channel_ = base::MakeRefCounted<gpu::GpuChannelHost>(
         this, gpu_client_id_, pending_request_->gpu_info(),
-        pending_request_->gpu_feature_info(),
-        pending_request_->channel_handle(), shutdown_event_.get(),
+        pending_request_->gpu_feature_info(), std::move(handle),
         gpu_memory_buffer_manager_.get());
   }
   pending_request_ = nullptr;
@@ -354,7 +342,7 @@ void BrowserGpuChannelHostFactory::GpuChannelEstablished() {
 }
 
 void BrowserGpuChannelHostFactory::RestartTimeout() {
-  DCHECK(IsMainThread());
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 // Only implement timeout on Android, which does not have a software fallback.
 #if defined(OS_ANDROID)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(

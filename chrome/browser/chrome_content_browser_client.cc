@@ -97,6 +97,7 @@
 #include "chrome/browser/ssl/ssl_cert_reporter.h"
 #include "chrome/browser/ssl/ssl_client_certificate_selector.h"
 #include "chrome/browser/ssl/ssl_error_handler.h"
+#include "chrome/browser/ssl/ssl_error_navigation_throttle.h"
 #include "chrome/browser/subresource_filter/chrome_subresource_filter_client.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/tab_contents/tab_util.h"
@@ -156,6 +157,7 @@
 #include "components/nacl/common/nacl_constants.h"
 #include "components/net_log/chrome_net_log.h"
 #include "components/password_manager/content/browser/content_password_manager_driver_factory.h"
+#include "components/patch_service/public/interfaces/constants.mojom.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -174,7 +176,6 @@
 #include "components/task_scheduler_util/browser/initialization.h"
 #include "components/task_scheduler_util/common/variations_util.h"
 #include "components/translate/core/common/translate_switches.h"
-#include "components/ukm/ukm_interface.h"
 #include "components/url_formatter/url_fixer.h"
 #include "components/variations/variations_associated_data.h"
 #include "components/variations/variations_switches.h"
@@ -227,15 +228,19 @@
 #include "ppapi/features/features.h"
 #include "ppapi/host/ppapi_host.h"
 #include "printing/features/features.h"
+#include "services/metrics/metrics_mojo_service.h"
+#include "services/metrics/public/interfaces/constants.mojom.h"
 #include "services/preferences/public/cpp/in_process_service_factory.h"
 #include "services/preferences/public/interfaces/preferences.mojom.h"
 #include "services/proxy_resolver/public/interfaces/proxy_resolver.mojom.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/external_mount_points.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/modules/installedapp/installed_app_provider.mojom.h"
 #include "third_party/WebKit/public/platform/modules/webshare/webshare.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_features.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -246,6 +251,7 @@
 #include "chrome/browser/conflicts/module_database_win.h"
 #include "chrome/browser/conflicts/module_event_sink_impl_win.h"
 #include "chrome/services/util_win/public/interfaces/constants.mojom.h"
+#include "chrome/services/wifi_util_win/public/interfaces/constants.mojom.h"
 #include "sandbox/win/src/sandbox_policy.h"
 #elif defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_main_mac.h"
@@ -271,7 +277,6 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/views/ash/chrome_browser_main_extra_parts_ash.h"
-#include "chrome/services/file_util/public/interfaces/constants.mojom.h"
 #include "chromeos/chromeos_constants.h"
 #include "chromeos/chromeos_switches.h"
 #include "components/user_manager/user_manager.h"
@@ -282,6 +287,7 @@
 #include "chrome/browser/android/app_hooks.h"
 #include "chrome/browser/android/chrome_context_util.h"
 #include "chrome/browser/android/devtools_manager_delegate_android.h"
+#include "chrome/browser/android/download/intercept_oma_download_navigation_throttle.h"
 #include "chrome/browser/android/ntp/new_tab_page_url_handler.h"
 #include "chrome/browser/android/service_tab_launcher.h"
 #include "chrome/browser/android/tab_android.h"
@@ -347,9 +353,11 @@
 #include "chrome/browser/extensions/bookmark_app_navigation_throttle.h"
 #include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
 #include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
+#include "chrome/services/media_gallery_util/public/interfaces/constants.mojom.h"
 #include "components/guest_view/browser/guest_view_base.h"
 #include "components/guest_view/browser/guest_view_manager.h"
 #include "extensions/browser/extension_navigation_throttle.h"
+#include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
@@ -369,7 +377,7 @@
 #include "chrome/browser/media/cast_transport_host_filter.h"
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
-#if BUILDFLAG(ENABLE_PACKAGE_MASH_SERVICES)
+#if BUILDFLAG(ENABLE_MUS)
 #include "chrome/browser/mash_service_registry.h"
 #include "services/ui/public/interfaces/constants.mojom.h"
 #endif
@@ -417,6 +425,10 @@
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_navigation_throttle.h"
+#endif
+
+#if defined(FULL_SAFE_BROWSING) || defined(OS_CHROMEOS)
+#include "chrome/services/file_util/public/interfaces/constants.mojom.h"
 #endif
 
 using base::FileDescriptor;
@@ -631,8 +643,9 @@ void SetApplicationLocaleOnIOThread(const std::string& locale) {
 class CertificateReportingServiceCertReporter : public SSLCertReporter {
  public:
   explicit CertificateReportingServiceCertReporter(
-      CertificateReportingService* service)
-      : service_(service) {}
+      content::WebContents* web_contents)
+      : service_(CertificateReportingServiceFactory::GetForBrowserContext(
+            web_contents->GetBrowserContext())) {}
   ~CertificateReportingServiceCertReporter() override {}
 
   // SSLCertReporter implementation
@@ -1029,7 +1042,7 @@ void ChromeContentBrowserClient::GetStoragePartitionConfigForSite(
 content::WebContentsViewDelegate*
     ChromeContentBrowserClient::GetWebContentsViewDelegate(
         content::WebContents* web_contents) {
-  return chrome::CreateWebContentsViewDelegate(web_contents);
+  return CreateWebContentsViewDelegate(web_contents);
 }
 
 void ChromeContentBrowserClient::RenderProcessWillLaunch(
@@ -1107,7 +1120,9 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
 }
 
 GURL ChromeContentBrowserClient::GetEffectiveURL(
-    content::BrowserContext* browser_context, const GURL& url) {
+    content::BrowserContext* browser_context,
+    const GURL& url,
+    bool is_isolated_origin) {
   Profile* profile = Profile::FromBrowserContext(browser_context);
   if (!profile)
     return url;
@@ -1118,6 +1133,13 @@ GURL ChromeContentBrowserClient::GetEffectiveURL(
     return search::GetEffectiveURLForInstant(url, profile);
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
+  // If |url| has an isolated origin, don't resolve effective URLs
+  // corresponding to extensions, since isolated origins should take precedence
+  // over hosted apps.  Note that for NTP, we do want to resolve the effective
+  // URL above; see https://crbug.com/755595.
+  if (is_isolated_origin)
+    return url;
+
   return ChromeContentBrowserClientExtensionsPart::GetEffectiveURL(
       profile, url);
 #else
@@ -1449,6 +1471,14 @@ ChromeContentBrowserClient::GetOriginsRequiringDedicatedProcess() {
   return isolated_origin_list;
 }
 
+bool ChromeContentBrowserClient::IsFileAccessAllowed(
+    const base::FilePath& path,
+    const base::FilePath& absolute_path,
+    const base::FilePath& profile_path) {
+  return ChromeNetworkDelegate::IsAccessAllowed(path, absolute_path,
+                                                profile_path);
+}
+
 namespace {
 
 bool IsAutoReloadEnabled() {
@@ -1766,7 +1796,6 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       extensions::switches::kEnableEmbeddedExtensionOptions,
       extensions::switches::kEnableExperimentalExtensionApis,
       extensions::switches::kExtensionsOnChromeURLs,
-      extensions::switches::kNativeCrxBindings,
       extensions::switches::kWhitelistedExtensionID,
       extensions::switches::kYieldBetweenContentScriptRuns,
 #endif
@@ -1862,7 +1891,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 void ChromeContentBrowserClient::AdjustUtilityServiceProcessCommandLine(
     const service_manager::Identity& identity,
     base::CommandLine* command_line) {
-#if BUILDFLAG(ENABLE_PACKAGE_MASH_SERVICES)
+#if BUILDFLAG(ENABLE_MUS)
   if (mash_service_registry::IsMashServiceName(identity.name())) {
     command_line->AppendSwitchASCII(switches::kMashServiceName,
                                     identity.name());
@@ -1881,12 +1910,7 @@ void ChromeContentBrowserClient::AdjustUtilityServiceProcessCommandLine(
   // TODO(sky): move to a whitelist, but currently the set of flags is rather
   // sprawling.
   if (copy_switches) {
-    base::CommandLine::SwitchMap switches =
-        base::CommandLine::ForCurrentProcess()->GetSwitches();
-    switches.erase("single_process");
-    switches.erase(switches::kSingleProcess);
-    switches.erase("gtest_filter");
-    for (const auto& sw : switches)
+    for (const auto& sw : base::CommandLine::ForCurrentProcess()->GetSwitches())
       command_line->AppendSwitchNative(sw.first, sw.second);
   }
 #endif
@@ -2007,7 +2031,7 @@ bool ChromeContentBrowserClient::AllowGetCookie(
 bool ChromeContentBrowserClient::AllowSetCookie(
     const GURL& url,
     const GURL& first_party,
-    const std::string& cookie_line,
+    const net::CanonicalCookie& cookie,
     content::ResourceContext* context,
     int render_process_id,
     int render_frame_id,
@@ -2023,7 +2047,7 @@ bool ChromeContentBrowserClient::AllowSetCookie(
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&TabSpecificContentSettings::CookieChanged, wc_getter, url,
-                     first_party, cookie_line, options, !allow));
+                     first_party, cookie, options, !allow));
   return allow;
 }
 
@@ -2259,17 +2283,14 @@ void ChromeContentBrowserClient::AllowCertificateError(
   }
 
   // Otherwise, display an SSL blocking page. The interstitial page takes
-  // ownership of ssl_blocking_page.
-
-  CertificateReportingService* cert_reporting_service =
-      CertificateReportingServiceFactory::GetForBrowserContext(
-          web_contents->GetBrowserContext());
-  std::unique_ptr<CertificateReportingServiceCertReporter> cert_reporter(
-      new CertificateReportingServiceCertReporter(cert_reporting_service));
-
+  // ownership of ssl_blocking_page. We pass a null BlockingPageReadyCallback()
+  // to indicate that we don't want SSLErrorHandler to take the committed
+  // interstitials code path.
   SSLErrorHandler::HandleSSLError(
       web_contents, cert_error, ssl_info, request_url, strict_enforcement,
-      expired_previous_decision, std::move(cert_reporter), callback);
+      expired_previous_decision,
+      std::make_unique<CertificateReportingServiceCertReporter>(web_contents),
+      callback, SSLErrorHandler::BlockingPageReadyCallback());
 }
 
 void ChromeContentBrowserClient::SelectClientCertificate(
@@ -2541,8 +2562,6 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
 
   if (!prefs->GetBoolean(prefs::kWebKitPluginsEnabled))
     web_prefs->plugins_enabled = false;
-  web_prefs->encrypted_media_enabled =
-      prefs->GetBoolean(prefs::kWebKitEncryptedMediaEnabled);
   web_prefs->loads_images_automatically =
       prefs->GetBoolean(prefs::kWebKitLoadsImagesAutomatically);
 
@@ -2943,9 +2962,6 @@ void ChromeContentBrowserClient::ExposeInterfacesToRenderer(
       base::Bind(&rappor::RapporRecorderImpl::Create,
                  g_browser_process->rappor_service()),
       ui_task_runner);
-  registry->AddInterface(
-      base::Bind(&ukm::UkmInterface::Create, ukm::UkmRecorder::Get()),
-      ui_task_runner);
   if (NetBenchmarking::CheckBenchmarkingEnabled()) {
     Profile* profile =
         Profile::FromBrowserContext(render_process_host->GetBrowserContext());
@@ -2993,6 +3009,10 @@ void ChromeContentBrowserClient::ExposeInterfacesToRenderer(
       base::Bind(&metrics::LeakDetectorRemoteController::Create),
       ui_task_runner);
 #endif
+  for (auto* ep : extra_parts_) {
+    ep->ExposeInterfacesToRenderer(registry, associated_registry,
+                                   render_process_host);
+  }
 }
 
 void ChromeContentBrowserClient::ExposeInterfacesToMediaService(
@@ -3006,8 +3026,7 @@ void ChromeContentBrowserClient::ExposeInterfacesToMediaService(
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
 #if BUILDFLAG(ENABLE_MOJO_CDM) && defined(OS_ANDROID)
-  registry->AddInterface(
-      base::Bind(&chrome::CreateMediaDrmStorage, render_frame_host));
+  registry->AddInterface(base::Bind(&CreateMediaDrmStorage, render_frame_host));
 #endif
 }
 
@@ -3079,6 +3098,9 @@ void ChromeContentBrowserClient::RegisterInProcessServices(
     services->insert(
         std::make_pair(prefs::mojom::kLocalStateServiceName, info));
   }
+  service_manager::EmbeddedServiceInfo info;
+  info.factory = base::Bind(&metrics::CreateMetricsService);
+  services->emplace(metrics::mojom::kMetricsServiceName, info);
 #if BUILDFLAG(ENABLE_MOJO_MEDIA_IN_BROWSER_PROCESS)
   {
     service_manager::EmbeddedServiceInfo info;
@@ -3114,6 +3136,22 @@ void ChromeContentBrowserClient::RegisterOutOfProcessServices(
   (*services)[profiling::mojom::kServiceName] =
       base::ASCIIToUTF16("Profiling Service");
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  (*services)[chrome::mojom::kMediaGalleryUtilServiceName] =
+      l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_MEDIA_GALLERY_UTILITY_NAME);
+#endif
+
+#if defined(OS_WIN)
+  (*services)[chrome::mojom::kUtilWinServiceName] =
+      l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_UTILITY_WIN_NAME);
+#endif
+
+#if defined(OS_WIN) && BUILDFLAG(ENABLE_EXTENSIONS)
+  (*services)[chrome::mojom::kWifiUtilWinServiceName] =
+      l10n_util::GetStringUTF16(
+          IDS_UTILITY_PROCESS_WIFI_CREDENTIALS_GETTER_NAME);
+#endif
+
 #if !defined(OS_ANDROID)
   (*services)[chrome::mojom::kProfileImportServiceName] =
       l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_PROFILE_IMPORTER_NAME);
@@ -3122,17 +3160,15 @@ void ChromeContentBrowserClient::RegisterOutOfProcessServices(
       l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_PROXY_RESOLVER_NAME);
 #endif
 
-#if defined(OS_WIN)
-  (*services)[chrome::mojom::kUtilWinServiceName] =
-      l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_UTILITY_WIN_NAME);
-#endif
-
-#if defined(OS_CHROMEOS)
+#if defined(FULL_SAFE_BROWSING) || defined(OS_CHROMEOS)
   (*services)[chrome::mojom::kFileUtilServiceName] =
       l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_FILE_UTILITY_NAME);
 #endif
 
-#if BUILDFLAG(ENABLE_PACKAGE_MASH_SERVICES)
+  (*services)[patch::mojom::kServiceName] =
+      l10n_util::GetStringUTF16(IDS_UTILITY_PROCESS_PATCH_NAME);
+
+#if BUILDFLAG(ENABLE_MUS)
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kMash))
     mash_service_registry::RegisterOutOfProcessServices(services);
 #endif
@@ -3140,7 +3176,7 @@ void ChromeContentBrowserClient::RegisterOutOfProcessServices(
 
 bool ChromeContentBrowserClient::ShouldTerminateOnServiceQuit(
     const service_manager::Identity& id) {
-#if BUILDFLAG(ENABLE_PACKAGE_MASH_SERVICES)
+#if BUILDFLAG(ENABLE_MUS)
   return mash_service_registry::ShouldTerminateOnServiceQuit(id.name());
 #endif
   return false;
@@ -3293,6 +3329,7 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
         navigation_interception::InterceptNavigationDelegate::CreateThrottleFor(
             handle));
   }
+  throttles.push_back(InterceptOMADownloadNavigationThrottle::Create(handle));
 #elif BUILDFLAG(ENABLE_EXTENSIONS)
   if (handle->IsInMainFrame()) {
     // Redirect some navigations to apps that have registered matching URL
@@ -3395,6 +3432,14 @@ ChromeContentBrowserClient::CreateThrottlesForNavigation(
   if (tab_under_throttle)
     throttles.push_back(std::move(tab_under_throttle));
 
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kCommittedInterstitials)) {
+    throttles.push_back(std::make_unique<SSLErrorNavigationThrottle>(
+        handle,
+        std::make_unique<CertificateReportingServiceCertReporter>(web_contents),
+        base::Bind(&SSLErrorHandler::HandleSSLError)));
+  }
+
   return throttles;
 }
 
@@ -3442,8 +3487,8 @@ bool ChromeContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs(
 }
 
 void ChromeContentBrowserClient::OverridePageVisibilityState(
-      RenderFrameHost* render_frame_host,
-      blink::WebPageVisibilityState* visibility_state) {
+    RenderFrameHost* render_frame_host,
+    blink::mojom::PageVisibilityState* visibility_state) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   WebContents* web_contents =
@@ -3455,7 +3500,7 @@ void ChromeContentBrowserClient::OverridePageVisibilityState(
           web_contents->GetBrowserContext());
   if (prerender_manager &&
       prerender_manager->IsWebContentsPrerendering(web_contents, nullptr)) {
-    *visibility_state = blink::kWebPageVisibilityStatePrerender;
+    *visibility_state = blink::mojom::PageVisibilityState::kPrerender;
   }
 }
 
@@ -3587,6 +3632,29 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
     result.push_back(std::move(safe_browsing_throttle));
 
   return result;
+}
+
+void ChromeContentBrowserClient::RegisterNonNetworkNavigationURLLoaderFactories(
+    content::RenderFrameHost* frame_host,
+    NonNetworkURLLoaderFactoryMap* factories) {
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  factories->emplace(
+      extensions::kExtensionScheme,
+      extensions::CreateExtensionNavigationURLLoaderFactory(frame_host));
+#endif
+}
+
+void ChromeContentBrowserClient::
+    RegisterNonNetworkSubresourceURLLoaderFactories(
+        content::RenderFrameHost* frame_host,
+        const GURL& frame_url,
+        NonNetworkURLLoaderFactoryMap* factories) {
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  auto factory = extensions::MaybeCreateExtensionSubresourceURLLoaderFactory(
+      frame_host, frame_url);
+  if (factory)
+    factories->emplace(extensions::kExtensionScheme, std::move(factory));
+#endif
 }
 
 // Static; handles rewriting Web UI URLs.

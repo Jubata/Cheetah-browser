@@ -2093,6 +2093,9 @@ STDMETHODIMP AXPlatformNodeWin::get_columnHeaderCells(
     return E_INVALIDARG;
 
   *n_column_header_cells = 0;
+  if (GetData().role != AX_ROLE_CELL)
+    return S_FALSE;
+
   AXPlatformNodeBase* table = GetTable();
   if (!table) {
     return S_FALSE;
@@ -2158,6 +2161,9 @@ STDMETHODIMP AXPlatformNodeWin::get_rowHeaderCells(IUnknown*** cell_accessibles,
     return E_INVALIDARG;
 
   *n_row_header_cells = 0;
+  if (GetData().role != AX_ROLE_CELL)
+    return S_FALSE;
+
   AXPlatformNodeBase* table = GetTable();
   if (!table) {
     return S_FALSE;
@@ -2639,7 +2645,8 @@ int AXPlatformNodeWin::MSAARole() {
     case AX_ROLE_COLUMN_HEADER:
       return ROLE_SYSTEM_COLUMNHEADER;
 
-    case AX_ROLE_COMBO_BOX:
+    case AX_ROLE_COMBO_BOX_GROUPING:
+    case AX_ROLE_COMBO_BOX_MENU_BUTTON:
       return ROLE_SYSTEM_COMBOBOX;
 
     case AX_ROLE_COMPLEMENTARY:
@@ -2868,6 +2875,9 @@ int AXPlatformNodeWin::MSAARole() {
     case AX_ROLE_TEXT_FIELD:
     case AX_ROLE_SEARCH_BOX:
       return ROLE_SYSTEM_TEXT;
+
+    case AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX:
+      return ROLE_SYSTEM_COMBOBOX;
 
     case AX_ROLE_ABBR:
     case AX_ROLE_TIME:
@@ -3335,7 +3345,8 @@ std::vector<base::string16> AXPlatformNodeWin::ComputeIA2Attributes() {
   if (IsRangeValueSupported()) {
     base::string16 value = GetRangeValueText();
     SanitizeStringAttributeForIA2(value, &value);
-    result.push_back(L"valuetext:" + value);
+    if (!value.empty())
+      result.push_back(L"valuetext:" + value);
   }
 
   // Expose dropeffect attribute.
@@ -3387,7 +3398,7 @@ std::vector<base::string16> AXPlatformNodeWin::ComputeIA2Attributes() {
   // object (as opposed to treating it like a native Windows text box).
   // The text-model:a1 attribute is documented here:
   // http://www.linuxfoundation.org/collaborate/workgroups/accessibility/ia2/ia2_implementation_guide
-  if (GetData().role == AX_ROLE_TEXT_FIELD) {
+  if (IsEditField(GetData().role)) {
     result.push_back(L"text-model:a1;");
   }
 
@@ -3651,6 +3662,11 @@ int AXPlatformNodeWin::MSAAState() {
   if (GetData().role == AX_ROLE_LINK)
     msaa_state |= STATE_SYSTEM_LINKED;
 
+  // Special case for indeterminate progressbar.
+  if (GetData().role == AX_ROLE_PROGRESS_INDICATOR &&
+      !HasFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE))
+    msaa_state |= STATE_SYSTEM_MIXED;
+
   return msaa_state;
 }
 
@@ -3718,7 +3734,11 @@ void AXPlatformNodeWin::HandleSpecialTextOffset(LONG* offset) {
   if (*offset == IA2_TEXT_OFFSET_LENGTH) {
     *offset = static_cast<LONG>(GetText().length());
   } else if (*offset == IA2_TEXT_OFFSET_CARET) {
-    *offset = static_cast<LONG>(GetIntAttribute(AX_ATTR_TEXT_SEL_END));
+    int selection_start, selection_end;
+    GetSelectionOffsets(&selection_start, &selection_end);
+    if (selection_end < 0)
+      *offset = 0;
+    *offset = static_cast<LONG>(selection_end);
   }
 }
 

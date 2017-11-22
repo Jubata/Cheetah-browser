@@ -13,10 +13,6 @@
 #include "content/public/browser/web_contents_user_data.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
-namespace base {
-class TickClock;
-}
-
 namespace content {
 class WebContents;
 }
@@ -32,14 +28,14 @@ namespace resource_coordinator {
 //
 // These values are used in the TabManager.SessionRestore.SwitchToTab UMA.
 //
-// TODO(lpy): *switch to the new done signal (network and cpu quiescence) when
-// available.
-//
 // These values are written to logs.  New enum values can be added, but existing
 // enums must never be renumbered or deleted and reused.
 enum TabLoadingState {
   TAB_IS_NOT_LOADING = 0,
   TAB_IS_LOADING = 1,
+  // A tab is considered loaded when DidStopLoading is called from WebContents
+  // for now. We are in the progress to deprecate using it, and use
+  // PageAlmostIdle signal from resource coordinator instead.
   TAB_IS_LOADED = 2,
   TAB_LOADING_STATE_MAX,
 };
@@ -63,8 +59,9 @@ class TabManager::WebContentsData
   void WasShown() override;
   void WebContentsDestroyed() override;
 
-  // Idle signal received from GRC.
-  void NotifyAlmostIdle() {}
+  // Called by TabManager::ResourceCoordinatorSignalObserver to notify that a
+  // tab is considered loaded.
+  void NotifyTabIsLoaded();
 
   // Returns true if the tab has been discarded to save memory.
   bool IsDiscarded();
@@ -99,10 +96,6 @@ class TabManager::WebContentsData
   // Copies the discard state from |old_contents| to |new_contents|.
   static void CopyState(content::WebContents* old_contents,
                         content::WebContents* new_contents);
-
-  // Used to set the test TickClock, which then gets used by NowTicks(). See
-  // |test_tick_clock_| for more details.
-  void set_test_tick_clock(base::TickClock* test_tick_clock);
 
   // Returns the auto-discardable state of the tab.
   // See tab_manager.h for more information.
@@ -181,8 +174,6 @@ class TabManager::WebContentsData
     base::TimeTicks last_reload_time;
     // The last time the tab switched from being active to inactive.
     base::TimeTicks last_inactive_time;
-    // Site Engagement score (set to -1 if not available).
-    double engagement_score;
     // Is tab eligible for auto discarding? Defaults to true.
     bool is_auto_discardable;
     // Current loading state of this tab.
@@ -194,19 +185,11 @@ class TabManager::WebContentsData
     bool is_restored_in_foreground;
   };
 
-  // Returns either the system's clock or the test clock. See |test_tick_clock_|
-  // for more details.
-  base::TimeTicks NowTicks() const;
-
   void ReportUKMWhenTabIsClosed();
   void ReportUKMWhenBackgroundTabIsClosedOrForegrounded(bool is_foregrounded);
 
   // Contains all the needed data for the tab.
   Data tab_data_;
-
-  // Pointer to a test clock. If this is set, NowTicks() returns the value of
-  // this test clock. Otherwise it returns the system clock's value.
-  base::TickClock* test_tick_clock_;
 
   // The time to purge after the tab is backgrounded.
   base::TimeDelta time_to_purge_;

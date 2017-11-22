@@ -681,7 +681,9 @@ void TypingCommand::InsertTextRunWithoutNewlines(const String& text,
             : InsertTextCommand::kRebalanceAllWhitespaces);
   }
 
-  ApplyCommandToComposite(command, EndingSelection(), editing_state);
+  command->SetStartingSelection(EndingSelection());
+  command->SetEndingSelection(EndingSelection());
+  ApplyCommandToComposite(command, editing_state);
   if (editing_state->IsAborted())
     return;
 
@@ -810,7 +812,7 @@ void TypingCommand::DeleteKeyPressed(TextGranularity granularity,
   smart_delete_ = false;
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
 
-  SelectionModifier selection_modifier(*frame, EndingVisibleSelection());
+  SelectionModifier selection_modifier(*frame, EndingSelection().AsSelection());
   selection_modifier.Modify(SelectionModifyAlteration::kExtend,
                             SelectionModifyDirection::kBackward, granularity);
   if (kill_ring && selection_modifier.Selection().IsCaret() &&
@@ -985,7 +987,7 @@ void TypingCommand::ForwardDeleteKeyPressed(TextGranularity granularity,
   // Handle delete at beginning-of-block case.
   // Do nothing in the case that the caret is at the start of a
   // root editable element or at the start of a document.
-  SelectionModifier selection_modifier(*frame, EndingVisibleSelection());
+  SelectionModifier selection_modifier(*frame, EndingSelection().AsSelection());
   selection_modifier.Modify(SelectionModifyAlteration::kExtend,
                             SelectionModifyDirection::kForward, granularity);
   if (kill_ring && selection_modifier.Selection().IsCaret() &&

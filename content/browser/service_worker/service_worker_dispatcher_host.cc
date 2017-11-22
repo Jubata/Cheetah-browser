@@ -22,7 +22,6 @@
 #include "content/browser/service_worker/service_worker_handle.h"
 #include "content/browser/service_worker/service_worker_navigation_handle_core.h"
 #include "content/browser/service_worker/service_worker_registration.h"
-#include "content/browser/service_worker/service_worker_registration_handle.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_event_dispatcher.mojom.h"
 #include "content/common/service_worker/service_worker_messages.h"
@@ -36,10 +35,10 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/origin_util.h"
 #include "ipc/ipc_message_macros.h"
-#include "net/http/http_util.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerError.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_error_type.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_object.mojom.h"
+#include "third_party/WebKit/public/platform/web_feature.mojom.h"
 #include "url/gurl.h"
 
 using blink::MessagePortChannel;
@@ -49,32 +48,9 @@ namespace content {
 
 namespace {
 
-const char kNoDocumentURLErrorMessage[] =
-    "No URL is associated with the caller's document.";
-const char kShutdownErrorMessage[] =
-    "The Service Worker system has shutdown.";
-const char kUserDeniedPermissionMessage[] =
-    "The user denied permission to use Service Worker.";
-const char kSetNavigationPreloadHeaderErrorPrefix[] =
-    "Failed to set navigation preload header: ";
-const char kNoActiveWorkerErrorMessage[] =
-    "The registration does not have an active worker.";
-const char kDatabaseErrorMessage[] = "Failed to access storage.";
-
 const uint32_t kServiceWorkerFilteredMessageClasses[] = {
     ServiceWorkerMsgStart, EmbeddedWorkerMsgStart,
 };
-
-void RunSoon(const base::Closure& callback) {
-  if (!callback.is_null())
-    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, callback);
-}
-
-WebContents* GetWebContents(int render_process_id, int render_frame_id) {
-  RenderFrameHost* rfh =
-      RenderFrameHost::FromID(render_process_id, render_frame_id);
-  return WebContents::FromRenderFrameHost(rfh);
-}
 
 }  // namespace
 
@@ -164,8 +140,6 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_DecrementServiceWorkerRefCount,
                         OnDecrementServiceWorkerRefCount)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_TerminateWorker, OnTerminateWorker)
-    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_SetNavigationPreloadHeader,
-                        OnSetNavigationPreloadHeader)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -196,17 +170,6 @@ void ServiceWorkerDispatcherHost::RegisterServiceWorkerHandle(
   handles_.AddWithID(std::move(handle), handle_id);
 }
 
-void ServiceWorkerDispatcherHost::RegisterServiceWorkerRegistrationHandle(
-    ServiceWorkerRegistrationHandle* handle) {
-  int handle_id = handle->handle_id();
-  registration_handles_.AddWithID(base::WrapUnique(handle), handle_id);
-}
-
-void ServiceWorkerDispatcherHost::UnregisterServiceWorkerRegistrationHandle(
-    int handle_id) {
-  registration_handles_.Remove(handle_id);
-}
-
 ServiceWorkerHandle* ServiceWorkerDispatcherHost::FindServiceWorkerHandle(
     int provider_id,
     int64_t version_id) {
@@ -227,89 +190,6 @@ ServiceWorkerHandle* ServiceWorkerDispatcherHost::FindServiceWorkerHandle(
 base::WeakPtr<ServiceWorkerDispatcherHost>
 ServiceWorkerDispatcherHost::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
-}
-
-void ServiceWorkerDispatcherHost::OnSetNavigationPreloadHeader(
-    int thread_id,
-    int request_id,
-    int provider_id,
-    int64_t registration_id,
-    const std::string& value) {
-  ProviderStatus provider_status;
-  ServiceWorkerProviderHost* provider_host =
-      GetProviderHostForRequest(&provider_status, provider_id);
-  switch (provider_status) {
-    case ProviderStatus::NO_CONTEXT:  // fallthrough
-    case ProviderStatus::DEAD_HOST:
-      Send(new ServiceWorkerMsg_SetNavigationPreloadHeaderError(
-          thread_id, request_id, blink::mojom::ServiceWorkerErrorType::kAbort,
-          std::string(kSetNavigationPreloadHeaderErrorPrefix) +
-              std::string(kShutdownErrorMessage)));
-      return;
-    case ProviderStatus::NO_HOST:
-      bad_message::ReceivedBadMessage(
-          this, bad_message::SWDH_SET_NAVIGATION_PRELOAD_HEADER_NO_HOST);
-      return;
-    case ProviderStatus::NO_URL:
-      Send(new ServiceWorkerMsg_SetNavigationPreloadHeaderError(
-          thread_id, request_id,
-          blink::mojom::ServiceWorkerErrorType::kSecurity,
-          std::string(kSetNavigationPreloadHeaderErrorPrefix) +
-              std::string(kNoDocumentURLErrorMessage)));
-      return;
-    case ProviderStatus::OK:
-      break;
-  }
-
-  ServiceWorkerRegistration* registration =
-      GetContext()->GetLiveRegistration(registration_id);
-  if (!registration) {
-    // |registration| must be alive because a renderer retains a registration
-    // reference at this point.
-    bad_message::ReceivedBadMessage(
-        this,
-        bad_message::SWDH_SET_NAVIGATION_PRELOAD_HEADER_BAD_REGISTRATION_ID);
-    return;
-  }
-  if (!registration->active_version()) {
-    Send(new ServiceWorkerMsg_SetNavigationPreloadHeaderError(
-        thread_id, request_id, blink::mojom::ServiceWorkerErrorType::kState,
-        std::string(kSetNavigationPreloadHeaderErrorPrefix) +
-            std::string(kNoActiveWorkerErrorMessage)));
-    return;
-  }
-
-  std::vector<GURL> urls = {provider_host->document_url(),
-                            registration->pattern()};
-  if (!ServiceWorkerUtils::AllOriginsMatchAndCanAccessServiceWorkers(urls)) {
-    bad_message::ReceivedBadMessage(
-        this, bad_message::SWDH_SET_NAVIGATION_PRELOAD_HEADER_INVALID_ORIGIN);
-    return;
-  }
-
-  // TODO(falken): Ideally this would match Blink's isValidHTTPHeaderValue.
-  // Chrome's check is less restrictive: it allows non-latin1 characters.
-  if (!net::HttpUtil::IsValidHeaderValue(value)) {
-    bad_message::ReceivedBadMessage(
-        this, bad_message::SWDH_SET_NAVIGATION_PRELOAD_HEADER_BAD_VALUE);
-    return;
-  }
-
-  if (!GetContentClient()->browser()->AllowServiceWorker(
-          registration->pattern(), provider_host->topmost_frame_url(),
-          resource_context_, base::Bind(&GetWebContents, render_process_id_,
-                                        provider_host->frame_id()))) {
-    Send(new ServiceWorkerMsg_SetNavigationPreloadHeaderError(
-        thread_id, request_id, blink::mojom::ServiceWorkerErrorType::kDisabled,
-        std::string(kSetNavigationPreloadHeaderErrorPrefix) +
-            std::string(kUserDeniedPermissionMessage)));
-    return;
-  }
-
-  GetContext()->storage()->UpdateNavigationPreloadHeader(
-      registration->id(), registration->pattern().GetOrigin(), value,
-      base::Bind(&ServiceWorkerDispatcherHost::DidUpdateNavigationPreloadHeader,
-                 this, thread_id, request_id, registration->id(), value));
 }
 
 void ServiceWorkerDispatcherHost::OnPostMessageToWorker(
@@ -370,11 +250,15 @@ void ServiceWorkerDispatcherHost::DispatchExtendableMessageEvent(
       blink::mojom::ServiceWorkerObjectInfoPtr worker_info =
           sender_provider_host->GetOrCreateServiceWorkerHandle(
               sender_provider_host->running_hosted_version());
-      RunSoon(base::Bind(
-          &ServiceWorkerDispatcherHost::DispatchExtendableMessageEventInternal<
-              blink::mojom::ServiceWorkerObjectInfo>,
-          this, worker, message, source_origin, sent_message_ports,
-          base::make_optional(timeout), callback, *worker_info));
+
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE,
+          base::BindOnce(&ServiceWorkerDispatcherHost::
+                             DispatchExtendableMessageEventInternal<
+                                 blink::mojom::ServiceWorkerObjectInfo>,
+                         this, worker, message, source_origin,
+                         sent_message_ports, base::make_optional(timeout),
+                         callback, *worker_info));
       break;
     }
     case SERVICE_WORKER_PROVIDER_UNKNOWN:
@@ -553,21 +437,6 @@ void ServiceWorkerDispatcherHost::ReleaseSourceInfo(
     handles_.Remove(source_info.handle_id);
 }
 
-ServiceWorkerRegistrationHandle*
-ServiceWorkerDispatcherHost::FindServiceWorkerRegistrationHandle(
-    int provider_id,
-    int64_t registration_id) {
-  for (RegistrationHandleMap::iterator iter(&registration_handles_);
-       !iter.IsAtEnd(); iter.Advance()) {
-    ServiceWorkerRegistrationHandle* handle = iter.GetCurrentValue();
-    if (handle->provider_id() == provider_id &&
-        handle->registration()->id() == registration_id) {
-      return handle;
-    }
-  }
-  return nullptr;
-}
-
 void ServiceWorkerDispatcherHost::OnCountFeature(int64_t version_id,
                                                  uint32_t feature) {
   if (!GetContext())
@@ -575,6 +444,14 @@ void ServiceWorkerDispatcherHost::OnCountFeature(int64_t version_id,
   ServiceWorkerVersion* version = GetContext()->GetLiveVersion(version_id);
   if (!version)
     return;
+  if (feature >=
+      static_cast<uint32_t>(blink::mojom::WebFeature::kNumberOfFeatures)) {
+    // We don't use BadMessageReceived here since this IPC will be converted to
+    // a Mojo method call soon, which will validate inputs for us.
+    // TODO(xiaofeng.zhang): Convert the OnCountFeature IPC into a Mojo method
+    // call.
+    return;
+  }
   version->CountFeature(feature);
 }
 
@@ -612,59 +489,6 @@ ServiceWorkerContextCore* ServiceWorkerDispatcherHost::GetContext() {
   if (!context_wrapper_.get())
     return nullptr;
   return context_wrapper_->context();
-}
-
-ServiceWorkerProviderHost*
-ServiceWorkerDispatcherHost::GetProviderHostForRequest(ProviderStatus* status,
-                                                       int provider_id) {
-  if (!GetContext()) {
-    *status = ProviderStatus::NO_CONTEXT;
-    return nullptr;
-  }
-
-  ServiceWorkerProviderHost* provider_host =
-      GetContext()->GetProviderHost(render_process_id_, provider_id);
-  if (!provider_host) {
-    *status = ProviderStatus::NO_HOST;
-    return nullptr;
-  }
-
-  if (!provider_host->IsContextAlive()) {
-    *status = ProviderStatus::DEAD_HOST;
-    return nullptr;
-  }
-
-  // TODO(falken): This check can be removed once crbug.com/439697 is fixed.
-  if (provider_host->document_url().is_empty()) {
-    *status = ProviderStatus::NO_URL;
-    return nullptr;
-  }
-
-  *status = ProviderStatus::OK;
-  return provider_host;
-}
-
-void ServiceWorkerDispatcherHost::DidUpdateNavigationPreloadHeader(
-    int thread_id,
-    int request_id,
-    int registration_id,
-    const std::string& value,
-    ServiceWorkerStatusCode status) {
-  if (status != SERVICE_WORKER_OK) {
-    Send(new ServiceWorkerMsg_SetNavigationPreloadHeaderError(
-        thread_id, request_id, blink::mojom::ServiceWorkerErrorType::kUnknown,
-        std::string(kSetNavigationPreloadHeaderErrorPrefix) +
-            std::string(kDatabaseErrorMessage)));
-    return;
-  }
-  if (!GetContext())
-    return;
-  ServiceWorkerRegistration* registration =
-      GetContext()->GetLiveRegistration(registration_id);
-  if (registration)
-    registration->SetNavigationPreloadHeader(value);
-  Send(new ServiceWorkerMsg_DidSetNavigationPreloadHeader(thread_id,
-                                                          request_id));
 }
 
 void ServiceWorkerDispatcherHost::OnTerminateWorker(int handle_id) {

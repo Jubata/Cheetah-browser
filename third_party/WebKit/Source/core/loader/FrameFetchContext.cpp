@@ -52,6 +52,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/IdlenessDetector.h"
+#include "core/loader/InteractiveDetector.h"
 #include "core/loader/MixedContentChecker.h"
 #include "core/loader/NetworkHintsInterface.h"
 #include "core/loader/PingLoader.h"
@@ -63,7 +64,6 @@
 #include "core/paint/FirstMeaningfulPaintDetector.h"
 #include "core/probe/CoreProbes.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
-#include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "core/timing/PerformanceBase.h"
 #include "platform/WebFrameScheduler.h"
@@ -78,9 +78,12 @@
 #include "platform/loader/fetch/UniqueIdentifier.h"
 #include "platform/loader/fetch/fetch_initiator_type_names.h"
 #include "platform/mhtml/MHTMLArchive.h"
+#include "platform/network/NetworkStateNotifier.h"
+#include "platform/network/http_names.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/weborigin/SchemeRegistry.h"
+#include "platform/wtf/Optional.h"
 #include "platform/wtf/Vector.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebApplicationCacheHost.h"
@@ -170,6 +173,12 @@ mojom::FetchCacheMode DetermineFrameCacheMode(Frame* frame,
                             ResourceType::kIsNotMainResource, load_type);
 }
 
+bool IsClientHintsAllowed(const KURL& url) {
+  return (url.ProtocolIs("http") || url.ProtocolIs("https")) &&
+         (SecurityOrigin::IsSecure(url) ||
+          SecurityOrigin::Create(url)->IsLocalhost());
+}
+
 }  // namespace
 
 struct FrameFetchContext::FrozenState final
@@ -245,7 +254,9 @@ ResourceFetcher* FrameFetchContext::CreateFetcher(DocumentLoader* loader,
 }
 
 FrameFetchContext::FrameFetchContext(DocumentLoader* loader, Document* document)
-    : document_loader_(loader), document_(document) {
+    : document_loader_(loader),
+      document_(document),
+      save_data_enabled_(GetNetworkStateNotifier().SaveDataEnabled()) {
   DCHECK(GetFrame());
 }
 
@@ -339,7 +350,7 @@ void FrameFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
   if (IsReloadLoadType(MasterDocumentLoader()->LoadType()))
     request.ClearHTTPHeaderField(HTTPNames::Save_Data);
 
-  if (GetSettings() && GetSettings()->GetDataSaverEnabled())
+  if (save_data_enabled_)
     request.SetHTTPHeaderField(HTTPNames::Save_Data, "on");
 
   if (GetLocalFrameClient()->IsClientLoFiActiveForFrame()) {
@@ -364,8 +375,8 @@ mojom::FetchCacheMode FrameFetchContext::ResourceRequestCachePolicy(
   DCHECK(GetFrame());
   if (type == Resource::kMainResource) {
     const auto cache_mode = DetermineCacheMode(
-        request.HttpMethod() == "POST" ? RequestMethod::kIsPost
-                                       : RequestMethod::kIsNotPost,
+        request.HttpMethod() == HTTPNames::POST ? RequestMethod::kIsPost
+                                                : RequestMethod::kIsNotPost,
         request.IsConditional() ? RequestType::kIsConditional
                                 : RequestType::kIsNotConditional,
         ResourceType::kIsMainResource, MasterDocumentLoader()->LoadType());
@@ -466,6 +477,13 @@ void FrameFetchContext::DispatchWillSendRequest(
                          initiator_info, resource_type);
   if (IdlenessDetector* idleness_detector = GetFrame()->GetIdlenessDetector())
     idleness_detector->OnWillSendRequest(MasterDocumentLoader()->Fetcher());
+  if (document_) {
+    InteractiveDetector* interactive_detector(
+        InteractiveDetector::From(*document_));
+    if (interactive_detector) {
+      interactive_detector->OnResourceLoadBegin(WTF::nullopt);
+    }
+  }
 }
 
 void FrameFetchContext::DispatchDidReceiveResponse(
@@ -498,9 +516,11 @@ void FrameFetchContext::DispatchDidReceiveResponse(
                               ->Loader()
                               .GetProvisionalDocumentLoader()) {
     FrameClientHintsPreferencesContext hints_context(GetFrame());
-    document_loader_->GetClientHintsPreferences()
-        .UpdateFromAcceptClientHintsHeader(
-            response.HttpHeaderField(HTTPNames::Accept_CH), &hints_context);
+    if (IsClientHintsAllowed(response.Url())) {
+      document_loader_->GetClientHintsPreferences()
+          .UpdateFromAcceptClientHintsHeader(
+              response.HttpHeaderField(HTTPNames::Accept_CH), &hints_context);
+    }
     // When response is received with a provisional docloader, the resource
     // haven't committed yet, and we cannot load resources, only preconnect.
     resource_loading_policy = LinkLoader::kDoNotLoadResources;
@@ -573,6 +593,13 @@ void FrameFetchContext::DispatchDidFinishLoading(unsigned long identifier,
   probe::didFinishLoading(GetFrame()->GetDocument(), identifier,
                           MasterDocumentLoader(), finish_time,
                           encoded_data_length, decoded_body_length);
+  if (document_) {
+    InteractiveDetector* interactive_detector(
+        InteractiveDetector::From(*document_));
+    if (interactive_detector) {
+      interactive_detector->OnResourceLoadEnd(finish_time);
+    }
+  }
 }
 
 void FrameFetchContext::DispatchDidFail(unsigned long identifier,
@@ -585,6 +612,15 @@ void FrameFetchContext::DispatchDidFail(unsigned long identifier,
   GetFrame()->Loader().Progress().CompleteProgress(identifier);
   probe::didFailLoading(GetFrame()->GetDocument(), identifier,
                         MasterDocumentLoader(), error);
+  if (document_) {
+    InteractiveDetector* interactive_detector(
+        InteractiveDetector::From(*document_));
+    if (interactive_detector) {
+      // We have not yet recorded load_finish_time. Pass nullopt here; we will
+      // call MonotonicallyIncreasingTime lazily when we need it.
+      interactive_detector->OnResourceLoadEnd(WTF::nullopt);
+    }
+  }
   // Notification to FrameConsole should come AFTER InspectorInstrumentation
   // call, DevTools front-end relies on this.
   if (!is_internal_request)
@@ -654,13 +690,20 @@ void FrameFetchContext::DidLoadResource(Resource* resource) {
 }
 
 void FrameFetchContext::AddResourceTiming(const ResourceTimingInfo& info) {
-  Document* initiator_document = document_ && info.IsMainResource()
-                                     ? document_->ParentDocument()
-                                     : document_.Get();
-  if (!initiator_document || !initiator_document->domWindow())
+  // Normally, |document_| is cleared on Document shutdown. However, Documents
+  // for HTML imports will also not have a LocalFrame set: in that case, also
+  // early return, as there is nothing to report the resource timing to.
+  if (!document_ || !document_->GetFrame())
     return;
-  DOMWindowPerformance::performance(*initiator_document->domWindow())
-      ->AddResourceTiming(info);
+
+  Frame* initiator_frame = info.IsMainResource()
+                               ? document_->GetFrame()->Tree().Parent()
+                               : document_->GetFrame();
+
+  if (!initiator_frame)
+    return;
+
+  initiator_frame->AddResourceTiming(info);
 }
 
 bool FrameFetchContext::AllowImage(bool images_enabled, const KURL& url) const {
@@ -780,6 +823,9 @@ void FrameFetchContext::AddClientHintsIfNecessary(
     const ClientHintsPreferences& hints_preferences,
     const FetchParameters::ResourceWidth& resource_width,
     ResourceRequest& request) {
+  if (!IsClientHintsAllowed(request.Url()))
+    return;
+
   WebEnabledClientHints enabled_hints;
   // Check if |url| is allowed to run JavaScript. If not, client hints are not
   // attached to the requests that initiate on the render side.
@@ -1120,6 +1166,9 @@ bool FrameFetchContext::ShouldSendClientHint(
 
 void FrameFetchContext::ParseAndPersistClientHints(
     const ResourceResponse& response) {
+  if (!IsClientHintsAllowed(response.Url()))
+    return;
+
   ClientHintsPreferences hints_preferences;
   WebEnabledClientHints enabled_client_hints;
   TimeDelta persist_duration;

@@ -13,7 +13,6 @@ import org.chromium.base.Callback;
 import org.chromium.base.CommandLine;
 import org.chromium.base.Log;
 import org.chromium.base.annotations.JNINamespace;
-import org.chromium.base.annotations.SuppressFBWarnings;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -64,6 +63,10 @@ public class AwSafeBrowsingConfigHelper {
 
     private static boolean getCommandLineOptIn() {
         CommandLine cli = CommandLine.getInstance();
+        // Disable flag has higher precedence than the enable flag
+        if (cli.hasSwitch(AwSwitches.WEBVIEW_DISABLE_SAFEBROWSING_SUPPORT)) {
+            return false;
+        }
         return cli.hasSwitch(AwSwitches.WEBVIEW_ENABLE_SAFEBROWSING_SUPPORT)
                 || cli.hasSwitch(AwSwitches.WEBVIEW_SAFEBROWSING_BLOCK_ALL_RESOURCES);
     }
@@ -75,7 +78,6 @@ public class AwSafeBrowsingConfigHelper {
      * @return true if app has opted in, false if opted out, and null if no preference specified.
      */
     @Nullable
-    @SuppressFBWarnings("NP_BOOLEAN_RETURN_NULL")
     private static Boolean getAppOptInPreference(Context appContext) {
         try {
             ApplicationInfo info = appContext.getPackageManager().getApplicationInfo(

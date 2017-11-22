@@ -31,13 +31,14 @@
 #ifndef CSSAnimations_h
 #define CSSAnimations_h
 
+#include "base/macros.h"
 #include "core/animation/InertEffect.h"
 #include "core/animation/Interpolation.h"
 #include "core/animation/css/CSSAnimationData.h"
 #include "core/animation/css/CSSAnimationUpdate.h"
 #include "core/animation/css/CSSTransitionData.h"
 #include "core/css/CSSKeyframesRule.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "platform/wtf/HashMap.h"
@@ -51,7 +52,6 @@ class StylePropertyShorthand;
 class StyleResolver;
 
 class CSSAnimations final {
-  WTF_MAKE_NONCOPYABLE(CSSAnimations);
   DISALLOW_NEW();
 
  public:
@@ -244,6 +244,8 @@ class CSSAnimations final {
     PropertyHandle property_;
     AnimationEffectReadOnly::Phase previous_phase_;
   };
+
+  DISALLOW_COPY_AND_ASSIGN(CSSAnimations);
 };
 
 }  // namespace blink

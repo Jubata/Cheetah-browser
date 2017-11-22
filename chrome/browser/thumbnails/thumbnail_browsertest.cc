@@ -23,9 +23,10 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/controllable_http_response.h"
-#include "content/public/test/test_navigation_observer.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,9 +41,11 @@ namespace thumbnails {
 
 namespace {
 
+using testing::AtMost;
 using testing::DoAll;
 using testing::Field;
 using testing::NiceMock;
+using testing::Not;
 using testing::Return;
 using testing::_;
 
@@ -83,6 +86,13 @@ std::string MakeHtmlDocument(const std::string& background_color) {
       background_color.c_str());
 }
 
+void Sleep(base::TimeDelta delta) {
+  base::RunLoop run_loop;
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, run_loop.QuitClosure(), delta);
+  run_loop.Run();
+}
+
 class MockThumbnailService : public ThumbnailService {
  public:
   MOCK_METHOD2(SetPageThumbnail,
@@ -104,6 +114,42 @@ class MockThumbnailService : public ThumbnailService {
 
  protected:
   ~MockThumbnailService() override = default;
+};
+
+// A helper class to wait until a navigation finishes and completes the first
+// paint (as per WebContentsObserver::DidFirstVisuallyNonEmptyPaint). Similar
+// to content::TestNavigationObserver, but waits for the paint in addition to
+// the navigation (and is otherwise simplified).
+// Note: This is a single-use class, supporting only a single navigation. Create
+// a new instance for each navigation.
+class NavigationAndFirstPaintWaiter : public content::WebContentsObserver {
+ public:
+  explicit NavigationAndFirstPaintWaiter(content::WebContents* web_contents)
+      : content::WebContentsObserver(web_contents) {}
+  ~NavigationAndFirstPaintWaiter() override {}
+
+  void Wait() { run_loop_.Run(); }
+
+ private:
+  void DidFinishNavigation(
+      content::NavigationHandle* navigation_handle) override {
+    if (!navigation_handle->HasCommitted() ||
+        !navigation_handle->IsInMainFrame() ||
+        navigation_handle->IsSameDocument()) {
+      return;
+    }
+    CHECK(!did_finish_navigation_) << "Only a single navigation is supported";
+    did_finish_navigation_ = true;
+  }
+
+  void DidFirstVisuallyNonEmptyPaint() override {
+    if (did_finish_navigation_) {
+      run_loop_.Quit();
+    }
+  }
+
+  bool did_finish_navigation_ = false;
+  base::RunLoop run_loop_;
 };
 
 class ThumbnailTest : public InProcessBrowserTest {
@@ -193,8 +239,8 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
       .Times(0);
 
   {
-    // Navigate to some page.
-    content::TestNavigationObserver nav_observer(active_tab);
+    // Navigate to the red page.
+    NavigationAndFirstPaintWaiter waiter(active_tab);
     browser()->OpenURL(content::OpenURLParams(
         red_url, content::Referrer(), WindowOpenDisposition::CURRENT_TAB,
         ui::PAGE_TRANSITION_TYPED, false));
@@ -202,7 +248,7 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
     response_red.Send(kHttpResponseHeader);
     response_red.Send(MakeHtmlDocument("red"));
     response_red.Done();
-    nav_observer.Wait();
+    waiter.Wait();
   }
 
   {
@@ -213,7 +259,7 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
                                  ImageColorIs(SK_ColorRED)))
         .WillOnce(DoAll(RunClosure(run_loop.QuitClosure()), Return(true)));
 
-    content::TestNavigationObserver nav_observer(active_tab);
+    NavigationAndFirstPaintWaiter waiter(active_tab);
     browser()->OpenURL(content::OpenURLParams(
         yellow_url, content::Referrer(), WindowOpenDisposition::CURRENT_TAB,
         ui::PAGE_TRANSITION_TYPED, false));
@@ -226,7 +272,7 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
     response_yellow.Send(kHttpResponseHeader);
     response_yellow.Send(MakeHtmlDocument("yellow"));
     response_yellow.Done();
-    nav_observer.Wait();
+    waiter.Wait();
   }
 
   {
@@ -237,7 +283,7 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
                                  ImageColorIs(SK_ColorYELLOW)))
         .WillOnce(DoAll(RunClosure(run_loop.QuitClosure()), Return(true)));
 
-    content::TestNavigationObserver nav_observer(active_tab);
+    NavigationAndFirstPaintWaiter waiter(active_tab);
     browser()->OpenURL(content::OpenURLParams(
         green_url, content::Referrer(), WindowOpenDisposition::CURRENT_TAB,
         ui::PAGE_TRANSITION_TYPED, false));
@@ -249,7 +295,7 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
     run_loop.Run();
     response_green.Send(MakeHtmlDocument("green"));
     response_green.Done();
-    nav_observer.Wait();
+    waiter.Wait();
   }
 }
 
@@ -282,8 +328,13 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
       SetPageThumbnail(Field(&ThumbnailingContext::url, about_blank_url), _))
       .Times(0);
 
-  // Navigate to some page.
+  // Navigate to the red page.
   ui_test_utils::NavigateToURL(browser(), red_url);
+
+  // Give the renderer process some time to actually paint it. Without this,
+  // there's a chance we might attempt to take a screenshot before the first
+  // paint, which would fail.
+  Sleep(base::TimeDelta::FromMilliseconds(200));
 
   // Before navigating away from the red page, we should take a thumbnail.
   // Note that the page load is deliberately slowed down, so that the
@@ -293,6 +344,120 @@ IN_PROC_BROWSER_TEST_F(ThumbnailTest,
                                ImageColorIs(SK_ColorRED)))
       .WillOnce(Return(true));
   ui_test_utils::NavigateToURL(browser(), slow_url);
+}
+
+IN_PROC_BROWSER_TEST_F(ThumbnailTest,
+                       ShouldContainProperContentIfCapturedOnNavigatingAway) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  const GURL about_blank_url("about:blank");
+  const GURL red_url =
+      embedded_test_server()->GetURL("/thumbnail_capture/red.html");
+  const GURL yellow_url =
+      embedded_test_server()->GetURL("/thumbnail_capture/yellow.html");
+
+  // Normally, ShouldAcquirePageThumbnail depends on many things, e.g. whether
+  // the given URL is in TopSites. For the purposes of this test, bypass all
+  // that and just take thumbnails of the red page.
+  ON_CALL(*thumbnail_service(), ShouldAcquirePageThumbnail(about_blank_url, _))
+      .WillByDefault(Return(false));
+  ON_CALL(*thumbnail_service(), ShouldAcquirePageThumbnail(red_url, _))
+      .WillByDefault(Return(true));
+  ON_CALL(*thumbnail_service(), ShouldAcquirePageThumbnail(yellow_url, _))
+      .WillByDefault(Return(false));
+
+  // The test framework opens an about:blank tab by default.
+  content::WebContents* active_tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_EQ(about_blank_url, active_tab->GetLastCommittedURL());
+
+  EXPECT_CALL(
+      *thumbnail_service(),
+      SetPageThumbnail(Field(&ThumbnailingContext::url, about_blank_url), _))
+      .Times(0);
+
+  // Navigate to the red page.
+  ui_test_utils::NavigateToURL(browser(), red_url);
+
+  // Before navigating away from the red page, we should attempt to take a
+  // thumbnail, which might or might not succeed before we arrive at the new
+  // page. In any case, we must not get an image with wrong (non-red) contents.
+  EXPECT_CALL(*thumbnail_service(),
+              SetPageThumbnail(Field(&ThumbnailingContext::url, red_url),
+                               ImageColorIs(SK_ColorRED)))
+      .Times(AtMost(1))
+      .WillOnce(Return(true));
+  ui_test_utils::NavigateToURL(browser(), yellow_url);
+}
+
+IN_PROC_BROWSER_TEST_F(ThumbnailTest,
+                       ShouldContainProperContentIfCapturedOnTabSwitch) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  const GURL about_blank_url("about:blank");
+  const GURL red_url =
+      embedded_test_server()->GetURL("/thumbnail_capture/red.html");
+  const GURL yellow_url =
+      embedded_test_server()->GetURL("/thumbnail_capture/yellow.html");
+
+  // Normally, ShouldAcquirePageThumbnail depends on many things, e.g. whether
+  // the given URL is in TopSites. For the purposes of this test, bypass all
+  // that and just take thumbnails of the red and the yellow page.
+  ON_CALL(*thumbnail_service(), ShouldAcquirePageThumbnail(about_blank_url, _))
+      .WillByDefault(Return(false));
+  ON_CALL(*thumbnail_service(), ShouldAcquirePageThumbnail(red_url, _))
+      .WillByDefault(Return(true));
+  ON_CALL(*thumbnail_service(), ShouldAcquirePageThumbnail(yellow_url, _))
+      .WillByDefault(Return(true));
+
+  // The test framework opens an about:blank tab by default.
+  content::WebContents* active_tab =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_EQ(about_blank_url, active_tab->GetLastCommittedURL());
+
+  // Open a new tab with the red page.
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), red_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB |
+          ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  active_tab = browser()->tab_strip_model()->GetActiveWebContents();
+
+  // Open another tab with the yellow page. Before the red tab gets hidden, we
+  // should attempt to take a thumbnail of it, which might or might not succeed.
+  // In any case, we must not get an image with wrong (non-red) contents.
+  EXPECT_CALL(*thumbnail_service(),
+              SetPageThumbnail(Field(&ThumbnailingContext::url, red_url),
+                               ImageColorIs(SK_ColorRED)))
+      .Times(AtMost(1))
+      .WillOnce(Return(true));
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), yellow_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB |
+          ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  active_tab = browser()->tab_strip_model()->GetActiveWebContents();
+
+  // Switch back to the first tab. Again, we should attempt to take a thumbnail
+  // (of the yellow page this time), which might or might not succeed, but if it
+  // does must have the correct contents.
+  EXPECT_CALL(*thumbnail_service(),
+              SetPageThumbnail(Field(&ThumbnailingContext::url, yellow_url),
+                               ImageColorIs(SK_ColorYELLOW)))
+      .Times(AtMost(1))
+      .WillOnce(Return(true));
+  ASSERT_EQ(2, browser()->tab_strip_model()->active_index());
+  ASSERT_EQ(yellow_url, active_tab->GetLastCommittedURL());
+  browser()->tab_strip_model()->ActivateTabAt(0, /*user_gesture=*/true);
+  active_tab = browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_EQ(about_blank_url, active_tab->GetLastCommittedURL());
+
+  // Open another about:blank tab, to give the thumbnailing process above some
+  // time to finish (or fail). Without this, the test always finishes before
+  // the thumbnailing process does, so we'd have no chance to check the image
+  // contents.
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), about_blank_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB |
+          ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
 }
 
 }  // namespace

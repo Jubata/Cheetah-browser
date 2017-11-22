@@ -37,6 +37,8 @@ size_t RegisterCastCrashKeys() {
       {gpu::crash_keys::kGPUDriverVersion, ::crash_keys::kSmallSize},
       {gpu::crash_keys::kGPUPixelShaderVersion, ::crash_keys::kSmallSize},
       {gpu::crash_keys::kGPUVertexShaderVersion, ::crash_keys::kSmallSize},
+      {gpu::crash_keys::kGPUVendor, ::crash_keys::kSmallSize},
+      {gpu::crash_keys::kGPURenderer, ::crash_keys::kSmallSize},
       {gpu::crash_keys::kGPUGLContextIsVirtual, ::crash_keys::kSmallSize},
 
       // content/:
@@ -49,15 +51,10 @@ size_t RegisterCastCrashKeys() {
       {"subresource_url", ::crash_keys::kLargeSize},
       {"total-discardable-memory-allocated", ::crash_keys::kSmallSize},
       {"input-event-filter-send-failure", ::crash_keys::kSmallSize},
-      // media/:
-      {::crash_keys::kBug464926CrashKey, ::crash_keys::kSmallSize},
       {"view-count", ::crash_keys::kSmallSize},
 
       // media/:
       {"zero-encode-details", ::crash_keys::kSmallSize},
-
-      // gin/:
-      {"v8-ignition", ::crash_keys::kSmallSize},
 
       // Site isolation.  These keys help debug renderer kills such as
       // https://crbug.com/773140.
@@ -84,9 +81,6 @@ size_t RegisterCastCrashKeys() {
       // Accessibility keys. Temporary for http://crbug.com/765490.
       {"ax_tree_error", ::crash_keys::kSmallSize},
       {"ax_tree_update", ::crash_keys::kMediumSize},
-
-      // Temporary for crbug.com/756624.
-      {"break_iterator", ::crash_keys::kSmallSize},
   };
 
   return base::debug::InitCrashKeys(fixed_keys, arraysize(fixed_keys),

@@ -128,7 +128,7 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
       public views::ButtonListener,
       public views::ViewTargeterDelegate {
  public:
-  NotificationViewMD(MessageCenterController* controller,
+  NotificationViewMD(MessageViewDelegate* controller,
                      const Notification& notification);
   ~NotificationViewMD() override;
 
@@ -141,6 +141,7 @@ class MESSAGE_CENTER_EXPORT NotificationViewMD
   gfx::NativeCursor GetCursor(const ui::MouseEvent& event) override;
   void OnMouseEntered(const ui::MouseEvent& event) override;
   void OnMouseExited(const ui::MouseEvent& event) override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
 
   // Overridden from MessageView:
   void UpdateWithNotification(const Notification& notification) override;

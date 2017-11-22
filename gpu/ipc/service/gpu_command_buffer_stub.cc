@@ -342,8 +342,7 @@ void GpuCommandBufferStub::DidSwapBuffersComplete(
   send_params.scale_factor = params.scale_factor;
   send_params.in_use_responses = params.in_use_responses;
 #endif
-  send_params.latency_info = std::move(params.latency_info);
-  send_params.result = params.result;
+  send_params.response = std::move(params.response);
   Send(new GpuCommandBufferMsg_SwapBuffersCompleted(route_id_, send_params));
 }
 
@@ -355,9 +354,9 @@ const GpuPreferences& GpuCommandBufferStub::GetGpuPreferences() const {
   return context_group_->gpu_preferences();
 }
 
-void GpuCommandBufferStub::SetLatencyInfoCallback(
-    const LatencyInfoCallback& callback) {
-  latency_info_callback_ = callback;
+void GpuCommandBufferStub::SetSnapshotRequestedCallback(
+    const base::Closure& callback) {
+  snapshot_requested_callback_ = callback;
 }
 
 void GpuCommandBufferStub::UpdateVSyncParameters(base::TimeTicks timebase,
@@ -703,6 +702,9 @@ gpu::ContextResult GpuCommandBufferStub::Initialize(
       LOG(ERROR) << "ContextResult::kFatalFailure: Failed to create surface.";
       return gpu::ContextResult::kFatalFailure;
     }
+    if (init_params.attribs.enable_swap_timestamps_if_supported &&
+        surface_->SupportsSwapTimestamps())
+      surface_->SetEnableSwapTimestamps();
   }
 
   if (context_group_->use_passthrough_cmd_decoder()) {
@@ -972,10 +974,9 @@ void GpuCommandBufferStub::CheckCompleteWaits() {
   }
 }
 
-void GpuCommandBufferStub::OnAsyncFlush(
-    int32_t put_offset,
-    uint32_t flush_id,
-    const std::vector<ui::LatencyInfo>& latency_info) {
+void GpuCommandBufferStub::OnAsyncFlush(int32_t put_offset,
+                                        uint32_t flush_id,
+                                        bool snapshot_requested) {
   TRACE_EVENT1(
       "gpu", "GpuCommandBufferStub::OnAsyncFlush", "put_offset", put_offset);
   DCHECK(command_buffer_);
@@ -985,12 +986,8 @@ void GpuCommandBufferStub::OnAsyncFlush(
   DVLOG_IF(0, flush_id - last_flush_id_ >= 0x8000000U)
       << "Received a Flush message out-of-order";
 
-  if (flush_id > last_flush_id_ &&
-      ui::LatencyInfo::Verify(latency_info,
-                              "GpuCommandBufferStub::OnAsyncFlush") &&
-      !latency_info_callback_.is_null()) {
-    latency_info_callback_.Run(latency_info);
-  }
+  if (snapshot_requested && snapshot_requested_callback_)
+    snapshot_requested_callback_.Run();
 
   last_flush_id_ = flush_id;
   CommandBuffer::State pre_state = command_buffer_->GetState();

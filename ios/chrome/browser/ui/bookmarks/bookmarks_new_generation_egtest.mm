@@ -10,6 +10,7 @@
 #include "base/strings/sys_string_conversions.h"
 #import "base/test/ios/wait_util.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/prefs/pref_service.h"
 #include "components/strings/grit/components_strings.h"
@@ -20,7 +21,6 @@
 #import "ios/chrome/browser/ui/authentication/signin_earlgrey_utils.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view.h"
 #import "ios/chrome/browser/ui/bookmarks/bookmark_utils_ios.h"
-#include "ios/chrome/browser/ui/tools_menu/tools_menu_constants.h"
 #import "ios/chrome/browser/ui/uikit_ui_util.h"
 #include "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/app/bookmarks_test_util.h"
@@ -43,6 +43,7 @@
 #error "This file requires ARC support."
 #endif
 
+using chrome_test_util::BookmarksMenuButton;
 using chrome_test_util::ButtonWithAccessibilityLabel;
 using chrome_test_util::ButtonWithAccessibilityLabelId;
 using chrome_test_util::PrimarySignInButton;
@@ -130,13 +131,7 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
   scoped_feature_list.InitAndEnableFeature(kBookmarkNewGeneration);
   [super setUp];
 
-  // Wait for bookmark model to be loaded.
-  GREYAssert(testing::WaitUntilConditionOrTimeout(
-                 testing::kWaitForUIElementTimeout,
-                 ^{
-                   return chrome_test_util::BookmarksLoaded();
-                 }),
-             @"Bookmark model did not load");
+  [ChromeEarlGrey waitForBookmarksToFinishLoading];
   GREYAssert(chrome_test_util::ClearBookmarks(),
              @"Not all bookmarks were removed.");
 }
@@ -234,7 +229,15 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
   [self verifyContextBarInDefaultStateWithSelectEnabled:YES];
 }
 
-- (void)testSwipeToDeleteDisabledInEditMode {
+// TODO(crbug.com/781445): Re-enable this test on 32-bit.
+#if defined(ARCH_CPU_64_BITS)
+#define MAYBE_testSwipeToDeleteDisabledInEditMode \
+  testSwipeToDeleteDisabledInEditMode
+#else
+#define MAYBE_testSwipeToDeleteDisabledInEditMode \
+  FLAKY_testSwipeToDeleteDisabledInEditMode
+#endif
+- (void)MAYBE_testSwipeToDeleteDisabledInEditMode {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(kBookmarkNewGeneration);
 
@@ -725,14 +728,13 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
                                           IDS_IOS_CONTENT_CONTEXT_COPY)]
       performAction:grey_tap()];
 
-  // Wait so that the string is copied to clipboard.
-  // TODO(crbug.com/780064): poll for pasteboard change instead.
-  base::test::ios::SpinRunLoopWithMinDelay(base::TimeDelta::FromSecondsD(1));
-
   // Verify general pasteboard has the URL copied.
-  NSString* copiedString = [UIPasteboard generalPasteboard].string;
-  GREYAssert([copiedString containsString:@"www.a.fr"],
-             @"The URL is not copied");
+  ConditionBlock condition = ^{
+    return !![[UIPasteboard generalPasteboard].string
+        containsString:@"www.a.fr"];
+  };
+  GREYAssert(testing::WaitUntilConditionOrTimeout(10, condition),
+             @"Waiting for URL to be copied to pasteboard.");
 
   // Verify edit mode is closed (context bar back to default state).
   [self verifyContextBarInDefaultStateWithSelectEnabled:YES];
@@ -1214,8 +1216,8 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
       performAction:grey_tap()];
 
   // Select single folder.
-  [[EarlGrey selectElementWithMatcher:TappableBookmarkNodeWithLabel(
-                                          @"New Folder Title")]
+  [[EarlGrey
+      selectElementWithMatcher:TappableBookmarkNodeWithLabel(newFolderTitle)]
       performAction:grey_tap()];
 
   // Move the "New Folder Title" to "Folder 1.1".
@@ -1235,7 +1237,7 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
   [[EarlGrey
       selectElementWithMatcher:TappableBookmarkNodeWithLabel(@"Folder 1.1")]
       performAction:grey_tap()];
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"New Folder Title")]
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(newFolderTitle)]
       assertWithMatcher:grey_sufficientlyVisible()];
 
   // 3. Test the cancel button at edit page.
@@ -1246,7 +1248,7 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
       performAction:grey_tap()];
 
   // Select single folder.
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"New Folder Title")]
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(newFolderTitle)]
       performAction:grey_tap()];
 
   // Tap cancel after modifying the title.
@@ -1258,11 +1260,53 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
                  dismissWith:@"Cancel"];
 
   // Verify that the bookmark was not updated.
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"New Folder Title")]
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(newFolderTitle)]
       assertWithMatcher:grey_sufficientlyVisible()];
 
   // Verify edit mode is stayed.
   [self verifyContextBarInEditMode];
+
+  // 4. Test the delete button at edit page.
+
+  // Tap context menu.
+  [[EarlGrey selectElementWithMatcher:ContextBarCenterButtonWithLabel(
+                                          [BookmarksNewGenTestCase
+                                              contextBarMoreString])]
+      performAction:grey_tap()];
+
+  [[EarlGrey
+      selectElementWithMatcher:ButtonWithAccessibilityLabelId(
+                                   IDS_IOS_BOOKMARK_CONTEXT_MENU_EDIT_FOLDER)]
+      performAction:grey_tap()];
+
+  // Verify that the editor is present.
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Folder Editor")]
+      assertWithMatcher:grey_notNil()];
+
+  [[EarlGrey selectElementWithMatcher:ButtonWithAccessibilityLabelId(
+                                          IDS_IOS_BOOKMARK_GROUP_DELETE)]
+      performAction:grey_tap()];
+
+  // Wait for Undo toast to go away from screen.
+  [BookmarksNewGenTestCase waitForUndoToastToGoAway];
+
+  // Verify that the folder is deleted.
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(newFolderTitle)]
+      assertWithMatcher:grey_notVisible()];
+
+  // 5. Verify that when adding a new folder, edit mode will not mistakenly come
+  // back (crbug.com/781783).
+
+  // Create a new folder.
+  [BookmarksNewGenTestCase createNewBookmarkFolderWithFolderTitle:newFolderTitle
+                                                      pressReturn:YES];
+
+  // Tap on the new folder.
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(newFolderTitle)]
+      performAction:grey_tap()];
+
+  // Verify we enter the new folder. (instead of selecting it in edit mode).
+  [self verifyEmptyBackgroundAppears];
 }
 
 // Verify Move functionality on single folder through long press.
@@ -1954,8 +1998,8 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
   // Check the sign-in promo view is visible.
   [SigninEarlGreyUtils
       checkSigninPromoVisibleWithMode:SigninPromoViewModeColdState];
-  // Check the sign-in promo will not be shown anymore.
-  [BookmarksNewGenTestCase verifyPromoAlreadySeen:YES];
+  // Check the sign-in promo already-seen state didn't change.
+  [BookmarksNewGenTestCase verifyPromoAlreadySeen:NO];
   GREYAssertEqual(
       20, prefs->GetInteger(prefs::kIosBookmarkSigninPromoDisplayedCount),
       @"Should have incremented the display count");
@@ -1996,6 +2040,32 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
 
   // Verify context bar does not change after editing folder name.
   [self verifyContextBarInDefaultStateWithSelectEnabled:YES];
+}
+
+// Tests when total height of bookmarks exceeds screen height.
+- (void)testBookmarksExceedsScreenHeight {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(kBookmarkNewGeneration);
+
+  [BookmarksNewGenTestCase setupBookmarksWhichExceedsScreenHeight];
+  [BookmarksNewGenTestCase openBookmarks];
+  [BookmarksNewGenTestCase openMobileBookmarks];
+
+  // Verify bottom URL is not visible before scrolling to bottom (make sure
+  // setupBookmarksWhichExceedsScreenHeight works as expected).
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Bottom URL")]
+      assertWithMatcher:grey_notVisible()];
+
+  // Verify the top URL is visible (isn't covered by the navigation bar).
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Top URL")]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  // Test new folder could be created.  This verifies bookmarks scrolled to
+  // bottom successfully for folder name editng.
+  NSString* newFolderTitle = @"New Folder 1";
+  [BookmarksNewGenTestCase createNewBookmarkFolderWithFolderTitle:newFolderTitle
+                                                      pressReturn:YES];
+  [BookmarksNewGenTestCase verifyFolderCreatedWithTitle:newFolderTitle];
 }
 
 // Tests the new folder name is committed when name editing is interrupted by
@@ -2125,13 +2195,23 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitAndEnableFeature(kBookmarkNewGeneration);
 
-  [BookmarksNewGenTestCase setupStandardBookmarks];
+  [BookmarksNewGenTestCase setupBookmarksWhichExceedsScreenHeight];
   [BookmarksNewGenTestCase openBookmarks];
   [BookmarksNewGenTestCase openMobileBookmarks];
 
   // Select Folder 1.
   [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Folder 1")]
       performAction:grey_tap()];
+
+  // Verify Bottom 1 is not visible before scrolling to bottom (make sure
+  // setupBookmarksWhichExceedsScreenHeight works as expected).
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Bottom 1")]
+      assertWithMatcher:grey_notVisible()];
+
+  // Scroll to the bottom so that Bottom 1 is visible.
+  [BookmarksNewGenTestCase scrollToBottom];
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Bottom 1")]
+      assertWithMatcher:grey_sufficientlyVisible()];
 
   // Close bookmarks
   [[EarlGrey selectElementWithMatcher:BookmarksDoneButton()]
@@ -2140,8 +2220,9 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
   // Reopen bookmarks.
   [BookmarksNewGenTestCase openBookmarks];
 
-  // Ensure the contents of Folder 1 is visible.
-  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Folder 2")]
+  // Ensure the Bottom 1 of Folder 1 is visible.  That means both folder and
+  // scroll position are restored successfully.
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(@"Bottom 1")]
       assertWithMatcher:grey_sufficientlyVisible()];
 }
 
@@ -2382,16 +2463,12 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
 
 // Navigates to the bookmark manager UI.
 + (void)openBookmarks {
-  [ChromeEarlGreyUI openToolsMenu];
-
   // Opens the bookmark manager.
-  [[EarlGrey
-      selectElementWithMatcher:grey_accessibilityID(kToolsMenuBookmarksId)]
-      performAction:grey_tap()];
+  [ChromeEarlGreyUI openToolsMenu];
+  [ChromeEarlGreyUI tapToolsMenuButton:BookmarksMenuButton()];
 
-  // Wait for it to load, and the menu to go away.
-  [[EarlGrey
-      selectElementWithMatcher:grey_accessibilityID(kToolsMenuBookmarksId)]
+  // Assert the menu is gone.
+  [[EarlGrey selectElementWithMatcher:BookmarksMenuButton()]
       assertWithMatcher:grey_nil()];
 }
 
@@ -2445,6 +2522,39 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
   NSString* thirdTitle = @"Third URL";
   bookmark_model->AddURL(folder3, 0, base::SysNSStringToUTF16(thirdTitle),
                          thirdURL);
+}
+
+// Loads a large set of bookmarks in the model which is longer than the screen
+// height.
++ (void)setupBookmarksWhichExceedsScreenHeight {
+  [BookmarksNewGenTestCase waitForBookmarkModelLoaded:YES];
+
+  bookmarks::BookmarkModel* bookmark_model =
+      ios::BookmarkModelFactory::GetForBrowserState(
+          chrome_test_util::GetOriginalBrowserState());
+
+  const GURL dummyURL = web::test::HttpServer::MakeUrl("http://google.com");
+  bookmark_model->AddURL(bookmark_model->mobile_node(), 0,
+                         base::SysNSStringToUTF16(@"Bottom URL"), dummyURL);
+
+  NSString* dummyTitle = @"Dummy URL";
+  for (int i = 0; i < 15; i++) {
+    bookmark_model->AddURL(bookmark_model->mobile_node(), 0,
+                           base::SysNSStringToUTF16(dummyTitle), dummyURL);
+  }
+  NSString* folderTitle = @"Folder 1";
+  const bookmarks::BookmarkNode* folder1 = bookmark_model->AddFolder(
+      bookmark_model->mobile_node(), 0, base::SysNSStringToUTF16(folderTitle));
+  bookmark_model->AddURL(bookmark_model->mobile_node(), 0,
+                         base::SysNSStringToUTF16(@"Top URL"), dummyURL);
+
+  // Add URLs to Folder 1.
+  bookmark_model->AddURL(folder1, 0, base::SysNSStringToUTF16(@"Bottom 1"),
+                         dummyURL);
+  for (int i = 0; i < 15; i++) {
+    bookmark_model->AddURL(folder1, 0, base::SysNSStringToUTF16(dummyTitle),
+                           dummyURL);
+  }
 }
 
 // Selects MobileBookmarks to open.
@@ -2954,10 +3064,7 @@ id<GREYMatcher> TappableBookmarkNodeWithLabel(NSString* label) {
 //    disabled and empty background appears when _currentRootNode becomes NULL
 //    (maybe programmatically remove the current root node from model, and
 //    trigger a sync).
-// 4. Restoring y position when opening from cache.
-// 5. Adding new folder when when existing bookmarks list covers full screen
-//    height,to ensure we scroll to the newly added folder.
-// 6. Test new folder name is committed when name editing is interrupted by
+// 4. Test new folder name is committed when name editing is interrupted by
 //    tapping context bar buttons.
 
 @end

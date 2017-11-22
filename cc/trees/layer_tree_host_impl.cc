@@ -503,7 +503,7 @@ void LayerTreeHostImpl::AnimateInternal(bool active_tree) {
   }
 
   did_animate |= AnimatePageScale(monotonic_time);
-  did_animate |= AnimateLayers(monotonic_time);
+  did_animate |= AnimateLayers(monotonic_time, active_tree);
   did_animate |= AnimateScrollbars(monotonic_time);
   did_animate |= AnimateBrowserControls(monotonic_time);
 
@@ -643,8 +643,6 @@ LayerTreeHostImpl::EventListenerTypeForTouchStartOrMoveAt(
   gfx::PointF device_viewport_point = gfx::ScalePoint(
       gfx::PointF(viewport_point), active_tree_->device_scale_factor());
 
-  // Now determine if there are actually any handlers at that point.
-  // TODO(rbyers): Consider also honoring touch-action (crbug.com/347272).
   LayerImpl* layer_impl_with_touch_handler =
       active_tree_->FindLayerThatIsHitByPointInTouchHandlerRegion(
           device_viewport_point);
@@ -656,8 +654,23 @@ LayerTreeHostImpl::EventListenerTypeForTouchStartOrMoveAt(
   }
 
   if (out_touch_action) {
+    gfx::Transform layer_screen_space_transform =
+        layer_impl_with_touch_handler->ScreenSpaceTransform();
+    gfx::Transform inverse_layer_screen_space(
+        gfx::Transform::kSkipInitialization);
+    bool can_be_inversed =
+        layer_screen_space_transform.GetInverse(&inverse_layer_screen_space);
+    // Getting here indicates that |layer_impl_with_touch_handler| is non-null,
+    // which means that the |hit| in FindClosestMatchingLayer() is true, which
+    // indicates that the inverse is available.
+    DCHECK(can_be_inversed);
+    bool clipped = false;
+    gfx::Point3F planar_point = MathUtil::ProjectPoint3D(
+        inverse_layer_screen_space, device_viewport_point, &clipped);
+    gfx::PointF hit_test_point_in_layer_space =
+        gfx::PointF(planar_point.x(), planar_point.y());
     const auto& region = layer_impl_with_touch_handler->touch_action_region();
-    gfx::Point point = gfx::ToRoundedPoint(device_viewport_point);
+    gfx::Point point = gfx::ToRoundedPoint(hit_test_point_in_layer_space);
     *out_touch_action = region.GetWhiteListedTouchAction(point);
   }
 
@@ -2127,7 +2140,7 @@ void LayerTreeHostImpl::SynchronouslyInitializeAllTiles() {
 
 void LayerTreeHostImpl::DidLoseLayerTreeFrameSink() {
   if (resource_provider_)
-    resource_provider_->DidLoseVulkanContextProvider();
+    resource_provider_->DidLoseContextProvider();
   has_valid_layer_tree_frame_sink_ = false;
   client_->DidLoseLayerTreeFrameSinkOnImplThread();
 }
@@ -2463,7 +2476,7 @@ void LayerTreeHostImpl::CreateResourceAndRasterBufferProvider(
   if (!compositor_context_provider) {
     *resource_pool =
         ResourcePool::Create(resource_provider_.get(), GetTaskRunner(),
-                             ResourceProvider::TEXTURE_HINT_DEFAULT,
+                             viz::ResourceTextureHint::kDefault,
                              ResourcePool::kDefaultExpirationDelay,
                              settings_.disallow_non_exact_resource_reuse);
 
@@ -2479,18 +2492,25 @@ void LayerTreeHostImpl::CreateResourceAndRasterBufferProvider(
 
     *resource_pool =
         ResourcePool::Create(resource_provider_.get(), GetTaskRunner(),
-                             ResourceProvider::TEXTURE_HINT_FRAMEBUFFER,
+                             viz::ResourceTextureHint::kFramebuffer,
                              ResourcePool::kDefaultExpirationDelay,
                              settings_.disallow_non_exact_resource_reuse);
 
     int msaa_sample_count = use_msaa_ ? RequestedMSAASampleCount() : 0;
 
+    // The worker context must support oop raster to enable oop rasterization.
+    bool oop_raster_enabled = settings_.enable_oop_rasterization;
+    if (oop_raster_enabled) {
+      viz::ContextProvider::ScopedContextLock hold(worker_context_provider);
+      oop_raster_enabled &=
+          worker_context_provider->ContextCapabilities().supports_oop_raster;
+    }
+
     *raster_buffer_provider = std::make_unique<GpuRasterBufferProvider>(
         compositor_context_provider, worker_context_provider,
         resource_provider_.get(), settings_.use_distance_field_text,
         msaa_sample_count, settings_.preferred_tile_format,
-        settings_.async_worker_context_enabled,
-        settings_.enable_oop_rasterization);
+        settings_.async_worker_context_enabled, oop_raster_enabled);
     return;
   }
 
@@ -2515,11 +2535,10 @@ void LayerTreeHostImpl::CreateResourceAndRasterBufferProvider(
     return;
   }
 
-  *resource_pool =
-      ResourcePool::Create(resource_provider_.get(), GetTaskRunner(),
-                           ResourceProvider::TEXTURE_HINT_DEFAULT,
-                           ResourcePool::kDefaultExpirationDelay,
-                           settings_.disallow_non_exact_resource_reuse);
+  *resource_pool = ResourcePool::Create(
+      resource_provider_.get(), GetTaskRunner(),
+      viz::ResourceTextureHint::kDefault, ResourcePool::kDefaultExpirationDelay,
+      settings_.disallow_non_exact_resource_reuse);
 
   const int max_copy_texture_chromium_size =
       compositor_context_provider->ContextCapabilities()
@@ -3689,7 +3708,9 @@ InputHandlerScrollResult LayerTreeHostImpl::ScrollBy(
   }
 
   // Run animations which need to respond to updated scroll offset.
-  mutator_host_->TickScrollAnimations(CurrentBeginFrameArgs().frame_time);
+  mutator_host_->TickScrollAnimations(
+      CurrentBeginFrameArgs().frame_time,
+      active_tree_->property_trees()->scroll_tree);
 
   return scroll_result;
 }
@@ -3971,8 +3992,13 @@ bool LayerTreeHostImpl::AnimateScrollbars(base::TimeTicks monotonic_time) {
   return animated;
 }
 
-bool LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time) {
-  const bool animated = mutator_host_->TickAnimations(monotonic_time);
+bool LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time,
+                                      bool is_active_tree) {
+  const ScrollTree& scroll_tree =
+      is_active_tree ? active_tree_->property_trees()->scroll_tree
+                     : pending_tree_->property_trees()->scroll_tree;
+  const bool animated =
+      mutator_host_->TickAnimations(monotonic_time, scroll_tree);
 
   // TODO(crbug.com/551134): Only do this if the animations are on the active
   // tree, or if they are on the pending tree waiting for some future time to
@@ -4248,7 +4274,7 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   }
 
   id = resource_provider_->CreateResource(
-      upload_size, ResourceProvider::TEXTURE_HINT_DEFAULT, format,
+      upload_size, viz::ResourceTextureHint::kDefault, format,
       gfx::ColorSpace::CreateSRGB());
 
   if (!scaled) {
@@ -4435,7 +4461,8 @@ void LayerTreeHostImpl::SetTreeLayerScrollOffsetMutated(
   property_trees->scroll_tree.OnScrollOffsetAnimated(
       element_id, scroll_node_index, scroll_offset, tree);
   // Run animations which need to respond to updated scroll offset.
-  mutator_host_->TickScrollAnimations(CurrentBeginFrameArgs().frame_time);
+  mutator_host_->TickScrollAnimations(CurrentBeginFrameArgs().frame_time,
+                                      property_trees->scroll_tree);
 }
 
 void LayerTreeHostImpl::SetNeedUpdateGpuRasterizationStatus() {

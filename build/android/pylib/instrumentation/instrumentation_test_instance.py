@@ -9,7 +9,6 @@ import pickle
 import re
 
 from devil.android import apk_helper
-from devil.android import md5sum
 from pylib import constants
 from pylib.base import base_test_result
 from pylib.base import test_exception
@@ -276,41 +275,36 @@ def FilterTests(tests, test_filter=None, annotations=None,
 def GetAllTestsFromJar(test_jar):
   pickle_path = '%s-proguard.pickle' % test_jar
   try:
-    tests = GetTestsFromPickle(pickle_path, test_jar)
+    tests = GetTestsFromPickle(pickle_path, os.path.getmtime(test_jar))
   except TestListPickleException as e:
     logging.info('Could not get tests from pickle: %s', e)
     logging.info('Getting tests from JAR via proguard.')
     tests = _GetTestsFromProguard(test_jar)
-    SaveTestsToPickle(pickle_path, test_jar, tests)
+    SaveTestsToPickle(pickle_path, tests)
   return tests
 
 
 def GetAllTestsFromApk(test_apk):
   pickle_path = '%s-dexdump.pickle' % test_apk
   try:
-    tests = GetTestsFromPickle(pickle_path, test_apk)
+    tests = GetTestsFromPickle(pickle_path, os.path.getmtime(test_apk))
   except TestListPickleException as e:
     logging.info('Could not get tests from pickle: %s', e)
     logging.info('Getting tests from dex via dexdump.')
     tests = _GetTestsFromDexdump(test_apk)
-    SaveTestsToPickle(pickle_path, test_apk, tests)
+    SaveTestsToPickle(pickle_path, tests)
   return tests
 
-def GetTestsFromPickle(pickle_path, jar_path):
+def GetTestsFromPickle(pickle_path, test_mtime):
   if not os.path.exists(pickle_path):
     raise TestListPickleException('%s does not exist.' % pickle_path)
-  if os.path.getmtime(pickle_path) <= os.path.getmtime(jar_path):
-    raise TestListPickleException(
-        '%s newer than %s.' % (jar_path, pickle_path))
+  if os.path.getmtime(pickle_path) <= test_mtime:
+    raise TestListPickleException('File is stale: %s' % pickle_path)
 
   with open(pickle_path, 'r') as f:
     pickle_data = pickle.load(f)
-  jar_md5 = md5sum.CalculateHostMd5Sums(jar_path)[jar_path]
-
   if pickle_data['VERSION'] != _PICKLE_FORMAT_VERSION:
     raise TestListPickleException('PICKLE_FORMAT_VERSION has changed.')
-  if pickle_data['JAR_MD5SUM'] != jar_md5:
-    raise TestListPickleException('JAR file MD5 sum differs.')
   return pickle_data['TEST_METHODS']
 
 
@@ -371,11 +365,9 @@ def _GetTestsFromDexdump(test_apk):
         })
   return tests
 
-def SaveTestsToPickle(pickle_path, jar_path, tests):
-  jar_md5 = md5sum.CalculateHostMd5Sums(jar_path)[jar_path]
+def SaveTestsToPickle(pickle_path, tests):
   pickle_data = {
     'VERSION': _PICKLE_FORMAT_VERSION,
-    'JAR_MD5SUM': jar_md5,
     'TEST_METHODS': tests,
   }
   with open(pickle_path, 'w') as pickle_file:
@@ -491,7 +483,6 @@ class InstrumentationTestInstance(test_instance.TestInstance):
     self._driver_name = None
     self._initializeDriverAttributes()
 
-    self._render_results_dir = None
     self._screenshot_dir = None
     self._timeout_scale = None
     self._wait_for_java_debugger = None
@@ -683,7 +674,6 @@ class InstrumentationTestInstance(test_instance.TestInstance):
       self._driver_apk = None
 
   def _initializeTestControlAttributes(self, args):
-    self._render_results_dir = args.render_results_dir
     self._screenshot_dir = args.screenshot_dir
     self._timeout_scale = args.timeout_scale or 1
     self._ui_screenshot_dir = args.ui_screenshot_dir
@@ -769,10 +759,6 @@ class InstrumentationTestInstance(test_instance.TestInstance):
   @property
   def package_info(self):
     return self._package_info
-
-  @property
-  def render_results_dir(self):
-    return self._render_results_dir
 
   @property
   def replace_system_package(self):

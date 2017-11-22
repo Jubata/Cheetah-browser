@@ -328,8 +328,10 @@ void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
     }
   }
 
-  if ((old_style && old_style->GetPosition() != StyleRef().GetPosition()) ||
-      had_layer != HasLayer()) {
+  if (old_style && (old_style->CanContainFixedPositionObjects() !=
+                        StyleRef().CanContainFixedPositionObjects() ||
+                    old_style->GetPosition() != StyleRef().GetPosition() ||
+                    had_layer != HasLayer())) {
     // This may affect paint properties of the current object, and descendants
     // even if paint properties of the current object won't change. E.g. the
     // stacking context and/or containing block of descendants may change.
@@ -486,7 +488,7 @@ void LayoutBoxModelObject::InvalidateStickyConstraints() {
 void LayoutBoxModelObject::CreateLayerAfterStyleChange() {
   DCHECK(!HasLayer() && !Layer());
   GetMutableForPainting().FirstFragment().EnsureRarePaintData().SetLayer(
-      WTF::MakeUnique<PaintLayer>(*this));
+      std::make_unique<PaintLayer>(*this));
   SetHasLayer(true);
   Layer()->InsertOnlyThisLayerAfterStyleChange();
 }
@@ -759,6 +761,9 @@ LayoutSize LayoutBoxModelObject::RelativePositionOffset() const {
     case WritingMode::kVerticalLr:
       offset.Expand(left.value(), LayoutUnit());
       break;
+    // TODO(layout-dev): Sideways-lr and sideways-rl are not yet supported.
+    default:
+      break;
   }
 
   // If the containing block of a relatively positioned element does not specify
@@ -806,6 +811,9 @@ LayoutSize LayoutBoxModelObject::RelativePositionOffset() const {
         offset.Expand(LayoutUnit(), top.value());
       else
         offset.SetHeight(-bottom.value());
+      break;
+    // TODO(layout-dev): Sideways-lr and sideways-rl are not yet supported.
+    default:
       break;
   }
   return offset;

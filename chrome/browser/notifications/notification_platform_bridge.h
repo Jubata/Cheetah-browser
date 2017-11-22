@@ -29,12 +29,16 @@ class NotificationPlatformBridge {
 
   static NotificationPlatformBridge* Create();
 
+  // Returns whether a native bridge can handle a notification of the given
+  // type. Ideally, this would always return true, but for now some platforms
+  // can't handle TRANSIENT notifications.
+  static bool CanHandleType(NotificationCommon::Type notification_type);
+
   virtual ~NotificationPlatformBridge() {}
 
   // Shows a toast on screen using the data passed in |notification|.
   virtual void Display(
       NotificationCommon::Type notification_type,
-      const std::string& notification_id,
       const std::string& profile_id,
       bool is_incognito,
       const message_center::Notification& notification,

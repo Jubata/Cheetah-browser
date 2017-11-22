@@ -446,27 +446,6 @@ void BrowserAccessibilityManager::OnFindInPageResult(
     ActivateFindInPageResult(request_id);
 }
 
-void BrowserAccessibilityManager::OnChildFrameHitTestResult(
-    const gfx::Point& point,
-    int hit_obj_id,
-    ui::AXEvent event_to_fire) {
-  BrowserAccessibility* obj = GetFromID(hit_obj_id);
-  if (!obj || !obj->HasIntAttribute(ui::AX_ATTR_CHILD_TREE_ID))
-    return;
-
-  BrowserAccessibilityManager* child_manager =
-      BrowserAccessibilityManager::FromID(
-          obj->GetIntAttribute(ui::AX_ATTR_CHILD_TREE_ID));
-  if (!child_manager || !child_manager->delegate())
-    return;
-
-  ui::AXActionData action_data;
-  action_data.target_point = point;
-  action_data.action = ui::AX_ACTION_HIT_TEST;
-  action_data.hit_test_event_to_fire = event_to_fire;
-  return child_manager->delegate()->AccessibilityPerformAction(action_data);
-}
-
 void BrowserAccessibilityManager::ActivateFindInPageResult(
     int request_id) {
   find_in_page_info_.active_request_id = request_id;
@@ -758,9 +737,18 @@ BrowserAccessibility* BrowserAccessibilityManager::NextInTreeOrder(
 // static
 // Previous object in tree using depth-first pre-order traversal.
 BrowserAccessibility* BrowserAccessibilityManager::PreviousInTreeOrder(
-    const BrowserAccessibility* object) {
+    const BrowserAccessibility* object,
+    bool can_wrap_to_last_element) {
   if (!object)
     return nullptr;
+
+  // For android, this needs to be handled carefully. If not, there is a chance
+  // of getting into infinite loop.
+  if (can_wrap_to_last_element &&
+      object->GetRole() == ui::AX_ROLE_ROOT_WEB_AREA &&
+      object->PlatformChildCount() != 0) {
+    return object->PlatformDeepestLastChild();
+  }
 
   BrowserAccessibility* sibling = object->GetPreviousSibling();
   if (!sibling)
@@ -775,9 +763,9 @@ BrowserAccessibility* BrowserAccessibilityManager::PreviousInTreeOrder(
 // static
 BrowserAccessibility* BrowserAccessibilityManager::PreviousTextOnlyObject(
     const BrowserAccessibility* object) {
-  BrowserAccessibility* previous_object = PreviousInTreeOrder(object);
+  BrowserAccessibility* previous_object = PreviousInTreeOrder(object, false);
   while (previous_object && !previous_object->IsTextOnlyObject())
-    previous_object = PreviousInTreeOrder(previous_object);
+    previous_object = PreviousInTreeOrder(previous_object, false);
 
   return previous_object;
 }

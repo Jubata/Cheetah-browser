@@ -12,6 +12,7 @@
 #include "chrome/common/features.h"
 #include "ppapi/features/features.h"
 #include "printing/features/features.h"
+#include "ui/base/ui_features.h"
 
 // Don't add more switch files here. This is linked into some places like the
 // installer where dependencies should be limited. Instead, have files
@@ -64,6 +65,7 @@ extern const char kCreateBrowserOnStartupForTests[];
 extern const char kCustomDevtoolsFrontend[];
 extern const char kDebugEnableFrameToggle[];
 extern const char kDebugPackedApps[];
+extern const char kDenyPermissionPrompts[];
 extern const char kDevToolsFlags[];
 extern const char kDiagnostics[];
 extern const char kDiagnosticsFormat[];
@@ -71,7 +73,6 @@ extern const char kDiagnosticsRecovery[];
 extern const char kDisableBackgroundNetworking[];
 extern const char kDisableBundledPpapiFlash[];
 extern const char kDisableCastStreamingHWEncoding[];
-extern const char kDisableClearBrowsingDataCounters[];
 extern const char kDisableClientSidePhishingDetection[];
 extern const char kDisableComponentExtensionsWithBackgroundPages[];
 extern const char kDisableComponentUpdate[];
@@ -98,7 +99,6 @@ extern const char kDumpBrowserHistograms[];
 extern const char kEasyUnlockAppPath[];
 extern const char kEnableAudioDebugRecordingsFromExtension[];
 extern const char kEnableBookmarkUndo[];
-extern const char kEnableClearBrowsingDataCounters[];
 extern const char kEnableCloudPrintProxy[];
 extern const char kEnableDeviceDiscoveryNotifications[];
 extern const char kEnableDevToolsExperiments[];
@@ -109,7 +109,6 @@ extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
 extern const char kEnableNaCl[];
-extern const char kEnableNativeAvatarButton[];
 extern const char kEnableNavigationTracing[];
 extern const char kEnableNetBenchmarking[];
 extern const char kEnableOfflineAutoReload[];
@@ -137,6 +136,7 @@ extern const char kForceDesktopIOSPromotion[];
 extern const char kForceEffectiveConnectionType[];
 extern const char kForceEnableMetricsReporting[];
 extern const char kForceFirstRun[];
+extern const char kForceFirstRunDialog[];
 extern const char kForceLocalNtp[];
 extern const char kHomePage[];
 extern const char kIgnoreUrlFetcherCertRequests[];
@@ -152,7 +152,10 @@ extern const char kMakeDefaultBrowser[];
 extern const char kMediaCacheSize[];
 extern const char kMemlog[];
 extern const char kMemlogModeAll[];
+extern const char kMemlogModeBrowser[];
+extern const char kMemlogModeGpu[];
 extern const char kMemlogModeMinimal[];
+extern const char kMemlogModeRendererSampling[];
 extern const char kMonitoringDestinationID[];
 extern const char kNetLogCaptureMode[];
 extern const char kNoDefaultBrowserCheck[];
@@ -274,7 +277,6 @@ extern const char kEnableHostedAppsInWindows[];
 extern const char kEnableMacViewsNativeAppWindows[];
 extern const char kEnableTranslateNewUX[];
 extern const char kEnableUserMetrics[];
-extern const char kForceUnofficialFirstRun[];
 extern const char kHostedAppQuitNotification[];
 extern const char kMetricsClientID[];
 extern const char kRelauncherProcess[];
@@ -295,7 +297,7 @@ extern const char kWatcherProcess[];
 extern const char kWindows10CustomTitlebar[];
 #endif  // defined(OS_WIN)
 
-#if BUILDFLAG(ENABLE_PACKAGE_MASH_SERVICES)
+#if BUILDFLAG(ENABLE_MUS)
 extern const char kMash[];
 extern const char kMashServiceName[];
 extern const char kMus[];

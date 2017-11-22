@@ -45,16 +45,21 @@ class NGPaintFragment : public DisplayItemClient, public ImageResourceObserver {
   // set beforehand.
   void UpdateVisualRectFromLayoutObject();
 
+  // Collects rectangles that the outline of this object would be drawing along
+  // the outside of, even if the object isn't styled with a outline for now. The
+  // rects also cover continuations.
+  void AddOutlineRects(Vector<LayoutRect>*, const LayoutPoint& offset) const;
+
   // TODO(layout-dev): Implement when we have oveflow support.
   // TODO(eae): Switch to using NG geometry types.
-  bool HasOverflowClip() const { return false; }
-  bool ShouldClipOverflow() const { return false; }
-  bool HasSelfPaintingLayer() const { return false; }
+  bool HasOverflowClip() const;
+  bool ShouldClipOverflow() const;
+  bool HasSelfPaintingLayer() const;
   LayoutRect VisualRect() const override { return visual_rect_; }
-  LayoutRect VisualOverflowRect() const { return VisualRect(); }
-  LayoutRect OverflowClipRect(const LayoutPoint&,
+  LayoutRect VisualOverflowRect() const;
+  LayoutRect OverflowClipRect(const LayoutPoint& location,
                               OverlayScrollbarClipBehavior) const {
-    return VisualRect();
+    return {location, VisualRect().Size()};
   }
 
   // DisplayItemClient methods.

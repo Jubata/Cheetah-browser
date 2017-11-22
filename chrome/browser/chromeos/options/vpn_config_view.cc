@@ -353,7 +353,7 @@ void VPNConfigView::OnPerformAction(views::Combobox* combobox) {
   UpdateCanLogin();
 }
 
-void VPNConfigView::OnCertificatesLoaded(bool initial_load) {
+void VPNConfigView::OnCertificatesLoaded() {
   Refresh();
 }
 
@@ -1029,7 +1029,7 @@ void VPNConfigView::UpdateErrorLabel() {
 }
 
 void VPNConfigView::UpdateCanLogin() {
-  parent_->GetDialogClientView()->UpdateDialogButtons();
+  parent_->DialogModelChanged();
 }
 
 bool VPNConfigView::HaveUserCerts() const {

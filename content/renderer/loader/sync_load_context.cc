@@ -98,15 +98,13 @@ void SyncLoadContext::OnReceivedData(std::unique_ptr<ReceivedData> data) {
 
 void SyncLoadContext::OnTransferSizeUpdated(int transfer_size_diff) {}
 
-void SyncLoadContext::OnCompletedRequest(int error_code,
-                                         bool stale_copy_in_cache,
-                                         const base::TimeTicks& completion_time,
-                                         int64_t total_transfer_size,
-                                         int64_t encoded_body_size,
-                                         int64_t decoded_body_size) {
-  response_->error_code = error_code;
-  response_->encoded_data_length = total_transfer_size;
-  response_->encoded_body_length = encoded_body_size;
+void SyncLoadContext::OnCompletedRequest(
+    const network::URLLoaderCompletionStatus& status) {
+  response_->error_code = status.error_code;
+  if (status.cors_error_status)
+    response_->cors_error = status.cors_error_status->cors_error;
+  response_->encoded_data_length = status.encoded_data_length;
+  response_->encoded_body_length = status.encoded_body_length;
   event_->Signal();
 
   // This will indirectly cause this object to be deleted.

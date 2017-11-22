@@ -72,7 +72,7 @@
 #include "components/policy/core/common/cloud/policy_header_service.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "components/prefs/pref_service.h"
-#include "components/previews/core/previews_io_data.h"
+#include "components/previews/content/previews_io_data.h"
 #include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/signin_pref_names.h"
 #include "components/sync/base/pref_names.h"
@@ -85,10 +85,13 @@
 #include "content/public/network/ignore_errors_cert_verifier.h"
 #include "content/public/network/url_request_context_builder_mojo.h"
 #include "extensions/features/features.h"
+#include "net/cert/caching_cert_verifier.h"
 #include "net/cert/cert_verifier.h"
+#include "net/cert/cert_verify_proc.h"
 #include "net/cert/ct_log_verifier.h"
 #include "net/cert/ct_policy_enforcer.h"
 #include "net/cert/multi_log_ct_verifier.h"
+#include "net/cert/multi_threaded_cert_verifier.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_transaction_factory.h"
@@ -177,6 +180,34 @@ using content::ResourceContext;
 namespace {
 
 net::CertVerifier* g_cert_verifier_for_testing = nullptr;
+
+// A CertVerifier that forwards all requests to |g_cert_verifier_for_testing|.
+// This is used to allow Profiles to have their own
+// std::unique_ptr<net::CertVerifier> while forwarding calls to the shared
+// verifier.
+class WrappedTestingCertVerifier : public net::CertVerifier {
+ public:
+  ~WrappedTestingCertVerifier() override = default;
+
+  // CertVerifier implementation
+  int Verify(const RequestParams& params,
+             net::CRLSet* crl_set,
+             net::CertVerifyResult* verify_result,
+             const net::CompletionCallback& callback,
+             std::unique_ptr<Request>* out_req,
+             const net::NetLogWithSource& net_log) override {
+    verify_result->Reset();
+    if (!g_cert_verifier_for_testing)
+      return net::ERR_FAILED;
+    return g_cert_verifier_for_testing->Verify(params, crl_set, verify_result,
+                                               callback, out_req, net_log);
+  }
+  bool SupportsOCSPStapling() override {
+    if (!g_cert_verifier_for_testing)
+      return false;
+    return g_cert_verifier_for_testing->SupportsOCSPStapling();
+  }
+};
 
 #if BUILDFLAG(DEBUG_DEVTOOLS)
 bool IsSupportedDevToolsURL(const GURL& url, base::FilePath* path) {
@@ -506,10 +537,10 @@ void ProfileIOData::InitializeOnUIThread(Profile* profile) {
   network_prediction_options_.MoveToThread(io_task_runner);
 
 #if defined(OS_CHROMEOS)
-  std::unique_ptr<policy::PolicyCertVerifier> verifier =
-      policy::PolicyCertServiceFactory::CreateForProfile(profile);
-  policy_cert_verifier_ = verifier.get();
-  cert_verifier_ = std::move(verifier);
+  if (!g_cert_verifier_for_testing) {
+    profile_params_->policy_cert_verifier =
+        policy::PolicyCertServiceFactory::CreateForProfile(profile);
+  }
 #endif
   // The URLBlacklistManager has to be created on the UI thread to register
   // observers of |pref_service|, and it also has to clean up on
@@ -619,7 +650,6 @@ ProfileIOData::ProfileParams::~ProfileParams() {}
 ProfileIOData::ProfileIOData(Profile::ProfileType profile_type)
     : initialized_(false),
 #if defined(OS_CHROMEOS)
-      policy_cert_verifier_(nullptr),
       use_system_key_slot_(false),
 #endif
       main_request_context_(nullptr),
@@ -1073,8 +1103,8 @@ void ProfileIOData::Init(
 
   builder->set_network_delegate(std::move(network_delegate));
 
-  builder->set_transport_security_persister_path(profile_params_->path);
-  builder->set_transport_security_persister_readonly(IsOffTheRecord());
+  if (!IsOffTheRecord())
+    builder->set_transport_security_persister_path(profile_params_->path);
 
   // Take ownership over these parameters.
   cookie_settings_ = profile_params_->cookie_settings;
@@ -1098,8 +1128,9 @@ void ProfileIOData::Init(
 #endif
 
   if (g_cert_verifier_for_testing) {
-    builder->set_shared_cert_verifier(g_cert_verifier_for_testing);
+    builder->SetCertVerifier(std::make_unique<WrappedTestingCertVerifier>());
   } else {
+    std::unique_ptr<net::CertVerifier> cert_verifier;
 #if defined(OS_CHROMEOS)
     crypto::ScopedPK11Slot public_slot =
         crypto::GetPublicSlotForChromeOSUser(username_hash_);
@@ -1107,22 +1138,23 @@ void ProfileIOData::Init(
     // for cert trust purposes anyway.
     scoped_refptr<net::CertVerifyProc> verify_proc(
         new chromeos::CertVerifyProcChromeOS(std::move(public_slot)));
-    if (policy_cert_verifier_) {
-      DCHECK_EQ(policy_cert_verifier_, cert_verifier_.get());
-      policy_cert_verifier_->InitializeOnIOThread(verify_proc);
+    if (profile_params_->policy_cert_verifier) {
+      profile_params_->policy_cert_verifier->InitializeOnIOThread(verify_proc);
+      cert_verifier = std::move(profile_params_->policy_cert_verifier);
     } else {
-      cert_verifier_ = base::MakeUnique<net::CachingCertVerifier>(
+      cert_verifier = base::MakeUnique<net::CachingCertVerifier>(
           base::MakeUnique<net::MultiThreadedCertVerifier>(verify_proc.get()));
     }
+#else
+    cert_verifier = std::make_unique<net::CachingCertVerifier>(
+        std::make_unique<net::MultiThreadedCertVerifier>(
+            net::CertVerifyProc::CreateDefault()));
+#endif
     const base::CommandLine& command_line =
         *base::CommandLine::ForCurrentProcess();
-    cert_verifier_ = content::IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
-        command_line, switches::kUserDataDir, std::move(cert_verifier_));
-    builder->set_shared_cert_verifier(cert_verifier_.get());
-#else
-    builder->set_shared_cert_verifier(
-        io_thread_globals->system_request_context->cert_verifier());
-#endif
+    cert_verifier = content::IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
+        command_line, switches::kUserDataDir, std::move(cert_verifier));
+    builder->SetCertVerifier(std::move(cert_verifier));
   }
 
   // Install the New Tab Page Interceptor.
@@ -1221,7 +1253,8 @@ void ProfileIOData::Init(
   main_request_context_->transport_security_state()->SetReportSender(
       certificate_report_sender_.get());
 
-  expect_ct_reporter_.reset(new ChromeExpectCTReporter(main_request_context_));
+  expect_ct_reporter_.reset(new ChromeExpectCTReporter(
+      main_request_context_, base::Closure(), base::Closure()));
   main_request_context_->transport_security_state()->SetExpectCTReporter(
       expect_ct_reporter_.get());
 

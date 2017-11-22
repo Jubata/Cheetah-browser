@@ -211,7 +211,7 @@ class ExperimentalSwReporterInstallerTest : public SwReporterInstallerTest {
       std::string* out_session_id) {
     SCOPED_TRACE("Invocation with suffix " + expected_suffix);
     SwReporterInvocation invocation = launched_invocations_.front();
-    launched_invocations_.pop_front();
+    launched_invocations_.pop();
     EXPECT_EQ(MakeTestFilePath(default_path_),
               invocation.command_line.GetProgram());
     // There should be one switch added from the manifest, plus registry-suffix
@@ -565,11 +565,10 @@ TEST_F(ExperimentalSwReporterInstallerTest, EmptyManifest) {
       default_version_, default_path_,
       base::DictionaryValue::From(base::JSONReader::Read(kTestManifest)));
 
-  // The SwReporter should not be launched, but no error should be logged.
-  // (This tests the case where a non-experimental version of the reporter,
-  // which does not have "launch_params" in its manifest, is already present.)
+  // The SwReporter should not be launched, and an error should be logged.
   EXPECT_TRUE(launched_invocations_.empty());
-  histograms_.ExpectTotalCount(kErrorHistogramName, 0);
+  histograms_.ExpectUniqueSample(
+      kErrorHistogramName, SW_REPORTER_EXPERIMENT_ERROR_MISSING_PARAMS, 1);
 }
 
 TEST_F(ExperimentalSwReporterInstallerTest, EmptyLaunchParams) {

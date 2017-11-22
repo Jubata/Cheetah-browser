@@ -27,8 +27,8 @@
 #include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CSSValueKeywords.h"
 #include "core/css/CSSImageValue.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/StyleChangeReason.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/dom/Attribute.h"
 #include "core/editing/EditingUtilities.h"
@@ -60,7 +60,7 @@ bool HTMLBodyElement::IsPresentationAttribute(const QualifiedName& name) const {
 void HTMLBodyElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name == backgroundAttr) {
     String url = StripLeadingAndTrailingHTMLSpaces(value);
     if (!url.IsEmpty()) {
@@ -70,7 +70,7 @@ void HTMLBodyElement::CollectStyleForPresentationAttribute(
                                          GetDocument().GetReferrerPolicy()));
       image_value->SetInitiator(localName());
       style->SetProperty(
-          CSSPropertyValue(CSSPropertyBackgroundImage, *image_value));
+          CSSPropertyValue(GetCSSPropertyBackgroundImage(), *image_value));
     }
   } else if (name == marginwidthAttr || name == leftmarginAttr) {
     AddHTMLLengthToStyle(style, CSSPropertyMarginRight, value);

@@ -14,7 +14,8 @@
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "chrome/common/render_messages.h"
+#include "chrome/renderer/chrome_content_renderer_client.h"
+#include "chrome/renderer/chrome_render_thread_observer.h"
 #include "components/cdm/renderer/external_clear_key_key_system_properties.h"
 #include "components/cdm/renderer/widevine_key_system_properties.h"
 #include "content/public/renderer/render_thread.h"
@@ -40,6 +41,7 @@
 #include "base/version.h"
 #endif
 
+using content::WebPluginMimeType;
 using media::EmeFeatureSupport;
 using media::EmeSessionTypeSupport;
 using media::KeySystemProperties;
@@ -48,17 +50,21 @@ using media::SupportedCodecs;
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
 static bool IsPepperCdmAvailable(
     const std::string& pepper_type,
-    std::vector<base::string16>* additional_param_names,
-    std::vector<base::string16>* additional_param_values) {
-  bool is_available = false;
-  content::RenderThread::Get()->Send(
-      new ChromeViewHostMsg_IsInternalPluginAvailableForMimeType(
-          pepper_type,
-          &is_available,
-          additional_param_names,
-          additional_param_values));
+    std::vector<WebPluginMimeType::Param>* additional_params) {
+  base::Optional<std::vector<chrome::mojom::PluginParamPtr>>
+      opt_additional_params;
+  ChromeContentRendererClient::GetPluginInfoHost()
+      ->IsInternalPluginAvailableForMimeType(pepper_type,
+                                             &opt_additional_params);
 
-  return is_available;
+  if (opt_additional_params) {
+    for (auto& p : *opt_additional_params) {
+      additional_params->emplace_back(p->name, p->value);
+    }
+
+    return true;
+  }
+  return false;
 }
 
 // External Clear Key (used for testing).
@@ -89,11 +95,9 @@ static void AddExternalClearKey(
   static const char kExternalClearKeyDifferentGuidTestKeySystem[] =
       "org.chromium.externalclearkey.differentguid";
 
-  std::vector<base::string16> additional_param_names;
-  std::vector<base::string16> additional_param_values;
+  std::vector<WebPluginMimeType::Param> additional_params;
   if (!IsPepperCdmAvailable(cdm::kExternalClearKeyPepperType,
-                            &additional_param_names,
-                            &additional_param_values)) {
+                            &additional_params)) {
     return;
   }
 
@@ -148,15 +152,12 @@ static void AddExternalClearKey(
 // Converts the codec strings to UTF-8 since we only expect ASCII strings and
 // this simplifies the rest of the code in this file.
 void GetSupportedCodecsForPepperCdm(
-    const std::vector<base::string16>& additional_param_names,
-    const std::vector<base::string16>& additional_param_values,
+    const std::vector<WebPluginMimeType::Param>& additional_params,
     std::vector<std::string>* codecs) {
   DCHECK(codecs->empty());
-  DCHECK_EQ(additional_param_names.size(), additional_param_values.size());
-  for (size_t i = 0; i < additional_param_names.size(); ++i) {
-    if (additional_param_names[i] ==
-        base::ASCIIToUTF16(kCdmSupportedCodecsParamName)) {
-      const base::string16& codecs_string16 = additional_param_values[i];
+  for (const auto& p : additional_params) {
+    if (p.name == base::ASCIIToUTF16(kCdmSupportedCodecsParamName)) {
+      const base::string16& codecs_string16 = p.value;
       std::string codecs_string;
       if (!base::UTF16ToUTF8(codecs_string16.c_str(),
                              codecs_string16.length(),
@@ -174,25 +175,30 @@ void GetSupportedCodecsForPepperCdm(
 
 // Whether persistent-license session is supported by the CDM.
 bool IsPersistentLicenseSupportedbyCdm(
-    const std::vector<base::string16>& additional_param_names,
-    const std::vector<base::string16>& additional_param_values) {
-  DCHECK_EQ(additional_param_names.size(), additional_param_values.size());
+    const std::vector<WebPluginMimeType::Param>& additional_params) {
   const base::string16 expected_param_name =
       base::ASCIIToUTF16(kCdmPersistentLicenseSupportedParamName);
-  for (size_t i = 0; i < additional_param_names.size(); ++i) {
-    if (additional_param_names[i] == expected_param_name) {
-      return additional_param_values[i] ==
-             base::ASCIIToUTF16(kCdmFeatureSupported);
+  for (const auto& p : additional_params) {
+    if (p.name == expected_param_name) {
+      return p.value == base::ASCIIToUTF16(kCdmFeatureSupported);
     }
   }
-
   return false;
 }
 
 // Returns persistent-license session support.
 EmeSessionTypeSupport GetPersistentLicenseSupport(bool supported_by_the_cdm) {
-  if (!supported_by_the_cdm)
+  // Do not support persistent-license if the process cannot persist data.
+  // TODO(crbug.com/457487): Have a better plan on this. See bug for details.
+  if (ChromeRenderThreadObserver::is_incognito_process()) {
+    DVLOG(2) << __func__ << ": Not supported in incognito process.";
     return EmeSessionTypeSupport::NOT_SUPPORTED;
+  }
+
+  if (!supported_by_the_cdm) {
+    DVLOG(2) << __func__ << ": Not supported by the CDM.";
+    return EmeSessionTypeSupport::NOT_SUPPORTED;
+  }
 
 // On ChromeOS, platform verification is similar to CDM host verification.
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION) || defined(OS_CHROMEOS)
@@ -203,8 +209,10 @@ EmeSessionTypeSupport GetPersistentLicenseSupport(bool supported_by_the_cdm) {
 
   // If we are sure CDM host verification is NOT supported, we should not
   // support persistent-license.
-  if (!cdm_host_verification_potentially_supported)
+  if (!cdm_host_verification_potentially_supported) {
+    DVLOG(2) << __func__ << ": Not supported without CDM host verification.";
     return EmeSessionTypeSupport::NOT_SUPPORTED;
+  }
 
 #if defined(OS_CHROMEOS)
   // On ChromeOS, platform verification (similar to CDM host verification)
@@ -218,6 +226,7 @@ EmeSessionTypeSupport GetPersistentLicenseSupport(bool supported_by_the_cdm) {
   return EmeSessionTypeSupport::SUPPORTED;
 #else
   // Storage ID not implemented, so no support for persistent license.
+  DVLOG(2) << __func__ << ": Not supported without CDM storage ID.";
   return EmeSessionTypeSupport::NOT_SUPPORTED;
 #endif  // defined(OS_CHROMEOS)
 }
@@ -231,19 +240,14 @@ static void AddPepperBasedWidevine(
     return;
 #endif  // defined(WIDEVINE_CDM_MIN_GLIBC_VERSION)
 
-  std::vector<base::string16> additional_param_names;
-  std::vector<base::string16> additional_param_values;
-  if (!IsPepperCdmAvailable(kWidevineCdmPluginMimeType,
-                            &additional_param_names,
-                            &additional_param_values)) {
+  std::vector<WebPluginMimeType::Param> additional_params;
+  if (!IsPepperCdmAvailable(kWidevineCdmPluginMimeType, &additional_params)) {
     DVLOG(1) << "Widevine CDM is not currently available.";
     return;
   }
 
   std::vector<std::string> codecs;
-  GetSupportedCodecsForPepperCdm(additional_param_names,
-                                 additional_param_values,
-                                 &codecs);
+  GetSupportedCodecsForPepperCdm(additional_params, &codecs);
 
   SupportedCodecs supported_codecs = media::EME_CODEC_NONE;
 
@@ -270,8 +274,8 @@ static void AddPepperBasedWidevine(
   }
 
   EmeSessionTypeSupport persistent_license_support =
-      GetPersistentLicenseSupport(IsPersistentLicenseSupportedbyCdm(
-          additional_param_names, additional_param_values));
+      GetPersistentLicenseSupport(
+          IsPersistentLicenseSupportedbyCdm(additional_params));
 
   using Robustness = cdm::WidevineKeySystemProperties::Robustness;
 

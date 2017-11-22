@@ -422,8 +422,9 @@ void LayoutBlock::UpdateLayout() {
   if (needs_scroll_anchoring)
     GetScrollableArea()->GetScrollAnchor()->NotifyBeforeLayout();
 
-  // Table cells call layoutBlock directly, so don't add any logic here.  Put
-  // code into layoutBlock().
+  // Table cells call UpdateBlockLayout directly, as does
+  // PaintLayerScrollableArea for nested scrollbar layouts. Most logic should be
+  // in UpdateBlockLayout instead of UpdateLayout.
   UpdateBlockLayout(false);
 
   // It's safe to check for control clip here, since controls can never be table
@@ -587,8 +588,7 @@ void LayoutBlock::UpdateBlockChildDirtyBitsBeforeLayout(bool relayout_children,
   if (relayout_children || (has_relative_logical_height && !IsLayoutView()) ||
       (height_available_to_children_changed_ &&
        ChangeInAvailableLogicalHeightAffectsChild(this, child)) ||
-      (child.IsListMarker() && IsListItem() &&
-       ToLayoutBlockFlow(this)->ContainsFloats())) {
+      (child.IsListMarker() && IsListItem())) {
     child.SetChildNeedsLayout(kMarkOnlyThis);
   }
 }

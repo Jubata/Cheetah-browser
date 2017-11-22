@@ -4,16 +4,19 @@
 
 #include "chrome/browser/feature_engagement/new_tab/new_tab_tracker.h"
 
+#include <memory>
+
 #include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_param_associator.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/run_loop.h"
 #include "base/sequenced_task_runner.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/feature_engagement/feature_tracker.h"
 #include "chrome/browser/feature_engagement/session_duration_updater.h"
-#include "chrome/browser/feature_engagement/session_duration_updater_factory.h"
+#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
@@ -34,16 +37,14 @@ namespace feature_engagement {
 
 namespace {
 
-const char kGroupName[] = "Enabled";
-const char kNewTabTrialName[] = "NewTabTrial";
-const char kTestProfileName[] = "test-profile";
+constexpr char kGroupName[] = "Enabled";
+constexpr char kNewTabTrialName[] = "NewTabTrial";
+constexpr char kTestProfileName[] = "test-profile";
 
 class FakeNewTabTracker : public NewTabTracker {
  public:
   FakeNewTabTracker(Tracker* feature_tracker, Profile* profile)
-      : NewTabTracker(
-            feature_engagement::SessionDurationUpdaterFactory::GetInstance()
-                ->GetForProfile(profile)),
+      : NewTabTracker(profile),
         feature_tracker_(feature_tracker),
         pref_service_(
             base::MakeUnique<sync_preferences::TestingPrefServiceSyncable>()) {
@@ -81,8 +82,8 @@ class NewTabTrackerEventTest : public testing::Test {
 
   void TearDown() override {
     new_tab_tracker_->RemoveSessionDurationObserver();
-    metrics::DesktopSessionDurationTracker::CleanupForTesting();
     testing_profile_manager_.reset();
+    metrics::DesktopSessionDurationTracker::CleanupForTesting();
   }
 
  protected:
@@ -158,6 +159,8 @@ class NewTabTrackerTest : public testing::Test {
         "name:new_tab_clicked;comparator:any;window:3650;storage:3650";
     new_tab_params["session_rate"] = "<=3";
     new_tab_params["availability"] = "any";
+    new_tab_params["x_date_released_in_seconds"] = base::Int64ToString(
+        first_run::GetFirstRunSentinelCreationTime().ToDoubleT());
 
     SetFeatureParams(kIPHNewTabFeature, new_tab_params);
 

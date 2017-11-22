@@ -29,6 +29,7 @@
     <dimen name="tab_strip_and_toolbar_height">96dp</dimen>
 
     <dimen name="location_bar_icon_width">40dp</dimen>
+    <dimen name="toolbar_menu_button_width">43dp</dimen>
 
     <!-- NTP dimensions -->
     <dimen name="ntp_logo_height">180dp</dimen>
@@ -43,9 +44,6 @@
 
     <!-- Payments UI -->
     <dimen name="payments_ui_max_dialog_width">600dp</dimen>
-
-    <!-- Context Menu Dimensions -->
-    <dimen name="context_menu_header_image_max_size">216dp</dimen>
 
     <!-- Search widget dimensions -->
     <dimen name="search_activity_location_bar_margin_start">0dp</dimen>

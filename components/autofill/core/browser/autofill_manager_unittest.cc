@@ -15,7 +15,6 @@
 #include "base/feature_list.h"
 #include "base/format_macros.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/metrics_hashes.h"
@@ -138,14 +137,14 @@ class TestPersonalDataManager : public PersonalDataManager {
 
   void AddProfile(const AutofillProfile& profile) override {
     std::unique_ptr<AutofillProfile> profile_ptr =
-        base::MakeUnique<AutofillProfile>(profile);
+        std::make_unique<AutofillProfile>(profile);
     profile_ptr->set_modification_date(AutofillClock::Now());
     web_profiles_.push_back(std::move(profile_ptr));
   }
 
   void AddCreditCard(const CreditCard& credit_card) override {
     std::unique_ptr<CreditCard> local_credit_card =
-        base::MakeUnique<CreditCard>(credit_card);
+        std::make_unique<CreditCard>(credit_card);
     local_credit_card->set_modification_date(AutofillClock::Now());
     local_credit_cards_.push_back(std::move(local_credit_card));
   }
@@ -193,7 +192,7 @@ class TestPersonalDataManager : public PersonalDataManager {
 
   void AddServerCreditCard(const CreditCard& credit_card) {
     std::unique_ptr<CreditCard> server_credit_card =
-        base::MakeUnique<CreditCard>(credit_card);
+        std::make_unique<CreditCard>(credit_card);
     server_credit_card->set_modification_date(AutofillClock::Now());
     server_credit_cards_.push_back(std::move(server_credit_card));
   }
@@ -201,7 +200,7 @@ class TestPersonalDataManager : public PersonalDataManager {
   // Create Elvis card with whitespace in the credit card number.
   void CreateTestCreditCardWithWhitespace() {
     ClearCreditCards();
-    std::unique_ptr<CreditCard> credit_card = base::MakeUnique<CreditCard>();
+    std::unique_ptr<CreditCard> credit_card = std::make_unique<CreditCard>();
     test::SetCreditCardInfo(credit_card.get(), "Elvis Presley",
                             "4234 5678 9012 3456",  // Visa
                             "04", "2999", "1");
@@ -212,7 +211,7 @@ class TestPersonalDataManager : public PersonalDataManager {
   // Create Elvis card with separator characters in the credit card number.
   void CreateTestCreditCardWithSeparators() {
     ClearCreditCards();
-    std::unique_ptr<CreditCard> credit_card = base::MakeUnique<CreditCard>();
+    std::unique_ptr<CreditCard> credit_card = std::make_unique<CreditCard>();
     test::SetCreditCardInfo(credit_card.get(), "Elvis Presley",
                             "4234-5678-9012-3456",  // Visa
                             "04", "2999", "1");
@@ -222,7 +221,7 @@ class TestPersonalDataManager : public PersonalDataManager {
 
   void CreateTestCreditCardsYearAndMonth(const char* year, const char* month) {
     ClearCreditCards();
-    std::unique_ptr<CreditCard> credit_card = base::MakeUnique<CreditCard>();
+    std::unique_ptr<CreditCard> credit_card = std::make_unique<CreditCard>();
     test::SetCreditCardInfo(credit_card.get(), "Miku Hatsune",
                             "4234567890654321",  // Visa
                             month, year, "1");
@@ -232,7 +231,7 @@ class TestPersonalDataManager : public PersonalDataManager {
 
   void CreateTestExpiredCreditCard() {
     ClearCreditCards();
-    std::unique_ptr<CreditCard> credit_card = base::MakeUnique<CreditCard>();
+    std::unique_ptr<CreditCard> credit_card = std::make_unique<CreditCard>();
     test::SetCreditCardInfo(credit_card.get(), "Homer Simpson",
                             "4234567890654321",  // Visa
                             "05", "2000", "1");
@@ -244,20 +243,20 @@ class TestPersonalDataManager : public PersonalDataManager {
   void CreateTestAutofillProfiles(
       std::vector<std::unique_ptr<AutofillProfile>>* profiles) {
     std::unique_ptr<AutofillProfile> profile =
-        base::MakeUnique<AutofillProfile>();
+        std::make_unique<AutofillProfile>();
     test::SetProfileInfo(profile.get(), "Elvis", "Aaron", "Presley",
                          "theking@gmail.com", "RCA", "3734 Elvis Presley Blvd.",
                          "Apt. 10", "Memphis", "Tennessee", "38116", "US",
                          "12345678901");
     profile->set_guid("00000000-0000-0000-0000-000000000001");
     profiles->push_back(std::move(profile));
-    profile = base::MakeUnique<AutofillProfile>();
+    profile = std::make_unique<AutofillProfile>();
     test::SetProfileInfo(profile.get(), "Charles", "Hardin", "Holley",
                          "buddy@gmail.com", "Decca", "123 Apple St.", "unit 6",
                          "Lubbock", "Texas", "79401", "US", "23456789012");
     profile->set_guid("00000000-0000-0000-0000-000000000002");
     profiles->push_back(std::move(profile));
-    profile = base::MakeUnique<AutofillProfile>();
+    profile = std::make_unique<AutofillProfile>();
     test::SetProfileInfo(profile.get(), "", "", "", "", "", "", "", "", "", "",
                          "", "");
     profile->set_guid("00000000-0000-0000-0000-000000000003");
@@ -266,7 +265,7 @@ class TestPersonalDataManager : public PersonalDataManager {
 
   void CreateTestCreditCards(
       std::vector<std::unique_ptr<CreditCard>>* credit_cards) {
-    std::unique_ptr<CreditCard> credit_card = base::MakeUnique<CreditCard>();
+    std::unique_ptr<CreditCard> credit_card = std::make_unique<CreditCard>();
     test::SetCreditCardInfo(credit_card.get(), "Elvis Presley",
                             "4234567890123456",  // Visa
                             "04", "2999", "1");
@@ -276,7 +275,7 @@ class TestPersonalDataManager : public PersonalDataManager {
                               base::TimeDelta::FromDays(5));
     credit_cards->push_back(std::move(credit_card));
 
-    credit_card = base::MakeUnique<CreditCard>();
+    credit_card = std::make_unique<CreditCard>();
     test::SetCreditCardInfo(credit_card.get(), "Buddy Holly",
                             "5187654321098765",  // Mastercard
                             "10", "2998", "1");
@@ -286,7 +285,7 @@ class TestPersonalDataManager : public PersonalDataManager {
                               base::TimeDelta::FromDays(4));
     credit_cards->push_back(std::move(credit_card));
 
-    credit_card = base::MakeUnique<CreditCard>();
+    credit_card = std::make_unique<CreditCard>();
     test::SetCreditCardInfo(credit_card.get(), "", "", "", "", "");
     credit_card->set_guid("00000000-0000-0000-0000-000000000006");
     credit_cards->push_back(std::move(credit_card));
@@ -1302,7 +1301,7 @@ TEST_F(AutofillManagerTest,
   // Two profiles have the same last name, and the third shares the same first
   // letter for last name.
   std::unique_ptr<AutofillProfile> profile1 =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   profile1->set_guid("00000000-0000-0000-0000-000000000103");
   profile1->SetInfo(NAME_FIRST, ASCIIToUTF16("Robin"), "en-US");
   profile1->SetInfo(NAME_LAST, ASCIIToUTF16("Grimes"), "en-US");
@@ -1311,7 +1310,7 @@ TEST_F(AutofillManagerTest,
   autofill_manager_->AddProfile(std::move(profile1));
 
   std::unique_ptr<AutofillProfile> profile2 =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   profile2->set_guid("00000000-0000-0000-0000-000000000124");
   profile2->SetInfo(NAME_FIRST, ASCIIToUTF16("Carl"), "en-US");
   profile2->SetInfo(NAME_LAST, ASCIIToUTF16("Grimes"), "en-US");
@@ -1320,7 +1319,7 @@ TEST_F(AutofillManagerTest,
   autofill_manager_->AddProfile(std::move(profile2));
 
   std::unique_ptr<AutofillProfile> profile3 =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   profile3->set_guid("00000000-0000-0000-0000-000000000126");
   profile3->SetInfo(NAME_FIRST, ASCIIToUTF16("Aaron"), "en-US");
   profile3->SetInfo(NAME_LAST, ASCIIToUTF16("Googler"), "en-US");
@@ -1396,7 +1395,7 @@ TEST_F(AutofillManagerTest, GetProfileSuggestions_WithDuplicates) {
 
   // Add a duplicate profile.
   std::unique_ptr<AutofillProfile> duplicate_profile =
-      base::MakeUnique<AutofillProfile>(*(autofill_manager_->GetProfileWithGUID(
+      std::make_unique<AutofillProfile>(*(autofill_manager_->GetProfileWithGUID(
           "00000000-0000-0000-0000-000000000001")));
   autofill_manager_->AddProfile(std::move(duplicate_profile));
 
@@ -1993,7 +1992,7 @@ TEST_F(AutofillManagerTest, GetFieldSuggestionsWithDuplicateValues) {
 
   // |profile| will be owned by the mock PersonalDataManager.
   std::unique_ptr<AutofillProfile> profile =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   test::SetProfileInfo(profile.get(), "Elvis", "", "", "", "", "", "", "", "",
                        "", "", "");
   profile->set_guid("00000000-0000-0000-0000-000000000101");
@@ -2017,7 +2016,7 @@ TEST_F(AutofillManagerTest, GetProfileSuggestions_FancyPhone) {
   FormsSeen(forms);
 
   std::unique_ptr<AutofillProfile> profile =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   profile->set_guid("00000000-0000-0000-0000-000000000103");
   profile->SetInfo(NAME_FULL, ASCIIToUTF16("Natty Bumppo"), "en-US");
   profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, ASCIIToUTF16("1800PRAIRIE"));
@@ -2066,7 +2065,7 @@ TEST_F(AutofillManagerTest, GetProfileSuggestions_ForPhonePrefixOrSuffix) {
   FormsSeen(forms);
 
   std::unique_ptr<AutofillProfile> profile =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   profile->set_guid("00000000-0000-0000-0000-000000000104");
   profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER, ASCIIToUTF16("1800FLOWERS"));
   personal_data_.ClearAutofillProfiles();
@@ -3170,6 +3169,778 @@ TEST_F(AutofillManagerTest, FillPhoneNumber) {
   EXPECT_EQ(base::string16(), response_data4.fields[4].value);
 }
 
+TEST_F(AutofillManagerTest, FillFirstPhoneNumber_ComponentizedNumbers) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  // Verify only the first complete number is filled when there are multiple
+  // componentized number fields.
+  FormData form_with_multiple_componentized_phone_fields;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_multiple_componentized_phone_fields.name =
+      ASCIIToUTF16("multiple_componentized_number_fields");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("country code", "country_code", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("area code", "area_code", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("number", "phone_number", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping country code", "shipping_country_code",
+                            "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping area code", "shipping_area_code", "",
+                            "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping number", "shipping_phone_number", "",
+                            "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  std::vector<FormData> forms;
+  forms.push_back(form_with_multiple_componentized_phone_fields);
+
+  FormData form_data_copy(form_with_multiple_componentized_phone_fields);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_multiple_componentized_phone_fields,
+        *form_with_multiple_componentized_phone_fields.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify only the first complete set of phone number fields are filled.
+    ASSERT_EQ(8U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("1"), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("5554567"), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(base::string16(), response_data.fields[5].value);
+    EXPECT_EQ(base::string16(), response_data.fields[6].value);
+    EXPECT_EQ(base::string16(), response_data.fields[7].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms_copy);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_data_copy, *form_data_copy.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Sanity check for old behavior: all phone number fields are filled.
+    ASSERT_EQ(8U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("1"), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("5554567"), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(ASCIIToUTF16("1"), response_data.fields[5].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[6].value);
+    EXPECT_EQ(ASCIIToUTF16("5554567"), response_data.fields[7].value);
+  }
+}
+
+TEST_F(AutofillManagerTest, FillFirstPhoneNumber_WholeNumbers) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  FormData form_with_multiple_whole_number_fields;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_multiple_whole_number_fields.name =
+      ASCIIToUTF16("multiple_whole_number_fields");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("number", "phone_number", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping number", "shipping_phone_number", "",
+                            "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  std::vector<FormData> forms;
+  forms.push_back(form_with_multiple_whole_number_fields);
+
+  FormData form_data_copy(form_with_multiple_whole_number_fields);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_multiple_whole_number_fields,
+        *form_with_multiple_whole_number_fields.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify only the first complete set of phone number fields are filled.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(base::string16(), response_data.fields[3].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms_copy);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_data_copy, *form_data_copy.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Sanity check for old behavior: all phone number fields are filled.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+  }
+}
+
+TEST_F(AutofillManagerTest, FillFirstPhoneNumber_FillPartsOnceOnly) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  // Verify only the first complete number is filled when there are multiple
+  // componentized number fields.
+  FormData form_with_multiple_componentized_phone_fields;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_multiple_componentized_phone_fields.name =
+      ASCIIToUTF16("multiple_componentized_number_fields");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("country code", "country_code", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("area code", "area_code", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("number", "phone_number", "", "text", &field);
+  field.autocomplete_attribute = "tel-national";
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  field.autocomplete_attribute = "";
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping country code", "shipping_country_code",
+                            "", "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping area code", "shipping_area_code", "",
+                            "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping number", "shipping_phone_number", "",
+                            "text", &field);
+  form_with_multiple_componentized_phone_fields.fields.push_back(field);
+  std::vector<FormData> forms;
+  forms.push_back(form_with_multiple_componentized_phone_fields);
+
+  FormData form_data_copy(form_with_multiple_componentized_phone_fields);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_multiple_componentized_phone_fields,
+        *form_with_multiple_componentized_phone_fields.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify only the first complete set of phone number fields are filled,
+    // and phone components are not filled more than once.
+    ASSERT_EQ(8U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("1"), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(base::string16(), response_data.fields[5].value);
+    EXPECT_EQ(base::string16(), response_data.fields[6].value);
+    EXPECT_EQ(base::string16(), response_data.fields[7].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms_copy);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_data_copy, *form_data_copy.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Sanity check for old behavior: all phone number fields are filled.
+    ASSERT_EQ(8U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("1"), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(ASCIIToUTF16("1"), response_data.fields[5].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[6].value);
+    EXPECT_EQ(ASCIIToUTF16("5554567"), response_data.fields[7].value);
+  }
+}
+
+// Verify when extension is misclassified, and there is a complete
+// phone field, we do not fill anything to extension field.
+TEST_F(AutofillManagerTest,
+       FillFirstPhoneNumber_NotFillMisclassifiedExtention) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  FormData form_with_misclassified_extension;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_misclassified_extension.name =
+      ASCIIToUTF16("complete_phone_form_with_extension");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  field.autocomplete_attribute = "name";
+  form_with_misclassified_extension.fields.push_back(field);
+  test::CreateTestFormField("address", "address", "", "text", &field);
+  field.autocomplete_attribute = "address";
+  form_with_misclassified_extension.fields.push_back(field);
+  test::CreateTestFormField("area code", "area_code", "", "text", &field);
+  field.autocomplete_attribute = "tel-area-code";
+  form_with_misclassified_extension.fields.push_back(field);
+  test::CreateTestFormField("number", "phone_number", "", "text", &field);
+  field.autocomplete_attribute = "tel-local";
+  form_with_misclassified_extension.fields.push_back(field);
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  field.autocomplete_attribute = "tel-local";
+  form_with_misclassified_extension.fields.push_back(field);
+
+  std::vector<FormData> forms;
+  forms.push_back(form_with_misclassified_extension);
+
+  FormData form_data_copy(form_with_misclassified_extension);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_misclassified_extension,
+        *form_with_misclassified_extension.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify the misclassified extension field is not filled.
+    ASSERT_EQ(5U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(base::string16(), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("5554567"), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms_copy);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_data_copy, *form_data_copy.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Sanity check for old behavior: the misclassified extension field is
+    // filled.
+    ASSERT_EQ(5U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(base::string16(), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("5554567"), response_data.fields[3].value);
+    EXPECT_EQ(ASCIIToUTF16("5554567"), response_data.fields[4].value);
+  }
+}
+
+// Verify when no complete number can be found, we do best-effort filling.
+TEST_F(AutofillManagerTest, FillFirstPhoneNumber_BestEfforFilling) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  FormData form_with_no_complete_number;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_no_complete_number.name = ASCIIToUTF16("no_complete_phone_form");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  field.autocomplete_attribute = "name";
+  form_with_no_complete_number.fields.push_back(field);
+  test::CreateTestFormField("address", "address", "", "text", &field);
+  field.autocomplete_attribute = "address";
+  form_with_no_complete_number.fields.push_back(field);
+  test::CreateTestFormField("area code", "area_code", "", "text", &field);
+  field.autocomplete_attribute = "tel-area-code";
+  form_with_no_complete_number.fields.push_back(field);
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  field.autocomplete_attribute = "extension";
+  form_with_no_complete_number.fields.push_back(field);
+
+  std::vector<FormData> forms;
+  forms.push_back(form_with_no_complete_number);
+
+  FormData form_data_copy(form_with_no_complete_number);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_no_complete_number,
+        *form_with_no_complete_number.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify when there is no complete phone number fields, we do best effort
+    // filling.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(base::string16(), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[2].value);
+    EXPECT_EQ(base::string16(), response_data.fields[3].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_data_copy, *form_data_copy.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Sanity check for old behavior: always do best effort filling.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(base::string16(), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("650"), response_data.fields[2].value);
+    EXPECT_EQ(base::string16(), response_data.fields[3].value);
+  }
+}
+
+// When the focus is on second phone field explicitly, we will fill the
+// entire form, both first phone field and second phone field included.
+TEST_F(AutofillManagerTest, FillFirstPhoneNumber_FocusOnSecondPhoneNumber) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  FormData form_with_multiple_whole_number_fields;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_multiple_whole_number_fields.name =
+      ASCIIToUTF16("multiple_whole_number_fields");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("number", "phone_number", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping number", "shipping_phone_number", "",
+                            "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  std::vector<FormData> forms;
+  forms.push_back(form_with_multiple_whole_number_fields);
+
+  FormData form_data_copy(form_with_multiple_whole_number_fields);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    auto it = form_with_multiple_whole_number_fields.fields.begin();
+    // Move it to point to "shipping number".
+    std::advance(it, 3);
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_multiple_whole_number_fields, *it,
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify when the second phone number field is being focused, we fill
+    // that field *AND* the first phone number field.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    auto it = form_data_copy.fields.begin();
+    // Move it to point to "shipping number".
+    std::advance(it, 3);
+    FillAutofillFormDataAndSaveResults(page_id, form_data_copy, *it,
+                                       MakeFrontendID(std::string(), guid),
+                                       &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Sanity check for old behavior: fill all the phone fields we can find.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+  }
+}
+
+TEST_F(AutofillManagerTest, FillFirstPhoneNumber_HiddenFieldShouldNotCount) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  FormData form_with_multiple_whole_number_fields;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_multiple_whole_number_fields.name =
+      ASCIIToUTF16("multiple_whole_number_fields");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("number", "phone_number", "", "text", &field);
+  field.is_focusable = false;
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  field.is_focusable = true;
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  test::CreateTestFormField("shipping number", "shipping_phone_number", "",
+                            "text", &field);
+  form_with_multiple_whole_number_fields.fields.push_back(field);
+  std::vector<FormData> forms;
+  forms.push_back(form_with_multiple_whole_number_fields);
+
+  FormData form_data_copy(form_with_multiple_whole_number_fields);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_multiple_whole_number_fields,
+        *form_with_multiple_whole_number_fields.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify hidden/non-focusable phone field is set to only_fill_when_focused.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(base::string16(), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_data_copy, *form_data_copy.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Sanity check for old behavior: fill hidden phone fields.
+    ASSERT_EQ(4U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+  }
+}
+
+TEST_F(AutofillManagerTest,
+       FillFirstPhoneNumber_MultipleSectionFilledCorrectly) {
+  AutofillProfile* work_profile = autofill_manager_->GetProfileWithGUID(
+      "00000000-0000-0000-0000-000000000002");
+  ASSERT_TRUE(work_profile != nullptr);
+  work_profile->SetRawInfo(PHONE_HOME_WHOLE_NUMBER,
+                           ASCIIToUTF16("16505554567"));
+
+  std::string guid(work_profile->guid());
+
+  FormData form_with_multiple_sections;
+  FormFieldData field;
+  // Default is zero, have to set to a number autofill can process.
+  field.max_length = 10;
+  form_with_multiple_sections.name = ASCIIToUTF16("multiple_section_fields");
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("Address", "address", "", "text", &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("number", "phone_number", "", "text", &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("other number", "other_phone_number", "", "text",
+                            &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("extension", "extension", "", "text", &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("Full Name", "full_name", "", "text", &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("Shipping Address", "shipping_address", "", "text",
+                            &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("shipping number", "shipping_phone_number", "",
+                            "text", &field);
+  form_with_multiple_sections.fields.push_back(field);
+  test::CreateTestFormField("other shipping number",
+                            "other_shipping_phone_number", "", "text", &field);
+  form_with_multiple_sections.fields.push_back(field);
+
+  std::vector<FormData> forms;
+  forms.push_back(form_with_multiple_sections);
+
+  FormData form_data_copy(form_with_multiple_sections);
+  std::vector<FormData> forms_copy;
+  forms_copy.push_back(form_data_copy);
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndEnableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    // Fill first sections.
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_with_multiple_sections,
+        *form_with_multiple_sections.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify first section is filled with rationalization.
+    ASSERT_EQ(9U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("123 Apple St."), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[2].value);
+    EXPECT_EQ(base::string16(), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(base::string16(), response_data.fields[5].value);
+    EXPECT_EQ(base::string16(), response_data.fields[6].value);
+    EXPECT_EQ(base::string16(), response_data.fields[7].value);
+    EXPECT_EQ(base::string16(), response_data.fields[8].value);
+
+    // Fill second section.
+    auto it = form_with_multiple_sections.fields.begin();
+    std::advance(it, 6);  // Pointing to second section.
+
+    FillAutofillFormDataAndSaveResults(page_id, form_with_multiple_sections,
+                                       *it, MakeFrontendID(std::string(), guid),
+                                       &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify second section is filled with rationalization.
+    ASSERT_EQ(9U, response_data.fields.size());
+    EXPECT_EQ(base::string16(), response_data.fields[0].value);
+    EXPECT_EQ(base::string16(), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(base::string16(), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[5].value);
+    EXPECT_EQ(ASCIIToUTF16("123 Apple St."), response_data.fields[6].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[7].value);
+    EXPECT_EQ(base::string16(), response_data.fields[8].value);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(
+        autofill::kAutofillRationalizeFieldTypePredictions);
+
+    FormsSeen(forms);
+    int page_id = 1;
+    int response_page_id = 0;
+    FormData response_data;
+    // Fill first section.
+    FillAutofillFormDataAndSaveResults(
+        page_id, form_data_copy, *form_data_copy.fields.begin(),
+        MakeFrontendID(std::string(), guid), &response_page_id, &response_data);
+
+    // Verify first section is filled without rationalization.
+    ASSERT_EQ(9U, response_data.fields.size());
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[0].value);
+    EXPECT_EQ(ASCIIToUTF16("123 Apple St."), response_data.fields[1].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[2].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(base::string16(), response_data.fields[5].value);
+    EXPECT_EQ(base::string16(), response_data.fields[6].value);
+    EXPECT_EQ(base::string16(), response_data.fields[7].value);
+    EXPECT_EQ(base::string16(), response_data.fields[8].value);
+
+    // Fill second section.
+    auto it = form_data_copy.fields.begin();
+    std::advance(it, 6);  // Pointing to second section.
+
+    FillAutofillFormDataAndSaveResults(page_id, form_data_copy, *it,
+                                       MakeFrontendID(std::string(), guid),
+                                       &response_page_id, &response_data);
+    EXPECT_EQ(1, response_page_id);
+
+    // Verify second section is filled without rationalization.
+    ASSERT_EQ(9U, response_data.fields.size());
+    EXPECT_EQ(base::string16(), response_data.fields[0].value);
+    EXPECT_EQ(base::string16(), response_data.fields[1].value);
+    EXPECT_EQ(base::string16(), response_data.fields[2].value);
+    EXPECT_EQ(base::string16(), response_data.fields[3].value);
+    EXPECT_EQ(base::string16(), response_data.fields[4].value);
+    EXPECT_EQ(ASCIIToUTF16("Charles Hardin Holley"),
+              response_data.fields[5].value);
+    EXPECT_EQ(ASCIIToUTF16("123 Apple St."), response_data.fields[6].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[7].value);
+    EXPECT_EQ(ASCIIToUTF16("6505554567"), response_data.fields[8].value);
+  }
+}
+
 // Test that we can still fill a form when a field has been removed from it.
 TEST_F(AutofillManagerTest, FormChangesRemoveField) {
   // Set up our form data.
@@ -4121,7 +4892,7 @@ TEST_F(AutofillManagerTest, DisambiguateUploadTypes) {
 TEST_F(AutofillManagerTest, RemoveProfile) {
   // Add and remove an Autofill profile.
   std::unique_ptr<AutofillProfile> profile =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   const char guid[] = "00000000-0000-0000-0000-000000000102";
   profile->set_guid(guid);
   autofill_manager_->AddProfile(std::move(profile));
@@ -4809,7 +5580,7 @@ TEST_F(AutofillManagerTest,
   FormsSeen(forms);
 
   std::unique_ptr<AutofillProfile> profile1 =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   profile1->set_guid("00000000-0000-0000-0000-000000000103");
   profile1->SetInfo(NAME_FIRST, ASCIIToUTF16("Robin"), "en-US");
   profile1->SetInfo(NAME_MIDDLE, ASCIIToUTF16("Adam Smith"), "en-US");
@@ -4819,7 +5590,7 @@ TEST_F(AutofillManagerTest,
   autofill_manager_->AddProfile(std::move(profile1));
 
   std::unique_ptr<AutofillProfile> profile2 =
-      base::MakeUnique<AutofillProfile>();
+      std::make_unique<AutofillProfile>();
   profile2->set_guid("00000000-0000-0000-0000-000000000124");
   profile2->SetInfo(NAME_FIRST, ASCIIToUTF16("Carl"), "en-US");
   profile2->SetInfo(NAME_MIDDLE, ASCIIToUTF16("Shawn Smith"), "en-US");
@@ -5056,7 +5827,7 @@ TEST_F(AutofillManagerTest, DisplaySuggestionsForUpdatedServerTypedForm) {
   test::CreateTestFormField("Field 3", "field3", "", "text", &field);
   form.fields.push_back(field);
 
-  auto form_structure = base::MakeUnique<TestFormStructure>(form);
+  auto form_structure = std::make_unique<TestFormStructure>(form);
   form_structure->DetermineHeuristicTypes(nullptr /* ukm_recorder */);
   // Make sure the form can not be autofilled now.
   ASSERT_EQ(0u, form_structure->autofill_count());

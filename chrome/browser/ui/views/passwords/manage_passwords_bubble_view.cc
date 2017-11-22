@@ -598,8 +598,6 @@ void ManagePasswordsBubbleView::PendingView::TogglePasswordVisibility() {
   if (password_dropdown_) {
     static_cast<PasswordDropdownModel*>(password_dropdown_->model())
         ->SetMasked(!password_visible_);
-    // TODO(crbug.com/775496): Remove SchedulePaint once the bug is fixed.
-    password_dropdown_->SchedulePaint();
   } else {
     password_label_->SetObscured(!password_visible_);
   }
@@ -673,8 +671,7 @@ ManagePasswordsBubbleView::ManageView::ManageView(
   // this site" message.
   if (!parent_->model()->local_credentials().empty()) {
     ManagePasswordItemsView* item = new ManagePasswordItemsView(
-        parent_->model(), &parent_->model()->local_credentials(),
-        kDesiredBubbleWidth);
+        parent_->model(), &parent_->model()->local_credentials());
     layout->AddView(item);
   } else {
     views::Label* empty_label = new views::Label(
@@ -1041,6 +1038,10 @@ ManagePasswordsBubbleView::ManagePasswordsBubbleView(
 ManagePasswordsBubbleView::~ManagePasswordsBubbleView() {
   if (manage_passwords_bubble_ == this)
     manage_passwords_bubble_ = nullptr;
+}
+
+bool ManagePasswordsBubbleView::ShouldSnapFrameWidth() const {
+  return ChromeLayoutProvider::Get()->IsHarmonyMode();
 }
 
 int ManagePasswordsBubbleView::GetDialogButtons() const {

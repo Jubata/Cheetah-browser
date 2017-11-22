@@ -111,7 +111,7 @@ IDBRequest::IDBRequest(ScriptState* script_state,
                        IDBAny* source,
                        IDBTransaction* transaction,
                        AsyncTraceState metrics)
-    : SuspendableObject(ExecutionContext::From(script_state)),
+    : PausableObject(ExecutionContext::From(script_state)),
       transaction_(transaction),
       isolate_(script_state->GetIsolate()),
       metrics_(std::move(metrics)),
@@ -132,7 +132,7 @@ void IDBRequest::Trace(blink::Visitor* visitor) {
   visitor->Trace(cursor_key_);
   visitor->Trace(cursor_primary_key_);
   EventTargetWithInlineData::Trace(visitor);
-  SuspendableObject::Trace(visitor);
+  PausableObject::Trace(visitor);
 }
 
 ScriptValue IDBRequest::result(ScriptState* script_state,
@@ -259,7 +259,6 @@ void IDBRequest::SetResultCursor(IDBCursor* cursor,
   cursor_key_ = key;
   cursor_primary_key_ = primary_key;
   cursor_value_ = std::move(value);
-  AckReceivedBlobs(cursor_value_.get());
 
   EnqueueResultInternal(IDBAny::Create(cursor));
 }
@@ -306,7 +305,7 @@ void IDBRequest::HandleResponse(DOMException* error) {
   transit_blob_handles_.clear();
   if (!transaction_ || !transaction_->HasQueuedResults())
     return EnqueueResponse(error);
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, error,
       WTF::Bind(&IDBTransaction::OnResultReady,
                 WrapPersistent(transaction_.Get()))));
@@ -317,7 +316,7 @@ void IDBRequest::HandleResponse(IDBKey* key) {
   DCHECK(transaction_);
   if (!transaction_->HasQueuedResults())
     return EnqueueResponse(key);
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, key,
       WTF::Bind(&IDBTransaction::OnResultReady,
                 WrapPersistent(transaction_.Get()))));
@@ -327,7 +326,7 @@ void IDBRequest::HandleResponse(int64_t value_or_old_version) {
   DCHECK(transit_blob_handles_.IsEmpty());
   if (!transaction_ || !transaction_->HasQueuedResults())
     return EnqueueResponse(value_or_old_version);
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, value_or_old_version,
       WTF::Bind(&IDBTransaction::OnResultReady,
                 WrapPersistent(transaction_.Get()))));
@@ -337,7 +336,7 @@ void IDBRequest::HandleResponse() {
   DCHECK(transit_blob_handles_.IsEmpty());
   if (!transaction_ || !transaction_->HasQueuedResults())
     return EnqueueResponse();
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, WTF::Bind(&IDBTransaction::OnResultReady,
                       WrapPersistent(transaction_.Get()))));
 }
@@ -348,12 +347,13 @@ void IDBRequest::HandleResponse(std::unique_ptr<WebIDBCursor> backend,
                                 scoped_refptr<IDBValue>&& value) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
+  AckReceivedBlobs(value.get());
   bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.get());
   if (!transaction_->HasQueuedResults() && !is_wrapped) {
     return EnqueueResponse(std::move(backend), key, primary_key,
                            std::move(value));
   }
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, std::move(backend), key, primary_key, std::move(value), is_wrapped,
       WTF::Bind(&IDBTransaction::OnResultReady,
                 WrapPersistent(transaction_.Get()))));
@@ -362,10 +362,11 @@ void IDBRequest::HandleResponse(std::unique_ptr<WebIDBCursor> backend,
 void IDBRequest::HandleResponse(scoped_refptr<IDBValue>&& value) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
+  AckReceivedBlobs(value.get());
   bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.get());
   if (!transaction_->HasQueuedResults() && !is_wrapped)
     return EnqueueResponse(std::move(value));
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, std::move(value), is_wrapped,
       WTF::Bind(&IDBTransaction::OnResultReady,
                 WrapPersistent(transaction_.Get()))));
@@ -374,10 +375,11 @@ void IDBRequest::HandleResponse(scoped_refptr<IDBValue>&& value) {
 void IDBRequest::HandleResponse(const Vector<scoped_refptr<IDBValue>>& values) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
+  AckReceivedBlobs(values);
   bool is_wrapped = IDBValueUnwrapper::IsWrapped(values);
   if (!transaction_->HasQueuedResults() && !is_wrapped)
     return EnqueueResponse(values);
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, values, is_wrapped,
       WTF::Bind(&IDBTransaction::OnResultReady,
                 WrapPersistent(transaction_.Get()))));
@@ -388,11 +390,12 @@ void IDBRequest::HandleResponse(IDBKey* key,
                                 scoped_refptr<IDBValue>&& value) {
   DCHECK(transit_blob_handles_.IsEmpty());
   DCHECK(transaction_);
+  AckReceivedBlobs(value.get());
   bool is_wrapped = IDBValueUnwrapper::IsWrapped(value.get());
   if (!transaction_->HasQueuedResults() && !is_wrapped)
     return EnqueueResponse(key, primary_key, std::move(value));
 
-  transaction_->EnqueueResult(WTF::MakeUnique<IDBRequestQueueItem>(
+  transaction_->EnqueueResult(std::make_unique<IDBRequestQueueItem>(
       this, key, primary_key, std::move(value), is_wrapped,
       WTF::Bind(&IDBTransaction::OnResultReady,
                 WrapPersistent(transaction_.Get()))));
@@ -488,7 +491,6 @@ void IDBRequest::EnqueueResponse(
     return;
   }
 
-  AckReceivedBlobs(values);
   EnqueueResultInternal(IDBAny::Create(values));
   metrics_.RecordAndReset();
 }
@@ -512,8 +514,6 @@ void IDBRequest::EnqueueResponse(scoped_refptr<IDBValue>&& value) {
     metrics_.RecordAndReset();
     return;
   }
-
-  AckReceivedBlobs(value.get());
 
   if (pending_cursor_) {
     // Value should be null, signifying the end of the cursor's range.
@@ -614,7 +614,7 @@ const AtomicString& IDBRequest::InterfaceName() const {
 }
 
 ExecutionContext* IDBRequest::GetExecutionContext() const {
-  return SuspendableObject::GetExecutionContext();
+  return PausableObject::GetExecutionContext();
 }
 
 DispatchEventResult IDBRequest::DispatchEventInternal(Event* event) {

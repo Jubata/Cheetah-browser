@@ -66,7 +66,7 @@ class QUIC_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // Called if an error is detected in the QUIC protocol.
   virtual void OnError(QuicFramer* framer) = 0;
 
-  // Called only when |perspective_| is IS_SERVER and the the framer gets a
+  // Called only when |perspective_| is IS_SERVER and the framer gets a
   // packet with version flag true and the version on the packet doesn't match
   // |quic_version_|. The visitor should return true after it updates the
   // version of the |framer_| to |received_version| or false to stop processing
@@ -87,10 +87,11 @@ class QUIC_EXPORT_PRIVATE QuicFramerVisitorInterface {
   virtual void OnVersionNegotiationPacket(
       const QuicVersionNegotiationPacket& packet) = 0;
 
-  // Called when the public header has been parsed, but has not been
-  // authenticated. If it returns false, framing for this packet will cease.
+  // Called when all fields except packet number has been parsed, but has not
+  // been authenticated. If it returns false, framing for this packet will
+  // cease.
   virtual bool OnUnauthenticatedPublicHeader(
-      const QuicPacketPublicHeader& header) = 0;
+      const QuicPacketHeader& header) = 0;
 
   // Called when the unauthenticated portion of the header has been parsed.
   // If OnUnauthenticatedHeader returns false, framing for this packet will
@@ -247,6 +248,12 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                          char* buffer,
                          size_t packet_length);
 
+  // Serializes a probing packet, which is a padded PING packet. Returns the
+  // length of the packet. Returns 0 if it fails to serialize.
+  size_t BuildConnectivityProbingPacket(const QuicPacketHeader& header,
+                                        char* buffer,
+                                        size_t packet_length);
+
   // Returns a new public reset packet.
   static std::unique_ptr<QuicEncryptedPacket> BuildPublicResetPacket(
       const QuicPublicResetPacket& packet);
@@ -256,9 +263,9 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
       QuicConnectionId connection_id,
       const QuicTransportVersionVector& versions);
 
-  // If header.public_header.version_flag is set, the version in the
+  // If header.version_flag is set, the version in the
   // packet will be set -- but it will be set from transport_version_ not
-  // header.public_header.versions.
+  // header.versions.
   bool AppendPacketHeader(const QuicPacketHeader& header,
                           QuicDataWriter* writer);
   bool AppendTypeByte(const QuicFrame& frame,
@@ -362,19 +369,18 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   };
 
   bool ProcessDataPacket(QuicDataReader* reader,
-                         const QuicPacketPublicHeader& public_header,
+                         QuicPacketHeader* header,
                          const QuicEncryptedPacket& packet,
                          char* decrypted_buffer,
                          size_t buffer_length);
 
   bool ProcessPublicResetPacket(QuicDataReader* reader,
-                                const QuicPacketPublicHeader& public_header);
+                                const QuicPacketHeader& header);
 
   bool ProcessVersionNegotiationPacket(QuicDataReader* reader,
-                                       QuicPacketPublicHeader* public_header);
+                                       const QuicPacketHeader& header);
 
-  bool ProcessPublicHeader(QuicDataReader* reader,
-                           QuicPacketPublicHeader* header);
+  bool ProcessPublicHeader(QuicDataReader* reader, QuicPacketHeader* header);
 
   // Processes the unauthenticated portion of the header into |header| from
   // the current QuicDataReader.  Returns true on success, false on failure.
@@ -400,7 +406,7 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                                    QuicDataReader* reader,
                                    QuicAckFrame* ack_frame);
   bool ProcessStopWaitingFrame(QuicDataReader* reader,
-                               const QuicPacketHeader& public_header,
+                               const QuicPacketHeader& header,
                                QuicStopWaitingFrame* stop_waiting);
   bool ProcessRstStreamFrame(QuicDataReader* reader, QuicRstStreamFrame* frame);
   bool ProcessConnectionCloseFrame(QuicDataReader* reader,
@@ -494,6 +500,8 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   void set_error(QuicErrorCode error) { error_ = error; }
 
   void set_detailed_error(const char* error) { detailed_error_ = error; }
+
+  QuicStringPiece TruncateErrorString(QuicStringPiece error);
 
   std::string detailed_error_;
   QuicFramerVisitorInterface* visitor_;

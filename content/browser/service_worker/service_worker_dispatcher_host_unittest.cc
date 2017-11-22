@@ -33,6 +33,7 @@
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 using blink::MessagePortChannel;
@@ -64,8 +65,9 @@ RemoteProviderInfo SetupProviderHostInfoPtrs(
   RemoteProviderInfo remote_info;
   mojom::ServiceWorkerContainerAssociatedPtr browser_side_client_ptr;
   remote_info.client_request =
-      mojo::MakeIsolatedRequest(&browser_side_client_ptr);
-  host_info->host_request = mojo::MakeIsolatedRequest(&remote_info.host_ptr);
+      mojo::MakeRequestAssociatedWithDedicatedPipe(&browser_side_client_ptr);
+  host_info->host_request =
+      mojo::MakeRequestAssociatedWithDedicatedPipe(&remote_info.host_ptr);
   host_info->client_ptr_info = browser_side_client_ptr.PassInterface();
   EXPECT_TRUE(host_info->host_request.is_pending());
   EXPECT_TRUE(host_info->client_ptr_info.is_valid());
@@ -133,6 +135,7 @@ class FailToStartWorkerTestHelper : public EmbeddedWorkerTestHelper {
       bool pause_after_download,
       mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
       mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       mojom::ServiceWorkerInstalledScriptsInfoPtr installed_scripts_info)

@@ -14,7 +14,7 @@ namespace blink {
 
 NGContainerFragmentBuilder::NGContainerFragmentBuilder(
     scoped_refptr<const ComputedStyle> style,
-    NGWritingMode writing_mode,
+    WritingMode writing_mode,
     TextDirection direction)
     : NGBaseFragmentBuilder(std::move(style), writing_mode, direction) {}
 
@@ -61,16 +61,16 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
   if (!ouf_of_flow_descendants.IsEmpty()) {
     NGLogicalOffset top_left_offset;
     NGPhysicalSize child_size = child->PhysicalFragment()->Size();
-    switch (WritingMode()) {
-      case kHorizontalTopBottom:
+    switch (GetWritingMode()) {
+      case WritingMode::kHorizontalTb:
         top_left_offset =
             (IsRtl(Direction()))
                 ? NGLogicalOffset{child_offset.inline_offset + child_size.width,
                                   child_offset.block_offset}
                 : child_offset;
         break;
-      case kVerticalRightLeft:
-      case kSidewaysRightLeft:
+      case WritingMode::kVerticalRl:
+      case WritingMode::kSidewaysRl:
         top_left_offset =
             (IsRtl(Direction()))
                 ? NGLogicalOffset{child_offset.inline_offset +
@@ -79,8 +79,8 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
                 : NGLogicalOffset{child_offset.inline_offset,
                                   child_offset.block_offset + child_size.width};
         break;
-      case kVerticalLeftRight:
-      case kSidewaysLeftRight:
+      case WritingMode::kVerticalLr:
+      case WritingMode::kSidewaysLr:
         top_left_offset = (IsRtl(Direction()))
                               ? NGLogicalOffset{child_offset.inline_offset +
                                                     child_size.height,
@@ -109,16 +109,29 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
 NGContainerFragmentBuilder&
 NGContainerFragmentBuilder::AddOutOfFlowChildCandidate(
     NGBlockNode child,
-    const NGLogicalOffset& child_offset,
-    Optional<TextDirection> direction) {
+    const NGLogicalOffset& child_offset) {
   DCHECK(child);
-
-  oof_positioned_candidates_.push_back(NGOutOfFlowPositionedCandidate{
+  oof_positioned_candidates_.push_back(NGOutOfFlowPositionedCandidate(
       NGOutOfFlowPositionedDescendant{
-          child, NGStaticPosition::Create(WritingMode(),
-                                          direction ? *direction : Direction(),
+          child, NGStaticPosition::Create(GetWritingMode(), Direction(),
                                           NGPhysicalOffset())},
-      child_offset});
+      child_offset));
+
+  child.SaveStaticOffsetForLegacy(child_offset);
+  return *this;
+}
+
+NGContainerFragmentBuilder&
+NGContainerFragmentBuilder::AddInlineOutOfFlowChildCandidate(
+    NGBlockNode child,
+    const NGLogicalOffset& child_offset,
+    TextDirection line_direction) {
+  DCHECK(child);
+  oof_positioned_candidates_.push_back(NGOutOfFlowPositionedCandidate(
+      NGOutOfFlowPositionedDescendant{
+          child, NGStaticPosition::Create(GetWritingMode(), line_direction,
+                                          NGPhysicalOffset())},
+      child_offset, line_direction));
 
   child.SaveStaticOffsetForLegacy(child_offset);
   return *this;
@@ -138,11 +151,14 @@ void NGContainerFragmentBuilder::GetAndClearOutOfFlowDescendantCandidates(
 
   DCHECK_GE(inline_size_, LayoutUnit());
   DCHECK_GE(block_size_, LayoutUnit());
-  NGPhysicalSize builder_physical_size{Size().ConvertToPhysical(WritingMode())};
+  NGPhysicalSize builder_physical_size{
+      Size().ConvertToPhysical(GetWritingMode())};
 
   for (NGOutOfFlowPositionedCandidate& candidate : oof_positioned_candidates_) {
+    TextDirection direction =
+        candidate.is_line_relative ? candidate.line_direction : Direction();
     NGPhysicalOffset child_offset = candidate.child_offset.ConvertToPhysical(
-        WritingMode(), Direction(), builder_physical_size, NGPhysicalSize());
+        GetWritingMode(), direction, builder_physical_size, NGPhysicalSize());
 
     NGStaticPosition builder_relative_position;
     builder_relative_position.type = candidate.descendant.static_position.type;

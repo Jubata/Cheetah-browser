@@ -4,10 +4,10 @@
 
 #include "platform/image-decoders/SegmentReader.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/SharedBuffer.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/Noncopyable.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/ThreadingPrimitives.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkRWBuffer.h"
@@ -183,17 +183,17 @@ sk_sp<SkData> ROBufferSegmentReader::GetAsSkData() const {
 
 scoped_refptr<SegmentReader> SegmentReader::CreateFromSharedBuffer(
     scoped_refptr<SharedBuffer> buffer) {
-  return WTF::AdoptRef(new SharedBufferSegmentReader(std::move(buffer)));
+  return base::AdoptRef(new SharedBufferSegmentReader(std::move(buffer)));
 }
 
 scoped_refptr<SegmentReader> SegmentReader::CreateFromSkData(
     sk_sp<SkData> data) {
-  return WTF::AdoptRef(new DataSegmentReader(std::move(data)));
+  return base::AdoptRef(new DataSegmentReader(std::move(data)));
 }
 
 scoped_refptr<SegmentReader> SegmentReader::CreateFromSkROBuffer(
     sk_sp<SkROBuffer> buffer) {
-  return WTF::AdoptRef(new ROBufferSegmentReader(std::move(buffer)));
+  return base::AdoptRef(new ROBufferSegmentReader(std::move(buffer)));
 }
 
 }  // namespace blink

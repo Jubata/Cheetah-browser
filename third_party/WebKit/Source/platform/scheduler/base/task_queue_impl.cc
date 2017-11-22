@@ -22,15 +22,15 @@ namespace scheduler {
 // static
 const char* TaskQueue::PriorityToString(TaskQueue::QueuePriority priority) {
   switch (priority) {
-    case CONTROL_PRIORITY:
+    case kControlPriority:
       return "control";
-    case HIGH_PRIORITY:
+    case kHighPriority:
       return "high";
-    case NORMAL_PRIORITY:
+    case kNormalPriority:
       return "normal";
-    case LOW_PRIORITY:
+    case kLowPriority:
       return "low";
-    case BEST_EFFORT_PRIORITY:
+    case kBestEffortPriority:
       return "best_effort";
     default:
       NOTREACHED();
@@ -50,8 +50,7 @@ TaskQueueImpl::TaskQueueImpl(TaskQueueManager* task_queue_manager,
       should_monitor_quiescence_(spec.should_monitor_quiescence),
       should_notify_observers_(spec.should_notify_observers),
       should_report_when_execution_blocked_(
-          spec.should_report_when_execution_blocked),
-      supports_async_deletion_(!!spec.shutdown_task_runner) {
+          spec.should_report_when_execution_blocked) {
   DCHECK(time_domain);
   time_domain->RegisterQueue(this);
 }
@@ -103,10 +102,10 @@ TaskQueueImpl::MainThreadOnly::MainThreadOnly(
     : task_queue_manager(task_queue_manager),
       time_domain(time_domain),
       delayed_work_queue(
-          new WorkQueue(task_queue, "delayed", WorkQueue::QueueType::DELAYED)),
+          new WorkQueue(task_queue, "delayed", WorkQueue::QueueType::kDelayed)),
       immediate_work_queue(new WorkQueue(task_queue,
                                          "immediate",
-                                         WorkQueue::QueueType::IMMEDIATE)),
+                                         WorkQueue::QueueType::kImmediate)),
       set_index(0),
       is_enabled_refcount(0),
       voter_refcount(0),
@@ -117,25 +116,35 @@ TaskQueueImpl::MainThreadOnly::MainThreadOnly(
 TaskQueueImpl::MainThreadOnly::~MainThreadOnly() {}
 
 void TaskQueueImpl::UnregisterTaskQueue() {
-  base::AutoLock lock(any_thread_lock_);
-  base::AutoLock immediate_incoming_queue_lock(immediate_incoming_queue_lock_);
-  if (main_thread_only().time_domain)
-    main_thread_only().time_domain->UnregisterQueue(this);
+  {
+    base::AutoLock lock(any_thread_lock_);
+    base::AutoLock immediate_incoming_queue_lock(
+        immediate_incoming_queue_lock_);
+    if (main_thread_only().time_domain)
+      main_thread_only().time_domain->UnregisterQueue(this);
 
-  if (!any_thread().task_queue_manager)
-    return;
+    if (!any_thread().task_queue_manager)
+      return;
 
-  main_thread_only().on_task_completed_handler = OnTaskCompletedHandler();
-  any_thread().time_domain = nullptr;
-  main_thread_only().time_domain = nullptr;
+    main_thread_only().on_task_completed_handler = OnTaskCompletedHandler();
+    any_thread().time_domain = nullptr;
+    main_thread_only().time_domain = nullptr;
 
-  any_thread().task_queue_manager = nullptr;
-  main_thread_only().task_queue_manager = nullptr;
-  any_thread().on_next_wake_up_changed_callback = OnNextWakeUpChangedCallback();
-  main_thread_only().on_next_wake_up_changed_callback =
-      OnNextWakeUpChangedCallback();
+    any_thread().task_queue_manager = nullptr;
+    main_thread_only().task_queue_manager = nullptr;
+    any_thread().on_next_wake_up_changed_callback =
+        OnNextWakeUpChangedCallback();
+    main_thread_only().on_next_wake_up_changed_callback =
+        OnNextWakeUpChangedCallback();
+  }
+
+  // Flush the queues outside of the lock because TSAN complains about a lock
+  // order inversion for tasks that are posted from within a lock, with a
+  // destructor that acquires the same lock.
   main_thread_only().delayed_incoming_queue = std::priority_queue<Task>();
-  immediate_incoming_queue().clear();
+  // NB this should be safe since TaskQueueImpl::PostImmediateTaskImpl does
+  // nothing if any_thread().task_queue_manager is null.
+  immediate_incoming_queue_.clear();
   main_thread_only().immediate_work_queue.reset();
   main_thread_only().delayed_work_queue.reset();
 }
@@ -320,7 +329,7 @@ TaskQueueImpl::TaskDeque TaskQueueImpl::TakeImmediateIncomingQueue() {
       if (task.delayed_run_time >= main_thread_only().delayed_fence.value()) {
         main_thread_only().delayed_fence = base::nullopt;
         DCHECK_EQ(main_thread_only().current_fence,
-                  static_cast<EnqueueOrder>(EnqueueOrderValues::NONE));
+                  static_cast<EnqueueOrder>(EnqueueOrderValues::kNone));
         bool task_unblocked = InsertFenceImpl(task.enqueue_order());
         DCHECK(!task_unblocked)
             << "Activating a delayed fence shouldn't unblock new work";
@@ -577,9 +586,9 @@ void TaskQueueImpl::InsertFence(TaskQueue::InsertFencePosition position) {
 
   EnqueueOrder previous_fence = main_thread_only().current_fence;
   EnqueueOrder current_fence =
-      position == TaskQueue::InsertFencePosition::NOW
+      position == TaskQueue::InsertFencePosition::kNow
           ? main_thread_only().task_queue_manager->GetNextSequenceNumber()
-          : static_cast<EnqueueOrder>(EnqueueOrderValues::BLOCKING_FENCE);
+          : static_cast<EnqueueOrder>(EnqueueOrderValues::kBlockingFence);
 
   // Tasks posted after this point will have a strictly higher enqueue order
   // and will be blocked from running.
@@ -945,6 +954,12 @@ base::WeakPtr<TaskQueueManager> TaskQueueImpl::GetTaskQueueManagerWeakPtr() {
   return main_thread_only().task_queue_manager->GetWeakPtr();
 }
 
+scoped_refptr<GracefulQueueShutdownHelper>
+TaskQueueImpl::GetGracefulQueueShutdownHelper() {
+  return main_thread_only()
+      .task_queue_manager->GetGracefulQueueShutdownHelper();
+}
+
 void TaskQueueImpl::SetQueueEnabledForTest(bool enabled) {
   main_thread_only().is_enabled_for_test = enabled;
   EnableOrDisableWithSelector(IsQueueEnabled());
@@ -955,7 +970,7 @@ void TaskQueueImpl::ActivateDelayedFenceIfNeeded(base::TimeTicks now) {
     return;
   if (main_thread_only().delayed_fence.value() > now)
     return;
-  InsertFence(TaskQueue::InsertFencePosition::NOW);
+  InsertFence(TaskQueue::InsertFencePosition::kNow);
   main_thread_only().delayed_fence = base::nullopt;
 }
 

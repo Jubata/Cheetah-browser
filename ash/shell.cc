@@ -38,14 +38,13 @@
 #include "ash/first_run/first_run_helper_impl.h"
 #include "ash/focus_cycler.h"
 #include "ash/frame/custom_frame_view_ash.h"
-#include "ash/gpu_support.h"
 #include "ash/high_contrast/high_contrast_controller.h"
 #include "ash/highlighter/highlighter_controller.h"
 #include "ash/host/ash_window_tree_host_init_params.h"
 #include "ash/ime/ime_controller.h"
 #include "ash/keyboard/keyboard_ui.h"
 #include "ash/laser/laser_pointer_controller.h"
-#include "ash/login/lock_screen_controller.h"
+#include "ash/login/login_screen_controller.h"
 #include "ash/login_status.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
@@ -139,12 +138,12 @@
 #include "base/sys_info.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/trace_event/trace_event.h"
-#include "chromeos/audio/audio_a11y_controller.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/system/devicemode.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
+#include "components/viz/host/host_frame_sink_manager.h"
 #include "services/preferences/public/cpp/pref_service_factory.h"
 #include "services/preferences/public/interfaces/preferences.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -349,7 +348,7 @@ void Shell::RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
 void Shell::RegisterProfilePrefs(PrefRegistrySimple* registry, bool for_test) {
   AccessibilityController::RegisterProfilePrefs(registry, for_test);
   BluetoothPowerController::RegisterProfilePrefs(registry);
-  LockScreenController::RegisterProfilePrefs(registry, for_test);
+  LoginScreenController::RegisterProfilePrefs(registry, for_test);
   LogoutButtonTray::RegisterProfilePrefs(registry);
   NightLightController::RegisterProfilePrefs(registry);
   PaletteTray::RegisterProfilePrefs(registry);
@@ -459,15 +458,6 @@ SystemTray* Shell::GetPrimarySystemTray() {
   return GetPrimaryRootWindowController()->GetSystemTray();
 }
 
-void Shell::SetTouchHudProjectionEnabled(bool enabled) {
-  if (is_touch_hud_projection_enabled_ == enabled)
-    return;
-
-  is_touch_hud_projection_enabled_ = enabled;
-  for (auto& observer : shell_observers_)
-    observer.OnTouchHudProjectionToggled(enabled);
-}
-
 FirstRunHelper* Shell::CreateFirstRunHelper() {
   return new FirstRunHelperImpl;
 }
@@ -486,8 +476,12 @@ void Shell::UpdateCursorCompositingEnabled() {
 void Shell::SetCursorCompositingEnabled(bool enabled) {
   if (GetAshConfig() != Config::MASH) {
     // TODO: needs to work in mash. http://crbug.com/705592.
-    window_tree_host_manager_->cursor_window_controller()
-        ->SetCursorCompositingEnabled(enabled);
+    CursorWindowController* cursor_window_controller =
+        window_tree_host_manager_->cursor_window_controller();
+
+    if (cursor_window_controller->is_cursor_compositing_enabled() == enabled)
+      return;
+    cursor_window_controller->SetCursorCompositingEnabled(enabled);
     native_cursor_manager_->SetNativeCursorEnabled(!enabled);
   }
 }
@@ -595,7 +589,7 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate,
           std::make_unique<KeyboardBrightnessController>()),
       locale_notification_controller_(
           std::make_unique<LocaleNotificationController>()),
-      lock_screen_controller_(std::make_unique<LockScreenController>()),
+      login_screen_controller_(std::make_unique<LoginScreenController>()),
       media_controller_(std::make_unique<MediaController>()),
       new_window_controller_(std::make_unique<NewWindowController>()),
       session_controller_(std::make_unique<SessionController>(
@@ -614,12 +608,9 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate,
       display_configurator_(new display::DisplayConfigurator()),
       native_cursor_manager_(nullptr),
       simulate_modal_window_open_for_testing_(false),
-      is_touch_hud_projection_enabled_(false),
       weak_factory_(this) {
   // TODO(sky): better refactor cash/mash dependencies. Perhaps put all cash
   // state on ShellPortClassic. http://crbug.com/671246.
-
-  gpu_support_.reset(shell_delegate_->CreateGPUSupport());
 
   display_manager_.reset(ScreenAsh::CreateDisplayManager());
   window_tree_host_manager_ = std::make_unique<WindowTreeHostManager>();
@@ -744,7 +735,6 @@ Shell::~Shell() {
   modality_filter_.reset();
 
   touch_transformer_controller_.reset();
-  audio_a11y_controller_.reset();
   laser_pointer_controller_.reset();
   partial_magnification_controller_.reset();
   highlighter_controller_.reset();
@@ -831,11 +821,11 @@ Shell::~Shell() {
 void Shell::Init(const ShellInitParams& init_params) {
   const Config config = shell_port_->GetAshConfig();
 
+  // These controllers call Shell::Get() in their constructors, so they cannot
+  // be in the member initialization list.
   if (switches::IsNightLightEnabled())
     night_light_controller_ = std::make_unique<NightLightController>();
-
   touch_devices_controller_ = std::make_unique<TouchDevicesController>();
-
   bluetooth_power_controller_ = std::make_unique<BluetoothPowerController>();
 
   wallpaper_delegate_ = shell_delegate_->CreateWallpaperDelegate();
@@ -896,7 +886,7 @@ void Shell::Init(const ShellInitParams& init_params) {
       std::make_unique<DisplayConfigurationController>(
           display_manager_.get(), window_tree_host_manager_.get());
   display_configurator_->Init(shell_port_->CreateNativeDisplayDelegate(),
-                              !gpu_support_->IsPanelFittingDisabled());
+                              false);
 
   // The DBusThreadManager must outlive this Shell. See the DCHECK in ~Shell.
   chromeos::DBusThreadManager* dbus_thread_manager =
@@ -1067,7 +1057,11 @@ void Shell::Init(const ShellInitParams& init_params) {
   autoclick_controller_.reset(AutoclickController::CreateInstance());
 
   high_contrast_controller_.reset(new HighContrastController);
-  video_detector_.reset(new VideoDetector);
+
+  viz::mojom::VideoDetectorObserverPtr observer;
+  video_detector_ =
+      std::make_unique<VideoDetector>(mojo::MakeRequest(&observer));
+  shell_port_->AddVideoDetectorObserver(std::move(observer));
 
   tooltip_controller_.reset(new views::corewm::TooltipController(
       std::unique_ptr<views::corewm::Tooltip>(new views::corewm::TooltipAura)));
@@ -1108,8 +1102,6 @@ void Shell::Init(const ShellInitParams& init_params) {
   // keyboard to be deployed.
   if (config != Config::MASH)
     virtual_keyboard_controller_.reset(new VirtualKeyboardController);
-
-  audio_a11y_controller_.reset(new chromeos::AudioA11yController);
 
   // Initialize the wallpaper after the RootWindowController has been created,
   // otherwise the widget will not paint when restoring after a browser crash.
@@ -1236,13 +1228,13 @@ void Shell::OnSessionStateChanged(session_manager::SessionState state) {
   // |LOGGED_IN_NOT_ACTIVE| is needed so that the virtual keyboard works on
   // supervised user creation. crbug.com/712873
   // |ACTIVE| is also needed for guest user workflow.
+  // NOTE: keyboard::IsKeyboardEnabled() is false in mash, but may not be in
+  // unit tests. crbug.com/646565.
   if ((state == session_manager::SessionState::LOGGED_IN_NOT_ACTIVE ||
        state == session_manager::SessionState::ACTIVE) &&
       keyboard::IsKeyboardEnabled()) {
-    if (GetAshConfig() != Config::MASH) {
-      // Recreate the keyboard after initial login and after multiprofile login.
-      CreateKeyboard();
-    }
+    // Recreate the keyboard after initial login and after multiprofile login.
+    CreateKeyboard();
   }
 
   shell_port_->UpdateSystemModalAndBlockingContainers();

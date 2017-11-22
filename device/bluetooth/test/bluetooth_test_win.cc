@@ -196,8 +196,11 @@ void BluetoothTestWin::SimulateGattConnection(BluetoothDevice* device) {
 void BluetoothTestWin::SimulateGattServicesDiscovered(
     BluetoothDevice* device,
     const std::vector<std::string>& uuids) {
+  std::string address =
+      device ? device->GetAddress() : remembered_device_address_;
+
   win::BLEDevice* simulated_device =
-      fake_bt_le_wrapper_->GetSimulatedBLEDevice(device->GetAddress());
+      fake_bt_le_wrapper_->GetSimulatedBLEDevice(address);
   CHECK(simulated_device);
 
   for (auto uuid : uuids) {
@@ -205,6 +208,11 @@ void BluetoothTestWin::SimulateGattServicesDiscovered(
         simulated_device, nullptr, CanonicalStringToBTH_LE_UUID(uuid));
   }
 
+  FinishPendingTasks();
+
+  // We still need to discover characteristics.  Wait for the appropriate method
+  // to be posted and then finish the pending tasks.
+  base::RunLoop().RunUntilIdle();
   FinishPendingTasks();
 }
 
@@ -363,6 +371,11 @@ void BluetoothTestWin::SimulateGattCharacteristicWriteError(
   FinishPendingTasks();
 }
 
+void BluetoothTestWin::RememberDeviceForSubsequentAction(
+    BluetoothDevice* device) {
+  remembered_device_address_ = device->GetAddress();
+}
+
 void BluetoothTestWin::DeleteDevice(BluetoothDevice* device) {
   CHECK(device);
   fake_bt_le_wrapper_->RemoveSimulatedBLEDevice(device->GetAddress());
@@ -505,6 +518,11 @@ void BluetoothTestWin::RunPendingTasksUntilCallback() {
 
 void BluetoothTestWin::ForceRefreshDevice() {
   adapter_win_->force_update_device_for_test_ = true;
+  FinishPendingTasks();
+  adapter_win_->force_update_device_for_test_ = false;
+
+  // The characteristics still need to be discovered.
+  base::RunLoop().RunUntilIdle();
   FinishPendingTasks();
 }
 

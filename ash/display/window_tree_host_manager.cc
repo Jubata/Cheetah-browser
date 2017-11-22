@@ -33,6 +33,7 @@
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/screen_position_client.h"
+#include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tracker.h"
@@ -493,8 +494,8 @@ void WindowTreeHostManager::OnDisplayAdded(const display::Display& display) {
   // create new WTH for primary display instead of reusing.
   if (primary_tree_host_for_replace_ &&
       (GetRootWindowSettings(GetWindow(primary_tree_host_for_replace_))
-               ->display_id == display::DisplayManager::kUnifiedDisplayId ||
-       display.id() == display::DisplayManager::kUnifiedDisplayId)) {
+               ->display_id == display::kUnifiedDisplayId ||
+       display.id() == display::kUnifiedDisplayId)) {
     DCHECK_EQ(display::kInvalidDisplayId, primary_display_id);
     primary_display_id = display.id();
 
@@ -649,7 +650,9 @@ void WindowTreeHostManager::OnHostResized(aura::WindowTreeHost* host) {
   display::DisplayManager* display_manager = GetDisplayManager();
   if (display_manager->UpdateDisplayBounds(display.id(),
                                            host->GetBoundsInPixels())) {
-    mirror_window_controller_->UpdateWindow();
+    // The window server controls mirroring in Mus, not Ash.
+    if (aura::Env::GetInstance()->mode() == aura::Env::Mode::LOCAL)
+      mirror_window_controller_->UpdateWindow();
     cursor_window_controller_->UpdateContainer();
   }
 }
@@ -658,7 +661,9 @@ void WindowTreeHostManager::CreateOrUpdateMirroringDisplay(
     const display::DisplayInfoList& info_list) {
   if (GetDisplayManager()->IsInMirrorMode() ||
       GetDisplayManager()->IsInUnifiedMode()) {
-    mirror_window_controller_->UpdateWindow(info_list);
+    // The window server controls mirroring in Mus, not Ash.
+    if (aura::Env::GetInstance()->mode() == aura::Env::Mode::LOCAL)
+      mirror_window_controller_->UpdateWindow(info_list);
     cursor_window_controller_->UpdateContainer();
   } else {
     NOTREACHED();
@@ -666,7 +671,9 @@ void WindowTreeHostManager::CreateOrUpdateMirroringDisplay(
 }
 
 void WindowTreeHostManager::CloseMirroringDisplayIfNotNecessary() {
-  mirror_window_controller_->CloseIfNotNecessary();
+  // The window server controls mirroring in Mus, not Ash.
+  if (aura::Env::GetInstance()->mode() == aura::Env::Mode::LOCAL)
+    mirror_window_controller_->CloseIfNotNecessary();
   // If cursor_compositing is enabled for large cursor, the cursor window is
   // always on the desktop display (the visible cursor on the non-desktop
   // display is drawn through compositor mirroring). Therefore, it's unnecessary
@@ -725,6 +732,11 @@ void WindowTreeHostManager::PostDisplayConfigurationChange() {
   for (auto& observer : observers_)
     observer.OnDisplayConfigurationChanged();
   UpdateMouseLocationAfterDisplayChange();
+
+  // Enable cursor compositing, so that cursor could be mirrored to destination
+  // displays along with other display content through reflector.
+  if (display_manager->is_multi_mirroring_enabled())
+    Shell::Get()->UpdateCursorCompositingEnabled();
 }
 
 display::DisplayConfigurator* WindowTreeHostManager::display_configurator() {
@@ -756,7 +768,7 @@ AshWindowTreeHost* WindowTreeHostManager::AddWindowTreeHostForDisplay(
       GetDisplayManager()->GetDisplayInfo(display.id());
   AshWindowTreeHostInitParams params_with_bounds(init_params);
   params_with_bounds.initial_bounds = display_info.bounds_in_native();
-  if (display.id() == display::DisplayManager::kUnifiedDisplayId) {
+  if (display.id() == display::kUnifiedDisplayId) {
     params_with_bounds.offscreen = true;
     params_with_bounds.mirroring_delegate = mirror_window_controller();
   }

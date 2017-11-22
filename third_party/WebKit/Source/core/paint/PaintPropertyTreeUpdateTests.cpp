@@ -994,4 +994,33 @@ TEST_P(PaintPropertyTreeUpdateTest, SVGMaskTargetBoundsChange) {
   EXPECT_EQ(FloatRoundedRect(0, 50, 200, 100), mask_clip->ClipRect());
 }
 
+TEST_P(PaintPropertyTreeUpdateTest, WillTransformChangeAboveFixed) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #container { position: absolute; top: 100px; left: 100px }
+    </style>
+    <div id='container' style='will-change: transform'>
+      <div id='fixed' style='position: fixed; top: 50px; left: 50px'></div>
+    </div>
+  )HTML");
+
+  const auto* container = GetLayoutObjectByElementId("container");
+  const auto* fixed = GetLayoutObjectByElementId("fixed");
+  EXPECT_EQ(container->FirstFragment().PaintProperties()->Transform(),
+            fixed->FirstFragment().LocalBorderBoxProperties()->Transform());
+
+  ToElement(container->GetNode())
+      ->setAttribute(HTMLNames::styleAttr, "will-change: top");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_EQ(
+      GetLayoutView().FirstFragment().LocalBorderBoxProperties()->Transform(),
+      fixed->FirstFragment().LocalBorderBoxProperties()->Transform());
+
+  ToElement(container->GetNode())
+      ->setAttribute(HTMLNames::styleAttr, "will-change: transform");
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  EXPECT_EQ(container->FirstFragment().PaintProperties()->Transform(),
+            fixed->FirstFragment().LocalBorderBoxProperties()->Transform());
+}
+
 }  // namespace blink

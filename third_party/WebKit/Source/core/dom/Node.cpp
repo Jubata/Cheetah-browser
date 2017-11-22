@@ -61,7 +61,6 @@
 #include "core/dom/UserActionElementSet.h"
 #include "core/dom/V0InsertionPoint.h"
 #include "core/dom/events/Event.h"
-#include "core/dom/events/EventDispatchMediator.h"
 #include "core/dom/events/EventDispatcher.h"
 #include "core/dom/events/EventListener.h"
 #include "core/editing/EditingUtilities.h"
@@ -744,7 +743,22 @@ bool Node::NeedsDistributionRecalc() const {
   return ShadowIncludingRoot().ChildNeedsDistributionRecalc();
 }
 
+bool Node::MayContainLegacyNodeTreeWhereDistributionShouldBeSupported() const {
+  if (!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+    return true;
+  if (isConnected() && !GetDocument().MayContainV0Shadow()) {
+    // TODO(crbug.com/787717): Some built-in elements still use <content>
+    // elements in their user-agent shadow roots. DCHECK() fails if such an
+    // element is used.
+    DCHECK(!GetDocument().ChildNeedsDistributionRecalc());
+    return false;
+  }
+  return true;
+}
+
 void Node::UpdateDistribution() {
+  if (!MayContainLegacyNodeTreeWhereDistributionShouldBeSupported())
+    return;
   // Extra early out to avoid spamming traces.
   if (isConnected() && !GetDocument().ChildNeedsDistributionRecalc())
     return;
@@ -1056,7 +1070,7 @@ void Node::AttachLayoutTree(AttachContext& context) {
   ClearNeedsStyleRecalc();
   ClearNeedsReattachLayoutTree();
 
-  if (AXObjectCache* cache = GetDocument().AxObjectCache())
+  if (AXObjectCache* cache = GetDocument().GetOrCreateAXObjectCache())
     cache->UpdateCacheAfterNodeIsAttached(this);
 }
 
@@ -1129,7 +1143,7 @@ bool Node::CanParticipateInFlatTree() const {
 
 bool Node::IsActiveSlotOrActiveV0InsertionPoint() const {
   return (IsHTMLSlotElement(*this) &&
-          ToHTMLSlotElement(*this).SupportsDistribution()) ||
+          ToHTMLSlotElement(*this).SupportsAssignment()) ||
          IsActiveV0InsertionPoint(*this);
 }
 
@@ -2208,11 +2222,11 @@ void Node::HandleLocalEvents(Event& event) {
 
 void Node::DispatchScopedEvent(Event* event) {
   event->SetTrusted(true);
-  EventDispatcher::DispatchScopedEvent(*this, event->CreateMediator());
+  EventDispatcher::DispatchScopedEvent(*this, event);
 }
 
 DispatchEventResult Node::DispatchEventInternal(Event* event) {
-  return EventDispatcher::DispatchEvent(*this, event->CreateMediator());
+  return EventDispatcher::DispatchEvent(*this, event);
 }
 
 void Node::DispatchSubtreeModifiedEvent() {
@@ -2630,7 +2644,7 @@ void Node::CheckSlotChange(SlotChangeType slot_change_type) {
     Element* parent = parentElement();
     if (parent && IsHTMLSlotElement(parent)) {
       HTMLSlotElement& parent_slot = ToHTMLSlotElement(*parent);
-      DCHECK(parent_slot.SupportsDistribution());
+      DCHECK(parent_slot.SupportsAssignment());
       // The parent_slot's assigned nodes might not be calculated because they
       // are lazy evaluated later at UpdateDistribution() so we have to check it
       // here.

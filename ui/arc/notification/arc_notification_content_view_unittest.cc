@@ -15,9 +15,10 @@
 #include "components/exo/keyboard.h"
 #include "components/exo/keyboard_delegate.h"
 #include "components/exo/notification_surface.h"
+#include "components/exo/seat.h"
 #include "components/exo/surface.h"
 #include "components/exo/test/exo_test_helper.h"
-#include "components/exo/wm_helper_ash.h"
+#include "components/exo/wm_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/arc/notification/arc_notification_content_view.h"
 #include "ui/arc/notification/arc_notification_delegate.h"
@@ -31,7 +32,7 @@
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/message_center/notification.h"
-#include "ui/message_center/views/message_center_controller.h"
+#include "ui/message_center/views/message_view_delegate.h"
 #include "ui/message_center/views/message_view_factory.h"
 #include "ui/message_center/views/notification_control_buttons_view.h"
 #include "ui/message_center/views/padded_button.h"
@@ -56,39 +57,6 @@ class MockKeyboardDelegate : public exo::KeyboardDelegate {
   MOCK_METHOD1(OnKeyboardLeave, void(exo::Surface*));
   MOCK_METHOD3(OnKeyboardKey, uint32_t(base::TimeTicks, ui::DomCode, bool));
   MOCK_METHOD1(OnKeyboardModifiers, void(int));
-};
-
-class TestWMHelper : public exo::WMHelper {
- public:
-  TestWMHelper() = default;
-  ~TestWMHelper() override = default;
-
-  const display::ManagedDisplayInfo& GetDisplayInfo(
-      int64_t display_id) const override {
-    static const display::ManagedDisplayInfo info;
-    return info;
-  }
-  aura::Window* GetPrimaryDisplayContainer(int container_id) override {
-    return nullptr;
-  }
-  aura::Window* GetActiveWindow() const override { return nullptr; }
-  aura::Window* GetFocusedWindow() const override { return nullptr; }
-  ui::CursorSize GetCursorSize() const override {
-    return ui::CursorSize::kNormal;
-  }
-  const display::Display& GetCursorDisplay() const override {
-    static const display::Display display;
-    return display;
-  }
-  void AddPreTargetHandler(ui::EventHandler* handler) override {}
-  void PrependPreTargetHandler(ui::EventHandler* handler) override {}
-  void RemovePreTargetHandler(ui::EventHandler* handler) override {}
-  void AddPostTargetHandler(ui::EventHandler* handler) override {}
-  void RemovePostTargetHandler(ui::EventHandler* handler) override {}
-  bool IsTabletModeWindowManagerEnabled() const override { return false; }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestWMHelper);
 };
 
 aura::Window* GetFocusedWindow() {
@@ -153,12 +121,11 @@ class MockArcNotificationItem : public ArcNotificationItem {
   DISALLOW_COPY_AND_ASSIGN(MockArcNotificationItem);
 };
 
-class TestMessageCenterController
-    : public message_center::MessageCenterController {
+class TestMessageViewDelegate : public message_center::MessageViewDelegate {
  public:
-  TestMessageCenterController() = default;
+  TestMessageViewDelegate() = default;
 
-  // MessageCenterController
+  // MessageViewDelegate
   void ClickOnNotification(const std::string& notification_id) override {
     // For this test, this method should not be invoked.
     NOTREACHED();
@@ -182,6 +149,14 @@ class TestMessageCenterController
     NOTREACHED();
   }
 
+  void ClickOnNotificationButtonWithReply(
+      const std::string& notification_id,
+      int button_index,
+      const base::string16& reply) override {
+    // For this test, this method should not be invoked.
+    NOTREACHED();
+  }
+
   void ClickOnSettingsButton(const std::string& notification_id) override {
     // For this test, this method should not be invoked.
     NOTREACHED();
@@ -196,7 +171,7 @@ class TestMessageCenterController
  private:
   std::set<std::string> removed_ids_;
 
-  DISALLOW_COPY_AND_ASSIGN(TestMessageCenterController);
+  DISALLOW_COPY_AND_ASSIGN(TestMessageViewDelegate);
 };
 
 class DummyEvent : public ui::Event {
@@ -213,7 +188,7 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
   void SetUp() override {
     ash::AshTestBase::SetUp();
 
-    wm_helper_ = std::make_unique<exo::WMHelperAsh>();
+    wm_helper_ = std::make_unique<exo::WMHelper>();
     exo::WMHelper::SetInstance(wm_helper_.get());
     DCHECK(exo::WMHelper::HasInstance());
 
@@ -315,7 +290,7 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
         new ArcNotificationDelegate(notification_item->GetWeakPtr()));
   }
 
-  TestMessageCenterController* controller() { return &controller_; }
+  TestMessageViewDelegate* controller() { return &controller_; }
   ArcNotificationSurfaceManagerImpl* surface_manager() {
     return surface_manager_.get();
   }
@@ -344,7 +319,7 @@ class ArcNotificationContentViewTest : public ash::AshTestBase {
   }
 
  private:
-  TestMessageCenterController controller_;
+  TestMessageViewDelegate controller_;
   std::unique_ptr<exo::WMHelper> wm_helper_;
   std::unique_ptr<ArcNotificationSurfaceManagerImpl> surface_manager_;
   std::unique_ptr<exo::Buffer> surface_buffer_;
@@ -538,7 +513,8 @@ TEST_F(ArcNotificationContentViewTest, AcceptInputTextWithActivate) {
   MockKeyboardDelegate delegate;
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface()))
       .WillOnce(testing::Return(true));
-  auto keyboard = std::make_unique<exo::Keyboard>(&delegate);
+  exo::Seat seat;
+  auto keyboard = std::make_unique<exo::Keyboard>(&delegate, &seat);
 
   ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
   EXPECT_CALL(delegate, OnKeyboardKey(testing::_, ui::DomCode::US_A, true));
@@ -560,7 +536,8 @@ TEST_F(ArcNotificationContentViewTest, NotAcceptInputTextWithoutActivate) {
 
   MockKeyboardDelegate delegate;
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface())).Times(0);
-  auto keyboard = std::make_unique<exo::Keyboard>(&delegate);
+  exo::Seat seat;
+  auto keyboard = std::make_unique<exo::Keyboard>(&delegate, &seat);
 
   ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
   EXPECT_CALL(delegate, OnKeyboardKey(testing::_, testing::_, testing::_))

@@ -31,7 +31,6 @@
 #include "extensions/renderer/user_script_set_manager.h"
 #include "extensions/renderer/v8_schema_registry.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/platform/WebVector.h"
 #include "v8/include/v8.h"
 
 class ChromeRenderViewTest;
@@ -134,9 +133,13 @@ class Dispatcher : public content::RenderThreadObserver,
                                 const std::string& function_name,
                                 const base::ListValue& args);
 
-  // Returns a list of (module name, resource id) pairs for the JS modules to
-  // add to the source map.
-  static std::vector<std::pair<const char*, int>> GetJsResources();
+  struct JsResourceInfo {
+    const char* name = nullptr;
+    int id = 0;
+    bool gzipped = false;
+  };
+  // Returns a list of resources for the JS modules to add to the source map.
+  static std::vector<JsResourceInfo> GetJsResources();
   static void RegisterNativeHandlers(ModuleSystem* module_system,
                                      ScriptContext* context,
                                      Dispatcher* dispatcher,

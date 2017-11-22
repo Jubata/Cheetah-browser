@@ -27,25 +27,11 @@ if (is_android) {
 
   if (enable_chrome_android_internal) {
     import("//clank/config.gni")
-
-    # TODO(jbudorick): Remove this after landing the corresponding
-    # internal change.
-    if (!defined(android_sdk_release)) {
-      if (defined(use_unpublished_apis) && use_unpublished_apis) {
-        default_android_sdk_release = "o_mr1"
-        public_android_sdk = false
-      } else {
-        default_android_sdk_release = "o"
-      }
-      declare_args() {
-        # Android SDK release. Currently, only "o" is publicly supported.
-        android_sdk_release = default_android_sdk_release
-      }
-    }
   } else {
+    import("//build/config/android/sdk.gni")
     declare_args() {
       # Android SDK release. Currently, only "o" is publicly supported.
-      android_sdk_release = "o"
+      android_sdk_release = default_android_sdk_release
     }
   }
 
@@ -113,6 +99,9 @@ if (is_android) {
     webview_framework_jar = webview_public_framework_jar
   }
 
+  assert(defined(default_android_sdk_root),
+         "SDK release " + android_sdk_release + " not recognized.")
+
   declare_args() {
     android_ndk_root = default_android_ndk_root
     android_ndk_version = default_android_ndk_version
@@ -144,19 +133,16 @@ if (is_android) {
     # The password for the keystore to use for signing builds.
     android_keystore_password = default_android_keystore_password
 
-    # Set to true to run findbugs on JAR targets.
-    run_findbugs = false
-
-    # Set to true to enable verbose findbugs logging. This does nothing if
-    # run_findbugs is false.
-    findbugs_verbose = false
-
     # Enables verbose proguard output (summaries and unfiltered output).
     proguard_verbose = false
 
     # Java debug on Android. Having this on enables multidexing, and turning it
     # off will enable proguard.
     is_java_debug = is_debug
+
+    # Report Java assert failure on Android. Turning it on will report Java
+    # assert failure without crash.
+    report_java_assert = false
 
     # Mark APKs as android:debuggable="true".
     debuggable_apks = !is_official_build

@@ -8,7 +8,6 @@
 
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/scoped_observer.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,6 +29,7 @@
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/core/browser/account_tracker_service.h"
+#include "components/signin/core/browser/dice_account_reconcilor_delegate.h"
 #include "components/signin/core/browser/fake_gaia_cookie_manager_service.h"
 #include "components/signin/core/browser/fake_profile_oauth2_token_service.h"
 #include "components/signin/core/browser/profile_management_switches.h"
@@ -49,17 +49,32 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+// gmock does not allow mocking classes with move-only parameters, preventing
+// from mocking the AccountReconcilor class directly (because of the
+// unique_ptr<AccountReconcilorDelegate> parameter).
+// Introduce a dummy class creating the delegate internally, to avoid the move.
+class DummyAccountReconcilorWithDelegate : public AccountReconcilor {
+ public:
+  explicit DummyAccountReconcilorWithDelegate(Profile* profile)
+      : AccountReconcilor(
+            ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+            SigninManagerFactory::GetForProfile(profile),
+            ChromeSigninClientFactory::GetForProfile(profile),
+            GaiaCookieManagerServiceFactory::GetForProfile(profile),
+            AccountReconcilorFactory::CreateAccountReconcilorDelegate(
+                profile)) {
+    Initialize(false /* start_reconcile_if_tokens_available */);
+  }
+};
+
 namespace {
 
-class MockAccountReconcilor : public testing::StrictMock<AccountReconcilor> {
+class MockAccountReconcilor
+    : public testing::StrictMock<DummyAccountReconcilorWithDelegate> {
  public:
   static std::unique_ptr<KeyedService> Build(content::BrowserContext* context);
 
-  MockAccountReconcilor(ProfileOAuth2TokenService* token_service,
-                        SigninManagerBase* signin_manager,
-                        SigninClient* client,
-                        GaiaCookieManagerService* cookie_manager_service);
-  ~MockAccountReconcilor() override {}
+  explicit MockAccountReconcilor(Profile* profile);
 
   MOCK_METHOD1(PerformMergeAction, void(const std::string& account_id));
   MOCK_METHOD0(PerformLogoutAllAccountsAction, void());
@@ -69,24 +84,11 @@ class MockAccountReconcilor : public testing::StrictMock<AccountReconcilor> {
 std::unique_ptr<KeyedService> MockAccountReconcilor::Build(
     content::BrowserContext* context) {
   Profile* profile = Profile::FromBrowserContext(context);
-  std::unique_ptr<AccountReconcilor> reconcilor(new MockAccountReconcilor(
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
-      SigninManagerFactory::GetForProfile(profile),
-      ChromeSigninClientFactory::GetForProfile(profile),
-      GaiaCookieManagerServiceFactory::GetForProfile(profile)));
-  reconcilor->Initialize(false /* start_reconcile_if_tokens_available */);
-  return std::move(reconcilor);
+  return std::make_unique<MockAccountReconcilor>(profile);
 }
 
-MockAccountReconcilor::MockAccountReconcilor(
-    ProfileOAuth2TokenService* token_service,
-    SigninManagerBase* signin_manager,
-    SigninClient* client,
-    GaiaCookieManagerService* cookie_manager_service)
-    : testing::StrictMock<AccountReconcilor>(token_service,
-                                             signin_manager,
-                                             client,
-                                             cookie_manager_service) {}
+MockAccountReconcilor::MockAccountReconcilor(Profile* profile)
+    : testing::StrictMock<DummyAccountReconcilorWithDelegate>(profile) {}
 
 }  // namespace
 
@@ -270,6 +272,7 @@ TEST_F(AccountReconcilorTest, Basic) {
 // method with an empty implementation. On MacOS, the normal implementation
 // causes the try_bots to time out.
 TEST_F(AccountReconcilorTest, SigninManagerRegistration) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   AccountReconcilor* reconcilor =
       AccountReconcilorFactory::GetForProfile(profile());
   ASSERT_TRUE(reconcilor);
@@ -291,6 +294,7 @@ TEST_F(AccountReconcilorTest, SigninManagerRegistration) {
 // method with an empty implementation. On MacOS, the normal implementation
 // causes the try_bots to time out.
 TEST_F(AccountReconcilorTest, Reauth) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string email = "user@gmail.com";
   const std::string account_id =
       ConnectProfileToAccount("12345", email);
@@ -308,6 +312,7 @@ TEST_F(AccountReconcilorTest, Reauth) {
 #endif  // !defined(OS_CHROMEOS)
 
 TEST_F(AccountReconcilorTest, ProfileAlreadyConnected) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   ConnectProfileToAccount("12345", "user@gmail.com");
 
   AccountReconcilor* reconcilor =
@@ -828,6 +833,60 @@ TEST_F(AccountReconcilorTest, DiceLastKnownFirstAccount) {
   }
 }
 
+// Checks that the reconcilor does not log out unverified accounts.
+TEST_F(AccountReconcilorTest, UnverifiedAccountNoop) {
+  // Enable Dice.
+  signin::ScopedAccountConsistencyDice scoped_dice;
+
+  // Add a unverified account to the Gaia cookie.
+  cookie_manager_service()->SetListAccountsResponseOneAccountWithParams(
+      "user@gmail.com", "12345", true /* is_email_valid */,
+      false /* signed_out */, false /* verified */);
+
+  // Check that nothing happens.
+  EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(testing::_)).Times(0);
+  EXPECT_CALL(*GetMockReconcilor(), PerformLogoutAllAccountsAction()).Times(0);
+
+  AccountReconcilor* reconcilor = GetMockReconcilor();
+  reconcilor->StartReconcile();
+  ASSERT_TRUE(reconcilor->is_reconcile_started_);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_FALSE(reconcilor->is_reconcile_started_);
+  ASSERT_EQ(signin_metrics::ACCOUNT_RECONCILOR_OK, reconcilor->GetState());
+}
+
+// Checks that the reconcilor does not log out unverified accounts when adding
+// a new account to the Gaia cookie.
+TEST_F(AccountReconcilorTest, UnverifiedAccountMerge) {
+  // Enable Dice.
+  signin::ScopedAccountConsistencyDice scoped_dice;
+
+  // Add a unverified account to the Gaia cookie.
+  cookie_manager_service()->SetListAccountsResponseOneAccountWithParams(
+      "user@gmail.com", "12345", true /* is_email_valid */,
+      false /* signed_out */, false /* verified */);
+
+  // Add a token to Chrome.
+  const std::string chrome_account_id =
+      PickAccountIdForAccount("67890", "other@gmail.com");
+  token_service()->UpdateCredentials(chrome_account_id, "refresh_token");
+
+  // Check that the Chrome account is merged and the unverified account is not
+  // logged out.
+  EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(chrome_account_id))
+      .Times(1);
+  EXPECT_CALL(*GetMockReconcilor(), PerformLogoutAllAccountsAction()).Times(0);
+
+  AccountReconcilor* reconcilor = GetMockReconcilor();
+  reconcilor->StartReconcile();
+  ASSERT_TRUE(reconcilor->is_reconcile_started_);
+  base::RunLoop().RunUntilIdle();
+  SimulateAddAccountToCookieCompleted(reconcilor, chrome_account_id,
+                                      GoogleServiceAuthError::AuthErrorNone());
+  ASSERT_FALSE(reconcilor->is_reconcile_started_);
+  ASSERT_EQ(signin_metrics::ACCOUNT_RECONCILOR_OK, reconcilor->GetState());
+}
+
 // Tests that the Dice migration happens after a no-op reconcile.
 TEST_F(AccountReconcilorTest, DiceMigrationAfterNoop) {
   // Enable Dice migration.
@@ -840,10 +899,13 @@ TEST_F(AccountReconcilorTest, DiceMigrationAfterNoop) {
   cookie_manager_service()->SetListAccountsResponseOneAccount("user@gmail.com",
                                                               "12345");
   AccountReconcilor* reconcilor = GetMockReconcilor();
+  signin::DiceAccountReconcilorDelegate* dice_delegate =
+      static_cast<signin::DiceAccountReconcilorDelegate*>(
+          reconcilor->delegate_.get());
 
   // Dice is not enabled by default.
   ASSERT_FALSE(signin::IsDiceEnabledForProfile(profile()->GetPrefs()));
-  EXPECT_FALSE(reconcilor->IsAccountConsistencyEnforced());
+  EXPECT_FALSE(dice_delegate->IsAccountConsistencyEnforced());
 
   // No-op reconcile.
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(testing::_)).Times(0);
@@ -855,9 +917,10 @@ TEST_F(AccountReconcilorTest, DiceMigrationAfterNoop) {
   ASSERT_EQ(signin_metrics::ACCOUNT_RECONCILOR_OK, reconcilor->GetState());
 
   // Migration will happen on next startup.
-  EXPECT_TRUE(reconcilor->ShouldMigrateToDiceOnStartup());
+  EXPECT_TRUE(
+      dice_delegate->IsReadyForDiceMigration(false /* is_new_profile */));
   EXPECT_FALSE(signin::IsDiceEnabledForProfile(profile()->GetPrefs()));
-  EXPECT_FALSE(reconcilor->IsAccountConsistencyEnforced());
+  EXPECT_FALSE(reconcilor->delegate_->IsAccountConsistencyEnforced());
 }
 
 // Tests that the Dice migration does not happen after a busy reconcile.
@@ -871,10 +934,13 @@ TEST_F(AccountReconcilorTest, DiceNoMigrationAfterReconcile) {
   token_service()->UpdateCredentials(account_id, "refresh_token");
   cookie_manager_service()->SetListAccountsResponseNoAccounts();
   AccountReconcilor* reconcilor = GetMockReconcilor();
+  signin::DiceAccountReconcilorDelegate* dice_delegate =
+      static_cast<signin::DiceAccountReconcilorDelegate*>(
+          reconcilor->delegate_.get());
 
   // Dice is not enabled by default.
   ASSERT_FALSE(signin::IsDiceEnabledForProfile(profile()->GetPrefs()));
-  EXPECT_FALSE(reconcilor->IsAccountConsistencyEnforced());
+  EXPECT_FALSE(dice_delegate->IsAccountConsistencyEnforced());
 
   // Busy reconcile.
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(account_id));
@@ -887,9 +953,10 @@ TEST_F(AccountReconcilorTest, DiceNoMigrationAfterReconcile) {
   ASSERT_EQ(signin_metrics::ACCOUNT_RECONCILOR_OK, reconcilor->GetState());
 
   // Migration did not happen.
-  EXPECT_FALSE(reconcilor->ShouldMigrateToDiceOnStartup());
+  EXPECT_FALSE(
+      dice_delegate->IsReadyForDiceMigration(false /* is_new_profile */));
   EXPECT_FALSE(signin::IsDiceEnabledForProfile(profile()->GetPrefs()));
-  EXPECT_FALSE(reconcilor->IsAccountConsistencyEnforced());
+  EXPECT_FALSE(dice_delegate->IsAccountConsistencyEnforced());
 }
 
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -897,6 +964,7 @@ TEST_F(AccountReconcilorTest, DiceNoMigrationAfterReconcile) {
 // Tests that reconcile cannot start before the tokens are loaded, and is
 // automatically started when tokens are loaded.
 TEST_F(AccountReconcilorTest, TokensNotLoaded) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   cookie_manager_service()->SetListAccountsResponseNoAccounts();
@@ -923,10 +991,12 @@ TEST_F(AccountReconcilorTest, TokensNotLoaded) {
 }
 
 TEST_F(AccountReconcilorTest, GetAccountsFromCookieSuccess) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
-  cookie_manager_service()->SetListAccountsResponseOneAccountWithExpiry(
-      "user@gmail.com", "12345", true);
+  cookie_manager_service()->SetListAccountsResponseOneAccountWithParams(
+      "user@gmail.com", "12345", false /* is_email_valid */,
+      false /* signed_out */, true /* verified */);
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(account_id));
 
   AccountReconcilor* reconcilor =
@@ -950,6 +1020,7 @@ TEST_F(AccountReconcilorTest, GetAccountsFromCookieSuccess) {
 }
 
 TEST_F(AccountReconcilorTest, GetAccountsFromCookieFailure) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   ConnectProfileToAccount("12345", "user@gmail.com");
   cookie_manager_service()->SetListAccountsResponseWebLoginRequired();
 
@@ -976,6 +1047,7 @@ TEST_F(AccountReconcilorTest, GetAccountsFromCookieFailure) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileNoop) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
 
@@ -1001,6 +1073,7 @@ TEST_F(AccountReconcilorTest, StartReconcileNoop) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileCookiesDisabled) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1022,6 +1095,7 @@ TEST_F(AccountReconcilorTest, StartReconcileCookiesDisabled) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileContentSettings) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1042,6 +1116,7 @@ TEST_F(AccountReconcilorTest, StartReconcileContentSettings) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileContentSettingsGaiaUrl) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1057,6 +1132,7 @@ TEST_F(AccountReconcilorTest, StartReconcileContentSettingsGaiaUrl) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileContentSettingsNonGaiaUrl) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1072,6 +1148,7 @@ TEST_F(AccountReconcilorTest, StartReconcileContentSettingsNonGaiaUrl) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileContentSettingsInvalidPattern) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1097,6 +1174,7 @@ TEST_F(AccountReconcilorTest, StartReconcileContentSettingsInvalidPattern) {
 // token service, will be considered the same as "dots@gmail.com" as returned
 // by gaia::ParseListAccountsData().
 TEST_F(AccountReconcilorTest, StartReconcileNoopWithDots) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   if (account_tracker()->GetMigrationState() !=
       AccountTrackerService::MIGRATION_NOT_STARTED) {
     return;
@@ -1121,6 +1199,7 @@ TEST_F(AccountReconcilorTest, StartReconcileNoopWithDots) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileNoopMultiple) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   const std::string account_id2 =
@@ -1146,6 +1225,7 @@ TEST_F(AccountReconcilorTest, StartReconcileNoopMultiple) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileAddToCookie) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1188,6 +1268,7 @@ TEST_F(AccountReconcilorTest, StartReconcileAddToCookie) {
 // FakeSigninManagerForTesting::SignOut() which doesn't exist for ChromeOS.
 
 TEST_F(AccountReconcilorTest, SignoutAfterErrorDoesNotRecordUma) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1224,6 +1305,7 @@ TEST_F(AccountReconcilorTest, SignoutAfterErrorDoesNotRecordUma) {
 #endif  // !defined(OS_CHROMEOS)
 
 TEST_F(AccountReconcilorTest, StartReconcileRemoveFromCookie) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   token_service()->UpdateCredentials(account_id, "refresh_token");
@@ -1253,6 +1335,7 @@ TEST_F(AccountReconcilorTest, StartReconcileRemoveFromCookie) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileAddToCookieTwice) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   const std::string account_id2 =
@@ -1318,6 +1401,7 @@ TEST_F(AccountReconcilorTest, StartReconcileAddToCookieTwice) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileBadPrimary) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   const std::string account_id2 =
@@ -1354,6 +1438,7 @@ TEST_F(AccountReconcilorTest, StartReconcileBadPrimary) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileOnlyOnce) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   cookie_manager_service()->SetListAccountsResponseOneAccount(
@@ -1372,6 +1457,7 @@ TEST_F(AccountReconcilorTest, StartReconcileOnlyOnce) {
 }
 
 TEST_F(AccountReconcilorTest, Lock) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   cookie_manager_service()->SetListAccountsResponseOneAccount("user@gmail.com",
@@ -1400,7 +1486,7 @@ TEST_F(AccountReconcilorTest, Lock) {
 
   // Lock prevents reconcile from starting, as long as one instance is alive.
   std::unique_ptr<AccountReconcilor::Lock> lock_1 =
-      base::MakeUnique<AccountReconcilor::Lock>(reconcilor);
+      std::make_unique<AccountReconcilor::Lock>(reconcilor);
   EXPECT_EQ(1, reconcilor->account_reconcilor_lock_count_);
   reconcilor->StartReconcile();
   // lock_1 is blocking the reconcile.
@@ -1443,6 +1529,7 @@ TEST_F(AccountReconcilorTest, Lock) {
 }
 
 TEST_F(AccountReconcilorTest, StartReconcileWithSessionInfoExpiredDefault) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
   const std::string account_id2 =
@@ -1468,10 +1555,12 @@ TEST_F(AccountReconcilorTest, StartReconcileWithSessionInfoExpiredDefault) {
 }
 
 TEST_F(AccountReconcilorTest, AddAccountToCookieCompletedWithBogusAccount) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   const std::string account_id =
       ConnectProfileToAccount("12345", "user@gmail.com");
-  cookie_manager_service()->SetListAccountsResponseOneAccountWithExpiry(
-      "user@gmail.com", "12345", true);
+  cookie_manager_service()->SetListAccountsResponseOneAccountWithParams(
+      "user@gmail.com", "12345", false /* is_email_valid */,
+      false /* signed_out */, true /* verified */);
 
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(account_id));
 
@@ -1496,6 +1585,7 @@ TEST_F(AccountReconcilorTest, AddAccountToCookieCompletedWithBogusAccount) {
 }
 
 TEST_F(AccountReconcilorTest, NoLoopWithBadPrimary) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   // Connect profile to a primary account and then add a secondary account.
   const std::string account_id1 =
   ConnectProfileToAccount("12345", "user@gmail.com");
@@ -1508,8 +1598,9 @@ TEST_F(AccountReconcilorTest, NoLoopWithBadPrimary) {
   EXPECT_CALL(*GetMockReconcilor(), PerformMergeAction(account_id2));
 
   // The primary account is in auth error, so it is not in the cookie.
-  cookie_manager_service()->SetListAccountsResponseOneAccountWithExpiry(
-      "other@gmail.com", "67890", true);
+  cookie_manager_service()->SetListAccountsResponseOneAccountWithParams(
+      "other@gmail.com", "67890", false /* is_email_valid */,
+      false /* signed_out */, true /* verified */);
 
   AccountReconcilor* reconcilor =
       AccountReconcilorFactory::GetForProfile(profile());
@@ -1544,6 +1635,7 @@ TEST_F(AccountReconcilorTest, NoLoopWithBadPrimary) {
 }
 
 TEST_F(AccountReconcilorTest, WontMergeAccountsWithError) {
+  signin::ScopedAccountConsistencyMirror scoped_mirror;
   // Connect profile to a primary account and then add a secondary account.
   const std::string account_id1 =
   ConnectProfileToAccount("12345", "user@gmail.com");
@@ -1578,40 +1670,3 @@ TEST_F(AccountReconcilorTest, WontMergeAccountsWithError) {
   ASSERT_FALSE(reconcilor->is_reconcile_started_);
   ASSERT_FALSE(reconcilor->error_during_last_reconcile_);
 }
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-// Checks that Dice migration happens when the reconcilor is created.
-TEST(AccountReconcilorMigrationTest, MigrateAtCreation) {
-  sync_preferences::TestingPrefServiceSyncable pref_service;
-  AccountReconcilor::RegisterProfilePrefs(pref_service.registry());
-  signin::RegisterAccountConsistencyProfilePrefs(pref_service.registry());
-  TestSigninClient signin_client(&pref_service);
-
-  {
-    // Migration does not happen if SetDiceMigrationOnStartup() is not called.
-    signin::ScopedAccountConsistencyDiceMigration scoped_dice_migration;
-    EXPECT_FALSE(signin::IsDiceEnabledForProfile(&pref_service));
-    AccountReconcilor reconcilor(nullptr, nullptr, &signin_client, nullptr);
-    EXPECT_FALSE(reconcilor.ShouldMigrateToDiceOnStartup());
-    EXPECT_FALSE(signin::IsDiceEnabledForProfile(&pref_service));
-  }
-
-  AccountReconcilor::SetDiceMigrationOnStartup(&pref_service, true);
-
-  {
-    // Migration does not happen if Dice is not enabled.
-    signin::ScopedAccountConsistencyDiceFixAuthErrors scoped_dice_fix_errors;
-    AccountReconcilor reconcilor(nullptr, nullptr, &signin_client, nullptr);
-    EXPECT_FALSE(reconcilor.ShouldMigrateToDiceOnStartup());
-    EXPECT_FALSE(signin::IsDiceEnabledForProfile(&pref_service));
-  }
-
-  {
-    // Migration happens.
-    signin::ScopedAccountConsistencyDiceMigration scoped_dice_migration;
-    AccountReconcilor reconcilor(nullptr, nullptr, &signin_client, nullptr);
-    EXPECT_TRUE(reconcilor.ShouldMigrateToDiceOnStartup());
-    EXPECT_TRUE(signin::IsDiceEnabledForProfile(&pref_service));
-  }
-}
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)

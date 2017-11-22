@@ -25,6 +25,11 @@ const char kCaptivePortalDescription[] =
     "When enabled, the Captive Portal landing page will be displayed if it is "
     "detected that the user is connected to a Captive Portal network.";
 
+const char kCleanToolbarName[] = "Clean Toolbar";
+const char kCleanToolbarDescription[] =
+    "When enabled, the Clean Toolbar will be used instead of "
+    "WebToolbarController.";
+
 const char kContextualSearch[] = "Contextual Search";
 const char kContextualSearchDescription[] =
     "Whether or not Contextual Search is enabled.";
@@ -50,6 +55,13 @@ const char kInProductHelpDemoModeDescription[] =
 const char kMarkHttpAsName[] = "Mark non-secure origins as non-secure";
 const char kMarkHttpAsDescription[] = "Change the UI treatment for HTTP pages";
 const char kMarkHttpAsDangerous[] = "Always mark HTTP as actively dangerous";
+
+const char kNewFullscreenName[] = "Enable the new FullscreenController.";
+const char kNewFullscreenDescription[] =
+    "When enabled, the new implementation of FullscreenController will be used "
+    "instead of the legacy version.  This new implementation utilizes the "
+    "observer and broadcaster patterns to simplify interaction with the "
+    "feature and to distribute UI implementations to more specific owners.";
 
 const char kOmniboxUIElideSuggestionUrlAfterHostName[] =
     "Hide the path, query, and ref of omnibox suggestions";
@@ -79,9 +91,8 @@ const char kPropertyAnimationsToolbarDescription[] =
     "When enabled, Toolbar animations will be done using "
     "UIViewPropertyAnimator";
 
-extern const char kSafeAreaCompatibleToolbarName[] =
-    "Safe Area Compatible Toolbar";
-extern const char kSafeAreaCompatibleToolbarDescription[] =
+const char kSafeAreaCompatibleToolbarName[] = "Safe Area Compatible Toolbar";
+const char kSafeAreaCompatibleToolbarDescription[] =
     "When enabled, the toolbar resizes itself when the safe area changes.";
 
 const char kShareCanonicalURLName[] = "Share Canonical URL";
@@ -93,6 +104,15 @@ const char kSlimNavigationManagerName[] = "Use Slim Navigation Manager";
 const char kSlimNavigationManagerDescription[] =
     "When enabled, uses the experimental slim navigation manager that provides "
     "better compatibility with HTML navigation spec.";
+
+const char kNewPassKitDownloadName[] = "Use PassKit with ios/web Download API";
+const char kNewPassKitDownloadDescription[] =
+    "When enabled, uses ios/web Download API as dowload backend for PassKit.";
+
+const char kNewFileDownloadName[] = "Use new Download Manager UI and backend";
+const char kNewFileDownloadDescription[] =
+    "When enabled, uses new Download Manager UI and ios/web Download API as "
+    "backend.";
 
 const char kTabSwitcherPresentsBVCName[] = "TabSwitcher Presents BVC";
 const char kTabSwitcherPresentsBVCDescription[] =

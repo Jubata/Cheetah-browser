@@ -36,8 +36,8 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::ServiceWorkerErrorType,
 IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::ServiceWorkerState,
                           blink::mojom::ServiceWorkerState::kLast)
 
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerResponseError,
-                          blink::kWebServiceWorkerResponseErrorLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::ServiceWorkerResponseError,
+                          blink::mojom::ServiceWorkerResponseError::kLast)
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebServiceWorkerClientType,
                           blink::kWebServiceWorkerClientTypeLast)
@@ -94,6 +94,9 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
   IPC_STRUCT_TRAITS_MEMBER(is_in_cache_storage)
   IPC_STRUCT_TRAITS_MEMBER(cache_storage_cache_name)
   IPC_STRUCT_TRAITS_MEMBER(cors_exposed_header_names)
+  IPC_STRUCT_TRAITS_MEMBER(side_data_blob_uuid)
+  IPC_STRUCT_TRAITS_MEMBER(side_data_blob_size)
+  IPC_STRUCT_TRAITS_MEMBER(side_data_blob)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::mojom::ServiceWorkerObjectInfo)
@@ -124,14 +127,6 @@ IPC_STRUCT_TRAITS_END()
 
 //---------------------------------------------------------------------------
 // Messages sent from the child process to the browser.
-
-// Asks the browser to set navigation preload header value for a registration.
-IPC_MESSAGE_CONTROL5(ServiceWorkerHostMsg_SetNavigationPreloadHeader,
-                     int /* thread_id */,
-                     int /* request_id */,
-                     int /* provider_id */,
-                     int64_t /* registration_id */,
-                     std::string /* header_value */)
 
 // Sends ExtendableMessageEvent to a service worker (renderer->browser).
 IPC_MESSAGE_CONTROL5(
@@ -171,16 +166,6 @@ IPC_MESSAGE_ROUTED3(
     std::string /* uuid */,
     base::string16 /* message */,
     std::vector<blink::MessagePortChannel> /* sent_message_ports */)
-
-// ServiceWorker -> Browser message to request that the ServiceWorkerStorage
-// cache |data| associated with |url|.
-IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_SetCachedMetadata,
-                    GURL /* url */,
-                    std::vector<char> /* data */)
-
-// ServiceWorker -> Browser message to request that the ServiceWorkerStorage
-// clear the cache associated with |url|.
-IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_ClearCachedMetadata, GURL /* url */)
 
 // Ask the browser to open a tab/window (renderer->browser).
 IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_OpenNewTab,
@@ -225,23 +210,6 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_ServiceWorkerStateChanged,
                      int /* thread_id */,
                      int /* handle_id */,
                      blink::mojom::ServiceWorkerState)
-
-IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_DidSetNavigationPreloadHeader,
-                     int /* thread_id */,
-                     int /* request_id */)
-IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_SetNavigationPreloadHeaderError,
-                     int /* thread_id */,
-                     int /* request_id */,
-                     blink::mojom::ServiceWorkerErrorType,
-                     std::string /* message */)
-
-// Notifies a client that its controller used a feature, for UseCounter
-// purposes (browser->renderer). |feature| must be one of the values from
-// blink::UseCounter::Feature enum.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_CountFeature,
-                     int /* thread_id */,
-                     int /* provider_id */,
-                     uint32_t /* feature */)
 
 // Sent via EmbeddedWorker to dispatch events.
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_DidSkipWaiting,

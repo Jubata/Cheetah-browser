@@ -50,6 +50,7 @@ namespace blink {
 namespace {
 
 void* AsyncId(unsigned long identifier) {
+  // This value should be odd to avoid collisions with regular pointers.
   return reinterpret_cast<void*>((identifier << 1) | 1);
 }
 
@@ -88,7 +89,7 @@ void SetCallStack(TracedValue* value) {
   // So we collect the top frame with SourceLocation::capture() to get the
   // binding call site info.
   SourceLocation::Capture()->ToTracedValue(value, "stackTrace");
-  v8::Isolate::GetCurrent()->GetCpuProfiler()->CollectSample();
+  v8::CpuProfiler::CollectSample(v8::Isolate::GetCurrent());
 }
 
 void InspectorTraceEvents::Init(CoreProbeSink* instrumenting_agents,
@@ -1071,6 +1072,12 @@ InspectorCompileScriptEvent::V8CacheResult::ConsumeResult::ConsumeResult(
   DCHECK(consume_options == v8::ScriptCompiler::kConsumeParserCache ||
          consume_options == v8::ScriptCompiler::kConsumeCodeCache);
 }
+
+InspectorCompileScriptEvent::V8CacheResult::V8CacheResult(
+    Optional<ProduceResult> produce_result,
+    Optional<ConsumeResult> consume_result)
+    : produce_result(std::move(produce_result)),
+      consume_result(std::move(consume_result)) {}
 
 std::unique_ptr<TracedValue> InspectorCompileScriptEvent::Data(
     const String& url,

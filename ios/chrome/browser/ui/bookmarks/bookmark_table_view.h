@@ -8,8 +8,8 @@
 #import <UIKit/UIKit.h>
 #include <set>
 
-@protocol ApplicationCommands;
 class GURL;
+@protocol SigninPresenter;
 
 namespace bookmarks {
 class BookmarkNode;
@@ -18,10 +18,6 @@ class BookmarkNode;
 namespace ios {
 class ChromeBrowserState;
 }
-
-namespace user_prefs {
-class PrefRegistrySyncable;
-}  // namespace user_prefs
 
 @class BookmarkTableView;
 @class MDCFlexibleHeaderView;
@@ -83,7 +79,7 @@ class PrefRegistrySyncable;
                             delegate:(id<BookmarkTableViewDelegate>)delegate
                             rootNode:(const bookmarks::BookmarkNode*)rootNode
                                frame:(CGRect)frame
-                          dispatcher:(id<ApplicationCommands>)dispatcher
+                           presenter:(id<SigninPresenter>)presenter
     NS_DESIGNATED_INITIALIZER;
 
 - (instancetype)initWithFrame:(CGRect)frame NS_UNAVAILABLE;
@@ -92,9 +88,6 @@ class PrefRegistrySyncable;
 - (instancetype)initWithCoder:(NSCoder*)aDecoder NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype) new NS_UNAVAILABLE;
-
-// Registers the feature preferences.
-+ (void)registerBrowserStatePrefs:(user_prefs::PrefRegistrySyncable*)registry;
 
 // Called when something outside the view causes the promo state to change.
 - (void)promoStateChangedAnimated:(BOOL)animated;

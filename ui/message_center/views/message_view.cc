@@ -15,7 +15,7 @@
 #include "ui/gfx/shadow_value.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
-#include "ui/message_center/views/message_center_controller.h"
+#include "ui/message_center/views/message_view_delegate.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
@@ -61,9 +61,9 @@ base::string16 CreateAccessibleName(
 
 namespace message_center {
 
-MessageView::MessageView(MessageCenterController* controller,
+MessageView::MessageView(MessageViewDelegate* delegate,
                          const Notification& notification)
-    : controller_(controller),
+    : delegate_(delegate),
       notification_id_(notification.id()),
       slide_out_controller_(this, this) {
   SetFocusBehavior(FocusBehavior::ALWAYS);
@@ -120,6 +120,14 @@ bool MessageView::IsExpanded() const {
   return false;
 }
 
+void MessageView::OnContainerAnimationStarted() {
+  // Not implemented by default.
+}
+
+void MessageView::OnContainerAnimationEnded() {
+  // Not implemented by default.
+}
+
 void MessageView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   node_data->role = ui::AX_ROLE_BUTTON;
   node_data->AddStringAttribute(
@@ -133,7 +141,7 @@ bool MessageView::OnMousePressed(const ui::MouseEvent& event) {
   if (!event.IsOnlyLeftMouseButton())
     return false;
 
-  controller_->ClickOnNotification(notification_id_);
+  delegate_->ClickOnNotification(notification_id_);
   return true;
 }
 
@@ -142,11 +150,11 @@ bool MessageView::OnKeyPressed(const ui::KeyEvent& event) {
     return false;
 
   if (event.key_code() == ui::VKEY_RETURN) {
-    controller_->ClickOnNotification(notification_id_);
+    delegate_->ClickOnNotification(notification_id_);
     return true;
   } else if ((event.key_code() == ui::VKEY_DELETE ||
               event.key_code() == ui::VKEY_BACK)) {
-    controller_->RemoveNotification(notification_id_, true);  // By user.
+    delegate_->RemoveNotification(notification_id_, true);  // By user.
     return true;
   }
 
@@ -159,7 +167,7 @@ bool MessageView::OnKeyReleased(const ui::KeyEvent& event) {
   if (event.flags() != ui::EF_NONE || event.key_code() != ui::VKEY_SPACE)
     return false;
 
-  controller_->ClickOnNotification(notification_id_);
+  delegate_->ClickOnNotification(notification_id_);
   return true;
 }
 
@@ -211,7 +219,7 @@ void MessageView::OnGestureEvent(ui::GestureEvent* event) {
     }
     case ui::ET_GESTURE_TAP: {
       SetDrawBackgroundAsActive(false);
-      controller_->ClickOnNotification(notification_id_);
+      delegate_->ClickOnNotification(notification_id_);
       event->SetHandled();
       return;
     }
@@ -235,7 +243,7 @@ ui::Layer* MessageView::GetSlideOutLayer() {
 void MessageView::OnSlideChanged() {}
 
 void MessageView::OnSlideOut() {
-  controller_->RemoveNotification(notification_id_, true);  // By user.
+  delegate_->RemoveNotification(notification_id_, true);  // By user.
 }
 
 bool MessageView::GetPinned() const {
@@ -243,11 +251,11 @@ bool MessageView::GetPinned() const {
 }
 
 void MessageView::OnCloseButtonPressed() {
-  controller_->RemoveNotification(notification_id_, true);  // By user.
+  delegate_->RemoveNotification(notification_id_, true);  // By user.
 }
 
 void MessageView::OnSettingsButtonPressed() {
-  controller_->ClickOnSettingsButton(notification_id_);
+  delegate_->ClickOnSettingsButton(notification_id_);
 }
 
 void MessageView::SetDrawBackgroundAsActive(bool active) {

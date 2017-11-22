@@ -22,10 +22,12 @@
 #include "chrome/common/features.h"
 #include "chrome/test/base/testing_browser_process_platform_part.h"
 #include "components/network_time/network_time_tracker.h"
+#include "components/optimization_guide/optimization_guide_service.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/prefs/pref_service.h"
 #include "components/subresource_filter/content/browser/content_ruleset_service.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/common/network_connection_tracker.h"
 #include "extensions/features/features.h"
 #include "media/media_features.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -53,6 +55,25 @@
 #if !defined(OS_ANDROID)
 #include "components/keep_alive_registry/keep_alive_registry.h"
 #endif
+
+namespace {
+
+class MockNetworkConnectionTracker : public content::NetworkConnectionTracker {
+ public:
+  MockNetworkConnectionTracker() : content::NetworkConnectionTracker() {}
+  ~MockNetworkConnectionTracker() override {}
+
+  bool GetConnectionType(network::mojom::ConnectionType* type,
+                         ConnectionTypeCallback callback) override {
+    *type = network::mojom::ConnectionType::CONNECTION_UNKNOWN;
+    return true;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockNetworkConnectionTracker);
+};
+
+}  // namespace
 
 // static
 TestingBrowserProcess* TestingBrowserProcess::GetGlobal() {
@@ -140,6 +161,15 @@ IOThread* TestingBrowserProcess::io_thread() {
 SystemNetworkContextManager*
 TestingBrowserProcess::system_network_context_manager() {
   return nullptr;
+}
+
+content::NetworkConnectionTracker*
+TestingBrowserProcess::network_connection_tracker() {
+  if (!network_connection_tracker_) {
+    network_connection_tracker_ =
+        std::make_unique<MockNetworkConnectionTracker>();
+  }
+  return network_connection_tracker_.get();
 }
 
 WatchDogThread* TestingBrowserProcess::watchdog_thread() {
@@ -241,6 +271,11 @@ TestingBrowserProcess::safe_browsing_detection_service() {
 subresource_filter::ContentRulesetService*
 TestingBrowserProcess::subresource_filter_ruleset_service() {
   return subresource_filter_ruleset_service_.get();
+}
+
+optimization_guide::OptimizationGuideService*
+TestingBrowserProcess::optimization_guide_service() {
+  return optimization_guide_service_.get();
 }
 
 net::URLRequestContextGetter* TestingBrowserProcess::system_request_context() {
@@ -424,6 +459,11 @@ void TestingBrowserProcess::SetSystemRequestContext(
   system_request_context_ = context_getter;
 }
 
+void TestingBrowserProcess::SetNetworkConnectionTracker(
+    std::unique_ptr<content::NetworkConnectionTracker> tracker) {
+  network_connection_tracker_ = std::move(tracker);
+}
+
 void TestingBrowserProcess::SetNotificationUIManager(
     std::unique_ptr<NotificationUIManager> notification_ui_manager) {
   notification_ui_manager_.swap(notification_ui_manager);
@@ -472,6 +512,12 @@ void TestingBrowserProcess::SetRulesetService(
     std::unique_ptr<subresource_filter::ContentRulesetService>
         content_ruleset_service) {
   subresource_filter_ruleset_service_.swap(content_ruleset_service);
+}
+
+void TestingBrowserProcess::SetOptimizationGuideService(
+    std::unique_ptr<optimization_guide::OptimizationGuideService>
+        optimization_guide_service) {
+  optimization_guide_service_.swap(optimization_guide_service);
 }
 
 void TestingBrowserProcess::SetRapporServiceImpl(

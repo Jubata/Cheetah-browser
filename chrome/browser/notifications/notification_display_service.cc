@@ -6,16 +6,35 @@
 
 #include <memory>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback.h"
 #include "base/strings/nullable_string16.h"
 #include "chrome/browser/notifications/non_persistent_notification_handler.h"
 #include "chrome/browser/notifications/notification_common.h"
+#include "chrome/browser/notifications/notification_display_service_factory.h"
 #include "chrome/browser/notifications/persistent_notification_handler.h"
+#include "content/public/browser/browser_thread.h"
 #include "extensions/features/features.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/notifications/extension_notification_handler.h"
 #endif
+
+namespace {
+
+void OperationCompleted() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+}
+
+}  // namespace
+
+// static
+NotificationDisplayService* NotificationDisplayService::GetForProfile(
+    Profile* profile) {
+  return NotificationDisplayServiceFactory::GetForProfile(profile);
+}
 
 NotificationDisplayService::NotificationDisplayService(Profile* profile)
     : profile_(profile) {
@@ -58,7 +77,7 @@ NotificationHandler* NotificationDisplayService::GetNotificationHandler(
 void NotificationDisplayService::ProcessNotificationOperation(
     NotificationCommon::Operation operation,
     NotificationCommon::Type notification_type,
-    const std::string& origin,
+    const GURL& origin,
     const std::string& notification_id,
     const base::Optional<int>& action_index,
     const base::Optional<base::string16>& reply,
@@ -69,24 +88,23 @@ void NotificationDisplayService::ProcessNotificationOperation(
     LOG(ERROR) << "Unable to find a handler for " << notification_type;
     return;
   }
+
+  // TODO(crbug.com/766854): Plumb this through from the notification platform
+  // bridges so they can report completion of the operation as needed.
+  base::OnceClosure completed_closure = base::BindOnce(&OperationCompleted);
+
   switch (operation) {
     case NotificationCommon::CLICK:
-      handler->OnClick(profile_, origin, notification_id, action_index, reply);
+      handler->OnClick(profile_, origin, notification_id, action_index, reply,
+                       std::move(completed_closure));
       break;
     case NotificationCommon::CLOSE:
       DCHECK(by_user.has_value());
-      handler->OnClose(profile_, origin, notification_id, by_user.value());
+      handler->OnClose(profile_, origin, notification_id, by_user.value(),
+                       std::move(completed_closure));
       break;
     case NotificationCommon::SETTINGS:
       handler->OpenSettings(profile_);
       break;
   }
-}
-
-bool NotificationDisplayService::ShouldDisplayOverFullscreen(
-    const GURL& origin,
-    NotificationCommon::Type notification_type) {
-  NotificationHandler* handler = GetNotificationHandler(notification_type);
-  DCHECK(handler);
-  return handler->ShouldDisplayOnFullScreen(profile_, origin.spec());
 }

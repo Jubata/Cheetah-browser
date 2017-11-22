@@ -48,7 +48,7 @@ class URLRequestExtraDataContainer : public ResourceRequest::ExtraData {
  public:
   static scoped_refptr<URLRequestExtraDataContainer> Create(
       WebURLRequest::ExtraData* extra_data) {
-    return WTF::AdoptRef(new URLRequestExtraDataContainer(extra_data));
+    return base::AdoptRef(new URLRequestExtraDataContainer(extra_data));
   }
 
   ~URLRequestExtraDataContainer() override {}
@@ -190,26 +190,11 @@ void WebURLRequest::VisitHTTPHeaderFields(WebHTTPHeaderVisitor* visitor) const {
 }
 
 WebHTTPBody WebURLRequest::HttpBody() const {
-  // TODO(mkwst): This is wrong, as it means that we're producing the body
-  // before any ServiceWorker has a chance to operate, which means we're
-  // revealing data to the SW that we ought to be hiding. Baby steps.
-  // https://crbug.com/599597
-  if (resource_request_->AttachedCredential())
-    return WebHTTPBody(resource_request_->AttachedCredential());
   return WebHTTPBody(resource_request_->HttpBody());
 }
 
 void WebURLRequest::SetHTTPBody(const WebHTTPBody& http_body) {
   resource_request_->SetHTTPBody(http_body);
-}
-
-WebHTTPBody WebURLRequest::AttachedCredential() const {
-  return WebHTTPBody(resource_request_->AttachedCredential());
-}
-
-void WebURLRequest::SetAttachedCredential(
-    const WebHTTPBody& attached_credential) {
-  resource_request_->SetAttachedCredential(attached_credential);
 }
 
 bool WebURLRequest::ReportUploadProgress() const {
@@ -415,6 +400,11 @@ void WebURLRequest::SetUiStartTime(double time_seconds) {
 
 bool WebURLRequest::IsExternalRequest() const {
   return resource_request_->IsExternalRequest();
+}
+
+network::mojom::CORSPreflightPolicy WebURLRequest::GetCORSPreflightPolicy()
+    const {
+  return resource_request_->CORSPreflightPolicy();
 }
 
 WebURLRequest::LoadingIPCType WebURLRequest::GetLoadingIPCType() const {

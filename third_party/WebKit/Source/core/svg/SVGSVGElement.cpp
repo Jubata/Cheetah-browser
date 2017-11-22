@@ -228,7 +228,7 @@ bool SVGSVGElement::IsPresentationAttributeWithSVGDOM(
 void SVGSVGElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == x_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
@@ -559,7 +559,7 @@ void SVGSVGElement::pauseAnimations() {
 
 void SVGSVGElement::unpauseAnimations() {
   if (time_container_->IsPaused())
-    time_container_->Resume();
+    time_container_->Unpause();
 }
 
 bool SVGSVGElement::animationsPaused() const {

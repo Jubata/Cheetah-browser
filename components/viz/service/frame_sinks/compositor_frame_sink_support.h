@@ -19,16 +19,11 @@
 #include "components/viz/service/frame_sinks/referenced_surface_tracker.h"
 #include "components/viz/service/frame_sinks/surface_resource_holder.h"
 #include "components/viz/service/frame_sinks/surface_resource_holder_client.h"
+#include "components/viz/service/frame_sinks/video_capture/capturable_frame_sink.h"
 #include "components/viz/service/surfaces/surface_client.h"
 #include "components/viz/service/viz_service_export.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
-
-namespace {
-// The frame index starts at 2 so that empty frames will be treated as
-// completely damaged the first time they're drawn from.
-constexpr int kFrameIndexStart = 2;
-}  // namespace
 
 namespace viz {
 
@@ -41,11 +36,14 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
       public SurfaceResourceHolderClient,
       public FrameSinkManagerClient,
       public SurfaceClient,
+      public CapturableFrameSink,
       public mojom::CompositorFrameSink {
  public:
   using AggregatedDamageCallback =
       base::RepeatingCallback<void(const LocalSurfaceId& local_surface_id,
                                    const gfx::Rect& damage_rect)>;
+
+  static const uint64_t kFrameIndexStart = 2;
 
   static std::unique_ptr<CompositorFrameSinkSupport> Create(
       mojom::CompositorFrameSinkClient* client,
@@ -57,6 +55,8 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   ~CompositorFrameSinkSupport() override;
 
   const FrameSinkId& frame_sink_id() const { return frame_sink_id_; }
+
+  const SurfaceId& current_surface_id() const { return current_surface_id_; }
 
   const LocalSurfaceId& local_surface_id() const {
     return current_surface_id_.local_surface_id();
@@ -101,7 +101,13 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
       const LocalSurfaceId& local_surface_id,
       CompositorFrame frame,
       mojom::HitTestRegionListPtr hit_test_region_list = nullptr);
-  void RequestCopyOfSurface(std::unique_ptr<CopyOutputRequest> request);
+
+  // CapturableFrameSink implementation.
+  void AttachCaptureClient(CapturableFrameSink::Client* client) override;
+  void DetachCaptureClient(CapturableFrameSink::Client* client) override;
+  gfx::Size GetSurfaceSize() override;
+  void RequestCopyOfSurface(
+      std::unique_ptr<CopyOutputRequest> request) override;
 
   Surface* GetCurrentSurfaceForTesting();
 
@@ -137,6 +143,10 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
 
   void UpdateNeedsBeginFramesInternal();
   Surface* CreateSurface(const SurfaceInfo& surface_info);
+
+  void OnAggregatedDamage(const LocalSurfaceId& local_surface_id,
+                          const gfx::Rect& damage_rect,
+                          const CompositorFrame& frame) const;
 
   mojom::CompositorFrameSinkClient* const client_;
 
@@ -176,9 +186,15 @@ class VIZ_SERVICE_EXPORT CompositorFrameSinkSupport
   // A callback that will be run at the start of the destructor if set.
   base::OnceCallback<void()> destruction_callback_;
 
+  // TODO(crbug.com/754872): Remove once tab capture has moved into VIZ.
   AggregatedDamageCallback aggregated_damage_callback_;
 
   uint64_t last_frame_index_ = kFrameIndexStart;
+
+  // The video capture clients hooking into this instance to observe frame
+  // begins and damage, and then make CopyOutputRequests on the appropriate
+  // frames.
+  std::vector<CapturableFrameSink::Client*> capture_clients_;
 
   base::WeakPtrFactory<CompositorFrameSinkSupport> weak_factory_;
 

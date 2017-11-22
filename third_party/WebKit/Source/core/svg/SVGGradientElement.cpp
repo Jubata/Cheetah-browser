@@ -75,7 +75,7 @@ void SVGGradientElement::Trace(blink::Visitor* visitor) {
 void SVGGradientElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name == SVGNames::gradientTransformAttr) {
     AddPropertyToPresentationAttributeStyle(
         style, CSSPropertyTransform,
@@ -115,9 +115,12 @@ void SVGGradientElement::ChildrenChanged(const ChildrenChange& change) {
   if (change.by_parser)
     return;
 
-  if (LayoutObject* object = GetLayoutObject())
+  if (auto* object = ToLayoutSVGResourceContainer(GetLayoutObject())) {
     object->SetNeedsLayoutAndFullPaintInvalidation(
         LayoutInvalidationReason::kChildChanged);
+    if (object->EverHadLayout())
+      object->RemoveAllClientsFromCache();
+  }
 }
 
 void SVGGradientElement::CollectCommonAttributes(

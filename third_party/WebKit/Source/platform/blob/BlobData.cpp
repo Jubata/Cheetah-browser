@@ -31,6 +31,7 @@
 #include "platform/blob/BlobData.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/Histogram.h"
@@ -38,10 +39,10 @@
 #include "platform/WebTaskRunner.h"
 #include "platform/blob/BlobBytesProvider.h"
 #include "platform/blob/BlobRegistry.h"
+#include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/text/LineEnding.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/CString.h"
 #include "platform/wtf/text/TextEncoding.h"
@@ -56,6 +57,7 @@ using mojom::blink::BlobPtr;
 using mojom::blink::BlobPtrInfo;
 using mojom::blink::BlobRegistryPtr;
 using mojom::blink::BytesProviderPtr;
+using mojom::blink::BytesProviderPtrInfo;
 using mojom::blink::BytesProviderRequest;
 using mojom::blink::DataElement;
 using mojom::blink::DataElementBlob;
@@ -84,6 +86,24 @@ bool IsValidBlobType(const String& type) {
 void BindBytesProvider(std::unique_ptr<BlobBytesProvider> provider,
                        BytesProviderRequest request) {
   mojo::MakeStrongBinding(std::move(provider), std::move(request));
+}
+
+mojom::blink::BlobRegistry* g_blob_registry_for_testing = nullptr;
+
+mojom::blink::BlobRegistry* GetThreadSpecificRegistry() {
+  if (UNLIKELY(g_blob_registry_for_testing))
+    return g_blob_registry_for_testing;
+
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<BlobRegistryPtr>, registry,
+                                  ());
+  if (UNLIKELY(!registry.IsSet())) {
+    // TODO(mek): Going through InterfaceProvider to get a BlobRegistryPtr
+    // ends up going through the main thread. Ideally workers wouldn't need
+    // to do that.
+    Platform::Current()->GetInterfaceProvider()->GetInterface(
+        MakeRequest(&*registry));
+  }
+  return registry->get();
 }
 
 }  // namespace
@@ -267,13 +287,8 @@ BlobDataHandle::BlobDataHandle()
       size_(0),
       is_single_unknown_size_file_(false) {
   if (RuntimeEnabledFeatures::MojoBlobsEnabled()) {
-    // TODO(mek): Going through InterfaceProvider to get a BlobRegistryPtr
-    // ends up going through the main thread. Ideally workers wouldn't need
-    // to do that.
-    BlobRegistryPtr registry;
-    Platform::Current()->GetInterfaceProvider()->GetInterface(
-        MakeRequest(&registry));
-    registry->Register(MakeRequest(&blob_info_), uuid_, "", "", {});
+    GetThreadSpecificRegistry()->Register(MakeRequest(&blob_info_), uuid_, "",
+                                          "", {});
   } else {
     BlobRegistry::RegisterBlobData(uuid_, BlobData::Create());
   }
@@ -285,12 +300,7 @@ BlobDataHandle::BlobDataHandle(std::unique_ptr<BlobData> data, long long size)
       size_(size),
       is_single_unknown_size_file_(data->IsSingleUnknownSizeFile()) {
   if (RuntimeEnabledFeatures::MojoBlobsEnabled()) {
-    // TODO(mek): Going through InterfaceProvider to get a BlobRegistryPtr
-    // ends up going through the main thread. Ideally workers wouldn't need
-    // to do that.
-    BlobRegistryPtr registry;
-    Platform::Current()->GetInterfaceProvider()->GetInterface(
-        MakeRequest(&registry));
+    TRACE_EVENT0("Blob", "Registry::RegisterBlob");
 
     size_t current_memory_population = 0;
     Vector<DataElementPtr> elements;
@@ -338,23 +348,24 @@ BlobDataHandle::BlobDataHandle(std::unique_ptr<BlobData> data, long long size)
             }
             last_bytes_provider->AppendData(item.data);
           } else {
-            BytesProviderPtr bytes_provider;
-            auto provider = WTF::MakeUnique<BlobBytesProvider>(item.data);
+            BytesProviderPtrInfo bytes_provider_info;
+            auto provider = std::make_unique<BlobBytesProvider>(item.data);
             last_bytes_provider = provider.get();
             if (file_runner) {
               // TODO(mek): Considering binding BytesProvider on the IO thread
               // instead, only using the File thread for actual file operations.
               file_runner->PostTask(
                   FROM_HERE,
-                  CrossThreadBind(&BindBytesProvider,
-                                  WTF::Passed(std::move(provider)),
-                                  WTF::Passed(MakeRequest(&bytes_provider))));
+                  CrossThreadBind(
+                      &BindBytesProvider, WTF::Passed(std::move(provider)),
+                      WTF::Passed(MakeRequest(&bytes_provider_info))));
             } else {
               BindBytesProvider(std::move(provider),
-                                MakeRequest(&bytes_provider));
+                                MakeRequest(&bytes_provider_info));
             }
-            DataElementBytesPtr bytes_element = DataElementBytes::New(
-                item.data->length(), WTF::nullopt, std::move(bytes_provider));
+            DataElementBytesPtr bytes_element =
+                DataElementBytes::New(item.data->length(), WTF::nullopt,
+                                      std::move(bytes_provider_info));
             if (should_embed_bytes) {
               bytes_element->embedded_data = Vector<uint8_t>();
               bytes_element->embedded_data->Append(item.data->data(),
@@ -377,16 +388,17 @@ BlobDataHandle::BlobDataHandle(std::unique_ptr<BlobData> data, long long size)
                   WTF::Time::FromDoubleT(item.expected_modification_time))));
           break;
         case BlobDataItem::kBlob: {
-          BlobPtr blob_clone = item.blob_data_handle->CloneBlobPtr();
           elements.push_back(DataElement::NewBlob(DataElementBlob::New(
-              std::move(blob_clone), item.offset, item.length)));
+              item.blob_data_handle->CloneBlobPtr().PassInterface(),
+              item.offset, item.length)));
           break;
         }
       }
     }
 
-    registry->Register(MakeRequest(&blob_info_), uuid_,
-                       type_.IsNull() ? "" : type_, "", std::move(elements));
+    GetThreadSpecificRegistry()->Register(MakeRequest(&blob_info_), uuid_,
+                                          type_.IsNull() ? "" : type_, "",
+                                          std::move(elements));
   } else {
     BlobRegistry::RegisterBlobData(uuid_, std::move(data));
   }
@@ -402,13 +414,8 @@ BlobDataHandle::BlobDataHandle(const String& uuid,
   if (RuntimeEnabledFeatures::MojoBlobsEnabled()) {
     SCOPED_BLINK_UMA_HISTOGRAM_TIMER_THREAD_SAFE(
         "Storage.Blob.GetBlobFromUUIDTime");
-    // TODO(mek): Going through InterfaceProvider to get a BlobRegistryPtr
-    // ends up going through the main thread. Ideally workers wouldn't need
-    // to do that.
-    BlobRegistryPtr registry;
-    Platform::Current()->GetInterfaceProvider()->GetInterface(
-        MakeRequest(&registry));
-    registry->GetBlobFromUUID(MakeRequest(&blob_info_), uuid_);
+    GetThreadSpecificRegistry()->GetBlobFromUUID(MakeRequest(&blob_info_),
+                                                 uuid_);
   } else {
     BlobRegistry::AddBlobDataRef(uuid_);
   }
@@ -441,6 +448,12 @@ BlobPtr BlobDataHandle::CloneBlobPtr() {
   blob->Clone(MakeRequest(&blob_clone));
   blob_info_ = blob.PassInterface();
   return blob_clone;
+}
+
+// static
+void BlobDataHandle::SetBlobRegistryForTesting(
+    mojom::blink::BlobRegistry* registry) {
+  g_blob_registry_for_testing = registry;
 }
 
 }  // namespace blink

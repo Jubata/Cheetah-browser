@@ -123,6 +123,12 @@
         "test": "vr_common_unittests"
       },
       {
+        "swarming": {
+          "can_use_on_swarming_builders": false
+        },
+        "test": "vr_pixeltests"
+      },
+      {
         "args": [
           "--shared-prefs-file=//chrome/android/shared_preference_files/test/vr_ddview_skipdon_setupcomplete.json",
           "--replace-system-package=com.google.vr.vrcore,//third_party/gvr-android-sdk/test-apks/vr_services/vr_services_current.apk",
@@ -418,7 +424,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -813,7 +819,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -1028,7 +1034,15 @@
       }
     ]
   },
+  "ChromeOS amd64 Chromium Goma Canary": {
+    "additional_compile_targets": [
+      "chromiumos_preflight"
+    ]
+  },
   "Chromium Linux Goma Canary": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -1045,6 +1059,9 @@
     ]
   },
   "Chromium Linux Goma Canary (clobber)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -1061,6 +1078,9 @@
     ]
   },
   "Chromium Linux Goma Canary LocalOutputCache": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -1143,6 +1163,12 @@
           "can_use_on_swarming_builders": false
         },
         "test": "content_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": false
+        },
+        "test": "crashpad_tests"
       },
       {
         "swarming": {
@@ -1405,6 +1431,12 @@
           "can_use_on_swarming_builders": false
         },
         "test": "content_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": false
+        },
+        "test": "crashpad_tests"
       },
       {
         "swarming": {
@@ -1704,6 +1736,12 @@
         "swarming": {
           "can_use_on_swarming_builders": false
         },
+        "test": "crashpad_tests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": false
+        },
         "test": "crypto_unittests"
       },
       {
@@ -1966,6 +2004,12 @@
         "swarming": {
           "can_use_on_swarming_builders": false
         },
+        "test": "crashpad_tests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": false
+        },
         "test": "crypto_unittests"
       },
       {
@@ -2203,6 +2247,9 @@
     ]
   },
   "Chromium Mac 10.9 Goma Canary": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2219,6 +2266,9 @@
     ]
   },
   "Chromium Mac 10.9 Goma Canary (clobber)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2235,6 +2285,9 @@
     ]
   },
   "Chromium Mac 10.9 Goma Canary (dbg)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2251,6 +2304,9 @@
     ]
   },
   "Chromium Mac 10.9 Goma Canary (dbg)(clobber)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2267,6 +2323,9 @@
     ]
   },
   "Chromium Mac 10.9 Goma Canary LocalOutputCache": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2334,17 +2393,6 @@
         "test": "browser_tests"
       },
       {
-        "args": [
-          "--disable-browser-side-navigation"
-        ],
-        "name": "renderer_side_navigation_browser_tests",
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "shards": 10
-        },
-        "test": "browser_tests"
-      },
-      {
         "swarming": {
           "can_use_on_swarming_builders": true
         },
@@ -2399,26 +2447,6 @@
         "test": "components_browsertests"
       },
       {
-        "args": [
-          "--disable-browser-side-navigation"
-        ],
-        "name": "renderer_side_navigation_components_browsertests",
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
-        "test": "components_browsertests"
-      },
-      {
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
-        "test": "components_unittests"
-      },
-      {
-        "args": [
-          "--disable-browser-side-navigation"
-        ],
-        "name": "renderer_side_navigation_components_unittests",
         "swarming": {
           "can_use_on_swarming_builders": true
         },
@@ -2499,16 +2527,6 @@
         "test": "extensions_browsertests"
       },
       {
-        "args": [
-          "--disable-browser-side-navigation"
-        ],
-        "name": "renderer_side_navigation_extensions_browsertests",
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
-        "test": "extensions_browsertests"
-      },
-      {
         "swarming": {
           "can_use_on_swarming_builders": true
         },
@@ -2551,16 +2569,6 @@
         "test": "gpu_unittests"
       },
       {
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
-        "test": "headless_browsertests"
-      },
-      {
-        "args": [
-          "--disable-browser-side-navigation"
-        ],
-        "name": "renderer_side_navigation_headless_browsertests",
         "swarming": {
           "can_use_on_swarming_builders": true
         },
@@ -2795,16 +2803,6 @@
         "test": "unit_tests"
       },
       {
-        "args": [
-          "--disable-browser-side-navigation"
-        ],
-        "name": "renderer_side_navigation_unit_tests",
-        "swarming": {
-          "can_use_on_swarming_builders": true
-        },
-        "test": "unit_tests"
-      },
-      {
         "swarming": {
           "can_use_on_swarming_builders": true
         },
@@ -2825,6 +2823,9 @@
     ]
   },
   "CrWin7Goma": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2841,6 +2842,9 @@
     ]
   },
   "CrWin7Goma(clbr)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2857,6 +2861,9 @@
     ]
   },
   "CrWin7Goma(dbg)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -2873,6 +2880,9 @@
     ]
   },
   "CrWin7Goma(dll)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -3668,6 +3678,9 @@
     ]
   },
   "CrWinClangGoma": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -3684,6 +3697,9 @@
     ]
   },
   "CrWinClexeGoma": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -3700,6 +3716,9 @@
     ]
   },
   "CrWinGoma": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -3716,6 +3735,9 @@
     ]
   },
   "CrWinGoma(dll)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -3732,6 +3754,9 @@
     ]
   },
   "CrWinGoma(loc)": {
+    "additional_compile_targets": [
+      "all"
+    ],
     "gtest_tests": [
       {
         "swarming": {
@@ -4322,7 +4347,7 @@
         "args": [
           "--mash",
           "--override-use-software-gl-for-tests",
-          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.browser_tests.filter"
+          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.mash.browser_tests.filter"
         ],
         "name": "mash_browser_tests",
         "swarming": {
@@ -4348,16 +4373,26 @@
       },
       {
         "args": [
+          "--mus",
+          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.mus.content_browsertests.filter"
+        ],
+        "name": "mus_content_browsertests",
+        "override_isolate_target": "content_browsertests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "shards": 2
+        },
+        "test": "content_browsertests"
+      },
+      {
+        "args": [
           "--enable-viz",
-          "--ozone-platform=headless",
-          "--override-use-software-gl-for-tests",
           "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.viz.content_browsertests.filter"
         ],
         "name": "viz_content_browsertests",
         "swarming": {
           "can_use_on_swarming_builders": true,
-          "hard_timeout": 1500,
-          "shards": 5
+          "shards": 2
         },
         "test": "content_browsertests"
       },
@@ -4434,6 +4469,18 @@
         "name": "network_service_content_browsertests",
         "swarming": {
           "can_use_on_swarming_builders": true
+        },
+        "test": "content_browsertests"
+      },
+      {
+        "args": [
+          "--enable-viz",
+          "--test-launcher-filter-file=../../testing/buildbot/filters/mojo.fyi.viz.content_browsertests.filter"
+        ],
+        "name": "viz_content_browsertests",
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "shards": 2
         },
         "test": "content_browsertests"
       }
@@ -5472,6 +5519,12 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
+        "test": "crashpad_tests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
         "test": "crypto_unittests"
       },
       {
@@ -5791,7 +5844,7 @@
         "swarming": {
           "can_use_on_swarming_builders": true
         },
-        "test": "crashpad_util_test"
+        "test": "crashpad_tests"
       },
       {
         "swarming": {
@@ -6241,6 +6294,8 @@
         "args": [
           "--additional-driver-flag",
           "--site-per-process",
+          "--additional-driver-flag",
+          "--isolate-origins=http://www.web-platform.test:8001/,http://www1.web-platform.test:8001/,http://www2.web-platform.test:8001/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8001/,http://xn--lve-6lad.web-platform.test:8001/,http://www.web-platform.test:8081/,http://www1.web-platform.test:8081/,http://www2.web-platform.test:8081/,http://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8081/,http://xn--lve-6lad.web-platform.test:8081/,https://www.web-platform.test:8444/,https://www1.web-platform.test:8444/,https://www2.web-platform.test:8444/,https://xn--n8j6ds53lwwkrqhv28a.web-platform.test:8444/,https://xn--lve-6lad.web-platform.test:8444/",
           "--additional-expectations",
           "src/third_party/WebKit/LayoutTests/FlagExpectations/site-per-process"
         ],
@@ -7108,6 +7163,26 @@
       }
     ]
   },
+  "VR Linux": {
+    "additional_compile_targets": [
+      "vr_common_perftests",
+      "vr_testapp"
+    ],
+    "gtest_tests": [
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "vr_common_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        },
+        "test": "vr_pixeltests"
+      }
+    ]
+  },
   "WebKit Linux layout_ng Dummy Builder": {
     "isolated_scripts": [
       {
@@ -7263,9 +7338,9 @@
       },
       {
         "swarming": {
-          "can_use_on_swarming_builders": true
+          "can_use_on_swarming_builders": false
         },
-        "test": "crashpad_util_test"
+        "test": "crashpad_tests"
       },
       {
         "swarming": {
@@ -7308,6 +7383,12 @@
           "can_use_on_swarming_builders": false
         },
         "test": "installer_util_unittests"
+      },
+      {
+        "swarming": {
+          "can_use_on_swarming_builders": false
+        },
+        "test": "interactive_ui_tests"
       },
       {
         "swarming": {

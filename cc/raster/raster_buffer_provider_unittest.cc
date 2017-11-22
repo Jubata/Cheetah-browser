@@ -243,7 +243,7 @@ class RasterBufferProviderTest
           size, viz::RGBA_8888, gfx::BufferUsage::GPU_READ_CPU_READ_WRITE,
           gfx::ColorSpace());
     } else {
-      resource->Allocate(size, ResourceProvider::TEXTURE_HINT_DEFAULT,
+      resource->Allocate(size, viz::ResourceTextureHint::kDefault,
                          viz::RGBA_8888, gfx::ColorSpace());
     }
     return resource;
@@ -280,6 +280,7 @@ class RasterBufferProviderTest
   void LoseContext(viz::ContextProvider* context_provider) {
     if (!context_provider)
       return;
+    viz::ContextProvider::ScopedContextLock lock(context_provider);
     context_provider->ContextGL()->LoseContextCHROMIUM(
         GL_GUILTY_CONTEXT_RESET_ARB, GL_INNOCENT_CONTEXT_RESET_ARB);
     context_provider->ContextGL()->Flush();

@@ -4,36 +4,64 @@
 
 #include "chrome/browser/ui/passwords/password_manager_porter.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "base/location.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
+#include "base/task_scheduler/post_task.h"
 #include "build/build_config.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
+#include "chrome/browser/ui/passwords/destination_file_system.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/grit/generated_resources.h"
-#include "components/password_manager/core/browser/export/password_exporter.h"
+#include "components/password_manager/core/browser/export/password_csv_writer.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/browser/ui/credential_provider_interface.h"
+#include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/filename_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
+#if defined(OS_WIN)
+#include "base/strings/string16.h"
+#endif
+
 namespace {
+
 // The following are not used on Android due to the |SelectFileDialog| being
 // unused.
 #if !defined(OS_ANDROID)
-// The default name of the password file when exporting.
-constexpr base::FilePath::CharType kDefaultFileName[] =
-    FILE_PATH_LITERAL("chrome_passwords");
+const base::FilePath::CharType kFileExtension[] = FILE_PATH_LITERAL("csv");
+
+// Returns the file extensions corresponding to supported formats.
+// Inner vector indicates equivalent extensions. For example:
+//   { { "html", "htm" }, { "csv" } }
+std::vector<std::vector<base::FilePath::StringType>>
+GetSupportedFileExtensions() {
+  return std::vector<std::vector<base::FilePath::StringType>>(
+      1, std::vector<base::FilePath::StringType>(1, kFileExtension));
+}
 
 // The default directory and filename when importing and exporting passwords.
 base::FilePath GetDefaultFilepathForPasswordFile(
     const base::FilePath::StringType& default_extension) {
   base::FilePath default_path;
   PathService::Get(chrome::DIR_USER_DOCUMENTS, &default_path);
-  return default_path.Append(kDefaultFileName).AddExtension(default_extension);
+#if defined(OS_WIN)
+  base::string16 file_name =
+      l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_DEFAULT_EXPORT_FILENAME);
+#else
+  std::string file_name =
+      l10n_util::GetStringUTF8(IDS_PASSWORD_MANAGER_DEFAULT_EXPORT_FILENAME);
+#endif
+  return default_path.Append(file_name).AddExtension(default_extension);
 }
 #endif
 
@@ -111,8 +139,7 @@ void PasswordManagerPorter::PresentFileSelector(
 
   // Get the default file extension for password files.
   ui::SelectFileDialog::FileTypeInfo file_type_info;
-  file_type_info.extensions =
-      password_manager::PasswordExporter::GetSupportedFileExtensions();
+  file_type_info.extensions = GetSupportedFileExtensions();
   DCHECK(!file_type_info.extensions.empty());
   DCHECK(!file_type_info.extensions[0].empty());
   file_type_info.include_all_files = true;
@@ -174,5 +201,14 @@ void PasswordManagerPorter::ExportPasswordsToPath(const base::FilePath& path) {
       credential_provider_interface_->GetAllPasswords();
   UMA_HISTOGRAM_COUNTS("PasswordManager.ExportedPasswordsPerUserInCSV",
                        password_list.size());
-  password_manager::PasswordExporter::Export(path, std::move(password_list));
+  std::unique_ptr<DestinationFileSystem> destination(
+      new DestinationFileSystem(path));
+
+  base::PostTaskWithTraits(
+      FROM_HERE, {base::TaskPriority::USER_VISIBLE, base::MayBlock()},
+      base::BindOnce(
+          base::IgnoreResult(&DestinationFileSystem::Write),
+          base::Passed(std::move(destination)),
+          base::Passed(password_manager::PasswordCSVWriter::SerializePasswords(
+              password_list))));
 }

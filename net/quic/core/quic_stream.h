@@ -204,6 +204,10 @@ class QUIC_EXPORT_PRIVATE QuicStream : public StreamNotifierInterface {
   void OnStreamFrameRetransmitted(const QuicStreamFrame& frame) override;
   void OnStreamFrameDiscarded(const QuicStreamFrame& frame) override;
 
+  // Same as WritevData except data is provided in reference counted memory so
+  // that data copy is avoided.
+  QuicConsumedData WriteMemSlices(QuicMemSliceSpan span, bool fin);
+
  protected:
   // Sends as many bytes in the first |count| buffers of |iov| to the connection
   // as the connection will consume. If FIN is consumed, the write side is
@@ -214,10 +218,6 @@ class QUIC_EXPORT_PRIVATE QuicStream : public StreamNotifierInterface {
   // side is closed when FIN is sent.
   // TODO(fayang): Let WritevData return boolean.
   QuicConsumedData WritevData(const struct iovec* iov, int iov_count, bool fin);
-
-  // Same as WritevData except data is provided in reference counted memory so
-  // that data copy is avoided.
-  QuicConsumedData WriteMemSlices(QuicMemSliceSpan span, bool fin);
 
   // Allows override of the session level writev, for the force HOL
   // blocking experiment.
@@ -360,6 +360,10 @@ class QUIC_EXPORT_PRIVATE QuicStream : public StreamNotifierInterface {
 
   // Latched value of FLAGS_quic_buffered_data_threshold.
   const QuicByteCount buffered_data_threshold_;
+
+  // Latched value of
+  // FLAGS_quic_reloadable_flag_quic_remove_on_stream_frame_discarded.
+  const bool remove_on_stream_frame_discarded_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicStream);
 };

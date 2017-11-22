@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/process/process_handle.h"
+#include "chrome/browser/resource_coordinator/time.h"
 #include "chromeos/dbus/fake_debug_daemon_client.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -158,8 +159,7 @@ class MockTabManagerDelegate : public TabManagerDelegate {
     return true;
   }
 
-  bool KillTab(const TabStats& tab_stats,
-               TabManager::DiscardTabCondition condition) override {
+  bool KillTab(const TabStats& tab_stats, DiscardCondition condition) override {
     killed_tabs_.push_back(tab_stats.tab_contents_id);
     return true;
   }
@@ -285,7 +285,7 @@ TEST_F(TabManagerDelegateTest, IsRecentlyKilledArcProcess) {
 
   // When the process name is not in the map, IsRecentlyKilledArcProcess should
   // return false.
-  const base::TimeTicks now = base::TimeTicks::Now();
+  const base::TimeTicks now = NowTicks();
   EXPECT_FALSE(
       tab_manager_delegate.IsRecentlyKilledArcProcess(kProcessName1, now));
   EXPECT_FALSE(
@@ -338,7 +338,7 @@ TEST_F(TabManagerDelegateTest, DoNotKillRecentlyKilledArcProcesses) {
   memory_stat->SetTargetMemoryToFreeKB(250000);
   memory_stat->SetProcessPss(30, 10000);
   TabStatsList tab_list;
-  tab_manager_delegate.LowMemoryKillImpl(TabManager::kUrgentShutdown, tab_list,
+  tab_manager_delegate.LowMemoryKillImpl(DiscardCondition::kUrgent, tab_list,
                                          arc_processes);
 
   auto killed_arc_processes = tab_manager_delegate.GetKilledArcProcesses();
@@ -416,8 +416,8 @@ TEST_F(TabManagerDelegateTest, KillMultipleProcesses) {
   memory_stat->SetProcessPss(20, 30000);
   memory_stat->SetProcessPss(10, 100000);
 
-  tab_manager_delegate.LowMemoryKillImpl(TabManager::kProactiveShutdown,
-                                         tab_list, arc_processes);
+  tab_manager_delegate.LowMemoryKillImpl(DiscardCondition::kProactive, tab_list,
+                                         arc_processes);
 
   auto killed_arc_processes = tab_manager_delegate.GetKilledArcProcesses();
   auto killed_tabs = tab_manager_delegate.GetKilledTabs();

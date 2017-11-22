@@ -26,11 +26,11 @@
 #ifndef CrossfadeGeneratedImage_h
 #define CrossfadeGeneratedImage_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/GeneratedImage.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/ImageObserver.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -42,7 +42,7 @@ class PLATFORM_EXPORT CrossfadeGeneratedImage final : public GeneratedImage {
       float percentage,
       IntSize crossfade_size,
       const IntSize& size) {
-    return WTF::AdoptRef(
+    return base::AdoptRef(
         new CrossfadeGeneratedImage(std::move(from_image), std::move(to_image),
                                     percentage, crossfade_size, size));
   }

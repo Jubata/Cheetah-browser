@@ -98,10 +98,6 @@ namespace policy {
 class PolicyService;
 }  // namespace policy
 
-namespace test {
-class IOThreadPeer;
-}  // namespace test
-
 // Contains state associated with, initialized and cleaned up on, and
 // primarily used on, the IO thread.
 //
@@ -225,9 +221,14 @@ class IOThread : public content::BrowserThreadDelegate {
       content::URLRequestContextBuilderMojo* builder,
       std::unique_ptr<net::ProxyConfigService> proxy_config_service) const;
 
- private:
-  friend class test::IOThreadPeer;
+  // Gets a pointer to the NetworkService. Can only be called on the UI thread.
+  // When out-of-process NetworkService is enabled, this is a reference to the
+  // NetworkService created through ServiceManager; when out-of-process
+  // NetworkService is not enabld, this is a Mojo interface to the IOThread's
+  // in-process NetworkService that lives on the IO thread.
+  content::mojom::NetworkService* GetNetworkServiceOnUIThread();
 
+ private:
   // BrowserThreadDelegate implementation, runs on the IO thread.
   // This handles initialization and destruction of state that must
   // live on the IO thread.
@@ -338,6 +339,9 @@ class IOThread : public content::BrowserThreadDelegate {
 
   // True if QUIC is initially enabled.
   bool is_quic_allowed_on_init_;
+
+  content::mojom::NetworkServicePtr ui_thread_network_service_;
+  content::mojom::NetworkServiceRequest network_service_request_;
 
   base::WeakPtrFactory<IOThread> weak_factory_;
 

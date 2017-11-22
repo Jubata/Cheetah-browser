@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -16,7 +17,7 @@
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/arc/fileapi/file_stream_forwarder.h"
 #include "components/arc/common/file_system.mojom.h"
-#include "components/arc/instance_holder.h"
+#include "components/arc/connection_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "storage/browser/fileapi/watcher_manager.h"
@@ -37,7 +38,7 @@ class ArcBridgeService;
 class ArcFileSystemBridge
     : public KeyedService,
       public mojom::FileSystemHost,
-      public InstanceHolder<mojom::FileSystemInstance>::Observer {
+      public ConnectionObserver<mojom::FileSystemInstance> {
  public:
   class Observer {
    public:
@@ -88,8 +89,8 @@ class ArcFileSystemBridge
   void OpenFileToRead(const std::string& url,
                       OpenFileToReadCallback callback) override;
 
-  // InstanceHolder<mojom::FileSystemInstance>::Observer overrides:
-  void OnInstanceReady() override;
+  // ConnectionObserver<mojom::FileSystemInstance> overrides:
+  void OnConnectionReady() override;
 
  private:
   // Used to implement OpenFileToRead().
@@ -104,7 +105,9 @@ class ArcFileSystemBridge
                   base::ScopedFD fd);
 
   // Called when FileStreamForwarder completes read request.
-  void OnReadRequestCompleted(const std::string& id, bool result);
+  void OnReadRequestCompleted(const std::string& id,
+                              std::list<FileStreamForwarderPtr>::iterator it,
+                              bool result);
 
   Profile* const profile_;
   ArcBridgeService* const bridge_service_;  // Owned by ArcServiceManager
@@ -114,8 +117,7 @@ class ArcFileSystemBridge
   // Map from file descriptor IDs to requested URLs.
   std::map<std::string, GURL> id_to_url_;
 
-  // Map from file descriptor IDs to FileStreamForwarders.
-  std::map<std::string, FileStreamForwarderPtr> file_stream_forwarders_;
+  std::list<FileStreamForwarderPtr> file_stream_forwarders_;
 
   base::WeakPtrFactory<ArcFileSystemBridge> weak_ptr_factory_;
 

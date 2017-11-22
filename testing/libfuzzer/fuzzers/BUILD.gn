@@ -197,7 +197,7 @@ fuzzer_test("v8_script_parser_fuzzer") {
   deps = [
     "//v8:parser_fuzzer",
   ]
-  dict = "dicts/generated/v8_script_parser_fuzzer.dict"
+  dict = "dicts/generated/javascript.dict"
   seed_corpus = "//v8/test/mjsunit/regress/"
   libfuzzer_options = [ "only_ascii=1" ]
 }
@@ -408,11 +408,13 @@ fuzzer_test("angle_translator_fuzzer") {
   libfuzzer_options = [ "max_len=1000" ]
 }
 
-fuzzer_test("swiftshader_vertex_routine_fuzzer") {
-  sources = []
-  deps = [
-    "//third_party/swiftshader:vertex_routine_fuzzer",
-  ]
+if (target_cpu == "x86" || target_cpu == "x64") {
+  fuzzer_test("swiftshader_vertex_routine_fuzzer") {
+    sources = []
+    deps = [
+      "//third_party/swiftshader:vertex_routine_fuzzer",
+    ]
+  }
 }
 
 fuzzer_test("sha1_fuzzer") {
@@ -502,4 +504,17 @@ fuzzer_test("javascript_parser_proto_fuzzer") {
     "//v8:v8_libplatform",
   ]
   include_dirs = [ "$root_build_dir/$target_gen_dir" ]
+}
+
+fuzzer_test("v8_fully_instrumented_fuzzer") {
+  sources = [
+    "v8_fuzzer.cc",
+  ]
+  deps = [
+    "//base",
+    "//v8:v8",
+    "//v8:v8_libplatform",
+  ]
+  dict = "dicts/generated/javascript.dict"
+  libfuzzer_options = [ "only_ascii=1" ]
 }

@@ -330,7 +330,7 @@ void NavigationSimulator::ReadyToCommit() {
   if (IsBrowserSideNavigationEnabled()) {
     if (frame_tree_node_->navigation_request()) {
       static_cast<TestRenderFrameHost*>(frame_tree_node_->current_frame_host())
-          ->PrepareForCommit();
+          ->PrepareForCommitWithSocketAddress(socket_address_);
     }
 
     // Synchronous failure can cause the navigation to finish here.
@@ -356,9 +356,9 @@ void NavigationSimulator::ReadyToCommit() {
                               ++request_id);
     handle_->WillProcessResponse(
         render_frame_host_, scoped_refptr<net::HttpResponseHeaders>(),
-        net::HttpResponseInfo::ConnectionInfo(), SSLStatus(), global_id,
-        false /* should_replace_current_entry */, false /* is_download */,
-        false /* is_stream */, base::Closure(),
+        net::HttpResponseInfo::ConnectionInfo(), socket_address_, SSLStatus(),
+        global_id, false /* should_replace_current_entry */,
+        false /* is_download */, false /* is_stream */, base::Closure(),
         base::Callback<void(NavigationThrottle::ThrottleCheckResult)>());
   }
 
@@ -434,7 +434,6 @@ void NavigationSimulator::Commit() {
   params.contents_mime_type = "text/html";
   params.method = "GET";
   params.http_status_code = 200;
-  params.socket_address = socket_address_;
   params.history_list_was_cleared = false;
   params.original_request_url = navigation_url_;
   params.was_within_same_document = same_document_;
@@ -603,7 +602,6 @@ void NavigationSimulator::CommitSameDocument() {
   params.contents_mime_type = "text/html";
   params.method = "GET";
   params.http_status_code = 200;
-  params.socket_address = socket_address_;
   params.history_list_was_cleared = false;
   params.original_request_url = navigation_url_;
   params.was_within_same_document = true;
@@ -827,12 +825,21 @@ bool NavigationSimulator::SimulateBrowserInitiatedStart() {
              !IsURLHandledByNetworkStack(handle_->GetURL()));
       same_document_ = handle_->IsSameDocument();
       return true;
+    } else if (IsRendererDebugURL(navigation_url_)) {
+      // There is no DidStartNavigation for renderer-debug URLs and the
+      // NavigationHandle has already been passed to the main frame for commit.
+      // Register it now.
+      handle_ = web_contents_->GetMainFrame()->navigation_handle();
+
+      // A navigation to a renderer-debug URL cannot commit. Simulate the
+      // renderer process aborting it.
+      web_contents_->GetMainFrame()->OnMessageReceived(
+          FrameHostMsg_DidStopLoading(
+              web_contents_->GetMainFrame()->GetRoutingID()));
+      state_ = FAILED;
+      return false;
     }
     return false;
-  } else if (IsRendererDebugURL(navigation_url_)) {
-    // There will be no DidStartNavigation for renderer-debug URLs. Register the
-    // NavigationHandle now.
-    handle_ = request->navigation_handle();
   }
 
   DCHECK_EQ(handle_, request->navigation_handle());

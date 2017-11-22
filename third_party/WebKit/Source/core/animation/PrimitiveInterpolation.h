@@ -7,11 +7,12 @@
 
 #include <cmath>
 #include <memory>
+
+#include "base/macros.h"
 #include "core/animation/TypedInterpolationValue.h"
 #include "platform/animation/AnimationUtilities.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/Vector.h"
 
 namespace blink {
 
@@ -20,7 +21,6 @@ namespace blink {
 // format with respect to the animation environment and underlying values.
 class PrimitiveInterpolation {
   USING_FAST_MALLOC(PrimitiveInterpolation);
-  WTF_MAKE_NONCOPYABLE(PrimitiveInterpolation);
 
  public:
   virtual ~PrimitiveInterpolation() {}
@@ -35,6 +35,7 @@ class PrimitiveInterpolation {
 
  protected:
   PrimitiveInterpolation() {}
+  DISALLOW_COPY_AND_ASSIGN(PrimitiveInterpolation);
 };
 
 // Represents a pair of keyframes that are compatible for "smooth" interpolation

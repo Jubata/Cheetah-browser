@@ -13,6 +13,7 @@
 #include "base/macros.h"
 #include "base/pickle.h"
 #include "base/process/process.h"
+#include "sandbox/linux/bpf_dsl/trap_registry.h"
 #include "sandbox/linux/syscall_broker/broker_policy.h"
 #include "sandbox/sandbox_export.h"
 
@@ -70,6 +71,11 @@ class SANDBOX_EXPORT BrokerProcess {
 
   int broker_pid() const { return broker_pid_; }
 
+  // Handler to be used with a bpf_dsl Trap() function to forward system calls
+  // to the methods above.
+  static intptr_t SIGSYS_Handler(const arch_seccomp_data& args,
+                                 void* aux_broker_process);
+
  private:
   friend class BrokerProcessTestHelper;
 
@@ -80,8 +86,8 @@ class SANDBOX_EXPORT BrokerProcess {
   bool initialized_;  // Whether we've been through Init() yet.
   const bool fast_check_in_client_;
   const bool quiet_failures_for_tests_;
-  pid_t broker_pid_;                     // The PID of the broker (child).
-  syscall_broker::BrokerPolicy policy_;  // The sandboxing policy.
+  pid_t broker_pid_;  // The PID of the broker (child).
+  syscall_broker::BrokerPolicy broker_policy_;  // Access policy to enforce.
   std::unique_ptr<syscall_broker::BrokerClient> broker_client_;
 
   DISALLOW_COPY_AND_ASSIGN(BrokerProcess);

@@ -98,9 +98,6 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
     UNIFIED,
   };
 
-  // The display ID for a virtual display assigned to a unified desktop.
-  static int64_t kUnifiedDisplayId;
-
   explicit DisplayManager(std::unique_ptr<Screen> screen);
 #if defined(OS_CHROMEOS)
   ~DisplayManager() override;
@@ -128,6 +125,20 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
 
   // Returns the display id of the first display in the outupt list.
   int64_t first_display_id() const { return first_display_id_; }
+
+#if defined(OS_CHROMEOS)
+  TouchDeviceManager* touch_device_manager() const {
+    return touch_device_manager_.get();
+  }
+#endif
+
+  bool is_multi_mirroring_enabled() const {
+    return is_multi_mirroring_enabled_;
+  }
+
+  const UnifiedDesktopLayoutMatrix& current_unified_desktop_matrix() const {
+    return current_unified_desktop_matrix_;
+  }
 
   // Sets controller used to add/remove fake displays. If this is set then
   // AddRemoveDisplay() will delegate out to |dev_display_controller_| instead
@@ -200,19 +211,12 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
   // |overscan_insets| is null if the display has no custom overscan insets.
   // |touch_calibration_data| is null if the display has no touch calibration
   // associated data.
-  void RegisterDisplayProperty(
-      int64_t display_id,
-      Display::Rotation rotation,
-      float ui_scale,
-      const gfx::Insets* overscan_insets,
-      const gfx::Size& resolution_in_pixels,
-      float device_scale_factor
-#if defined(OS_CHROMEOS)
-      ,
-      std::map<TouchDeviceIdentifier, TouchCalibrationData>*
-          touch_calibration_data_map
-#endif
-      );
+  void RegisterDisplayProperty(int64_t display_id,
+                               Display::Rotation rotation,
+                               float ui_scale,
+                               const gfx::Insets* overscan_insets,
+                               const gfx::Size& resolution_in_pixels,
+                               float device_scale_factor);
 
   // Register stored rotation properties for the internal display.
   void RegisterDisplayRotationProperties(bool rotation_lock,
@@ -311,7 +315,7 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
   int64_t mirroring_source_id() const { return mirroring_source_id_; }
 
   // Returns a list of mirroring destination display ids.
-  DisplayIdList GetMirroringDstDisplayIdList() const;
+  DisplayIdList GetMirroringDestinationDisplayIdList() const;
 
   const Displays& software_mirroring_display_list() const {
     return software_mirroring_display_list_;
@@ -430,12 +434,6 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
   // it.
   const Display& GetSecondaryDisplay() const;
 
-#if defined(OS_CHROMEOS)
-  TouchDeviceManager* touch_device_manager() const {
-    return touch_device_manager_.get();
-  }
-#endif
-
  private:
   friend class test::DisplayManagerTestApi;
 
@@ -518,7 +516,7 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
   std::unique_ptr<DisplayLayout> current_resolved_layout_;
 
   // The matrix that's used to layout the displays in Unified Desktop mode.
-  UnifiedDesktopLayoutMatrix current_matrix_;
+  UnifiedDesktopLayoutMatrix current_unified_desktop_matrix_;
 
   std::map<int64_t, int> mirroring_display_id_to_unified_matrix_row_;
 
@@ -603,6 +601,9 @@ class DISPLAY_MANAGER_EXPORT DisplayManager
 #if defined(OS_CHROMEOS)
   std::unique_ptr<TouchDeviceManager> touch_device_manager_;
 #endif
+
+  // Whether mirroring across multiple displays is enabled.
+  bool is_multi_mirroring_enabled_;
 
   base::WeakPtrFactory<DisplayManager> weak_ptr_factory_;
 

@@ -40,7 +40,6 @@
 #include "chrome/browser/chromeos/arc/arc_util.h"
 #include "chrome/browser/chromeos/ash_config.h"
 #include "chrome/browser/chromeos/login/users/fake_chrome_user_manager.h"
-#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
@@ -97,6 +96,7 @@
 #include "components/sync_preferences/pref_model_associator.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/user_manager/fake_user_manager.h"
+#include "components/user_manager/scoped_user_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_utils.h"
@@ -387,12 +387,6 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
     app_list::AppListSyncableServiceFactory::SetUseInTesting();
 
     BrowserWithTestWindowTest::SetUp();
-
-    if (!profile_manager_) {
-      profile_manager_.reset(
-          new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
-      ASSERT_TRUE(profile_manager_->SetUp());
-    }
 
     model_observer_ = std::make_unique<TestShelfModelObserver>();
     model_ = std::make_unique<ash::ShelfModel>();
@@ -1012,7 +1006,6 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
   std::unique_ptr<TestChromeLauncherController> launcher_controller_;
   std::unique_ptr<TestShelfModelObserver> model_observer_;
   std::unique_ptr<ash::ShelfModel> model_;
-  std::unique_ptr<TestingProfileManager> profile_manager_;
 
   FakeTabletModeController fake_tablet_mode_controller_;
   std::unique_ptr<TabletModeClient> tablet_mode_client_;
@@ -1162,23 +1155,18 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
 
   // Overwrite the Setup function to enable multi profile and needed objects.
   void SetUp() override {
-    profile_manager_.reset(
-        new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
-
-    ASSERT_TRUE(profile_manager_->SetUp());
-
-    // AvatarMenu and multiple profiles works after user logged in.
-    profile_manager_->SetLoggedIn(true);
-
     // Initialize the UserManager singleton to a fresh FakeUserManager instance.
-    user_manager_enabler_.reset(new chromeos::ScopedUserManagerEnabler(
-        new chromeos::FakeChromeUserManager));
+    user_manager_enabler_ = std::make_unique<user_manager::ScopedUserManager>(
+        std::make_unique<chromeos::FakeChromeUserManager>());
 
     // Initialize the WallpaperManager singleton.
     chromeos::WallpaperManager::Initialize();
 
     // Initialize the rest.
     ChromeLauncherControllerTest::SetUp();
+
+    // AvatarMenu and multiple profiles works after user logged in.
+    profile_manager()->SetLoggedIn(true);
 
     // Ensure there are multiple profiles. User 0 is created during setup.
     CreateMultiUserProfile("user1");
@@ -1188,9 +1176,6 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
   void TearDown() override {
     ChromeLauncherControllerTest::TearDown();
     user_manager_enabler_.reset();
-    for (ProfileToNameMap::iterator it = created_profiles_.begin();
-         it != created_profiles_.end(); ++it)
-      profile_manager_->DeleteTestingProfile(it->second);
     chromeos::WallpaperManager::Shutdown();
 
     // A Task is leaked if we don't destroy everything, then run the message
@@ -1270,24 +1255,16 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
   TestingProfile* CreateProfile() override {
     return CreateMultiUserProfile("user0");
   }
-  void DestroyProfile(TestingProfile* profile) override {
-    // Delete the profile through our profile manager.
-    ProfileToNameMap::iterator it = created_profiles_.find(profile);
-    DCHECK(it != created_profiles_.end());
-    profile_manager_->DeleteTestingProfile(it->second);
-    created_profiles_.erase(it);
-  }
 
  private:
   typedef std::map<Profile*, std::string> ProfileToNameMap;
-  TestingProfileManager* profile_manager() { return profile_manager_.get(); }
 
   chromeos::FakeChromeUserManager* GetFakeUserManager() {
     return static_cast<chromeos::FakeChromeUserManager*>(
         user_manager::UserManager::Get());
   }
 
-  std::unique_ptr<chromeos::ScopedUserManagerEnabler> user_manager_enabler_;
+  std::unique_ptr<user_manager::ScopedUserManager> user_manager_enabler_;
 
   ProfileToNameMap created_profiles_;
 
@@ -1679,10 +1656,10 @@ TEST_F(ChromeLauncherControllerTest, V1AppRunActivateClose) {
   EXPECT_NE(nullptr,
             launcher_controller_->GetItem(ash::ShelfID(extension1_->id())));
 
-  // Reporting an active status should just update the existing item.
-  launcher_controller_->SetV1AppStatus(extension1_->id(), ash::STATUS_ACTIVE);
+  // Reporting that the app is running again should have no effect.
+  launcher_controller_->SetV1AppStatus(extension1_->id(), ash::STATUS_RUNNING);
   EXPECT_EQ(3, model_->item_count());
-  EXPECT_EQ(ash::STATUS_ACTIVE, model_->items()[2].status);
+  EXPECT_EQ(ash::STATUS_RUNNING, model_->items()[2].status);
 
   // Reporting that the app is closed should remove its shelf item.
   launcher_controller_->SetV1AppStatus(extension1_->id(), ash::STATUS_CLOSED);

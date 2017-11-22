@@ -6,7 +6,6 @@
 
 #include "bindings/core/v8/SourceLocation.h"
 #include "core/dom/Document.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/loader/DocumentLoader.h"
@@ -16,7 +15,8 @@
 #include "core/workers/WorkerInspectorProxy.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebWorkerFetchContext.h"
 #include "public/web/WebFrameClient.h"
 
@@ -50,8 +50,6 @@ ThreadedMessagingProxyBase::ThreadedMessagingProxyBase(
     DCHECK(web_worker_fetch_context);
     web_worker_fetch_context->SetApplicationCacheHostID(
         document->Fetcher()->Context().ApplicationCacheHostID());
-    web_worker_fetch_context->SetDataSaverEnabled(
-        document->GetFrame()->GetSettings()->GetDataSaverEnabled());
     web_worker_fetch_context->SetIsOnSubframe(
         document->GetFrame() != document->GetFrame()->Tree().Top());
     ProvideWorkerFetchContextToWorker(worker_clients,

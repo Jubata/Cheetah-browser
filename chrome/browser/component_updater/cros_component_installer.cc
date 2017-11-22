@@ -29,6 +29,14 @@
     {{"env_version", "1.1"},                                                 \
      {"sha2hashstr",                                                         \
       "e9d960f84f628e1f42d05de4046bb5b3154b6f1f65c08412c6af57a29aecaffb"}}}, \
+   {"rtanalytics-light",                                                     \
+    {{"env_version", "1.0"},                                                 \
+     {"sha2hashstr",                                                         \
+      "69f09d33c439c2ab55bbbe24b47ab55cb3f6c0bd1f1ef46eefea3216ec925038"}}}, \
+   {"rtanalytics-full",                                                      \
+    {{"env_version", "1.0"},                                                 \
+     {"sha2hashstr",                                                         \
+      "c93c3e1013c52100a20038b405ac854d69fa889f6dc4fa6f188267051e05e444"}}}, \
    {"star-cups-driver",                                                      \
     {{"env_version", "1.1"},                                                 \
      {"sha2hashstr",                                                         \
@@ -105,6 +113,15 @@ CrOSComponentInstallerPolicy::OnCustomInstall(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&ImageLoaderRegistration, version, install_dir, name));
   return update_client::CrxInstaller::Result(update_client::InstallError::NONE);
+}
+
+void CrOSComponentInstallerPolicy::OnCustomUninstall() {
+  chromeos::ImageLoaderClient* loader =
+      chromeos::DBusThreadManager::Get()->GetImageLoaderClient();
+  if (loader) {
+    loader->RemoveComponent(
+        name, base::BindOnce(base::Callback<void(base::Optional<bool>)>()));
+  }
 }
 
 void CrOSComponentInstallerPolicy::ComponentReady(
@@ -205,11 +222,8 @@ static void RegisterComponent(ComponentUpdateService* cus,
                               const ComponentConfig& config,
                               base::OnceClosure register_callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  std::unique_ptr<ComponentInstallerPolicy> policy(
-      new CrOSComponentInstallerPolicy(config));
-  // |cus| will take ownership of |installer| during
-  // installer->Register(cus).
-  ComponentInstaller* installer = new ComponentInstaller(std::move(policy));
+  auto installer = base::MakeRefCounted<ComponentInstaller>(
+      std::make_unique<CrOSComponentInstallerPolicy>(config));
   installer->Register(cus, std::move(register_callback));
 }
 
@@ -274,7 +288,7 @@ void CrOSComponent::RegisterComponents(
   component_updater::ComponentUpdateService* updater =
       g_browser_process->component_updater();
   for (const auto& config : configs) {
-    RegisterComponent(updater, config, base::Closure());
+    RegisterComponent(updater, config, base::OnceClosure());
   }
 }
 

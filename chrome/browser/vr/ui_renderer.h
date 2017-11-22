@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_VR_UI_RENDERER_H_
 #define CHROME_BROWSER_VR_UI_RENDERER_H_
 
+#include "chrome/browser/vr/model/camera_model.h"
 #include "chrome/browser/vr/ui_input_manager.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/transform.h"
@@ -14,30 +15,21 @@ namespace vr {
 class UiElement;
 class UiScene;
 class UiElement;
-class VrShellRenderer;
+class UiElementRenderer;
 
 // Provides information for rendering such as the viewport and view/projection
 // matrix.
 struct RenderInfo {
-  struct EyeInfo {
-    gfx::Rect viewport;
-    gfx::Transform view_matrix;
-    gfx::Transform proj_matrix;
-    gfx::Transform view_proj_matrix;
-  };
-
   gfx::Transform head_pose;
-  EyeInfo left_eye_info;
-  EyeInfo right_eye_info;
-
   gfx::Size surface_texture_size;
+  CameraModel left_eye_model;
+  CameraModel right_eye_model;
 };
 
 // Renders a UI scene.
 class UiRenderer {
  public:
-  UiRenderer(UiScene* scene,
-             VrShellRenderer* vr_shell_renderer);
+  UiRenderer(UiScene* scene, UiElementRenderer* ui_element_renderer);
   ~UiRenderer();
 
   void Draw(const RenderInfo& render_info);
@@ -55,14 +47,13 @@ class UiRenderer {
 
   void DrawUiView(const RenderInfo& render_info,
                   const std::vector<const UiElement*>& elements);
-  void DrawElements(const gfx::Transform& view_proj_matrix,
+  void DrawElements(const CameraModel& camera_model,
                     const std::vector<const UiElement*>& elements,
                     const RenderInfo& render_info);
-  void DrawElement(const gfx::Transform& view_proj_matrix,
-                   const UiElement& element);
+  void DrawElement(const CameraModel& camera_model, const UiElement& element);
 
   UiScene* scene_ = nullptr;
-  VrShellRenderer* vr_shell_renderer_ = nullptr;
+  UiElementRenderer* ui_element_renderer_ = nullptr;
 };
 
 }  // namespace vr

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "platform/wtf/RefPtr.h"
+#include "base/memory/scoped_refptr.h"
 
 #include "platform/wtf/RefCounted.h"
 #include "platform/wtf/ThreadSafeRefCounted.h"
@@ -35,7 +35,7 @@ TEST(RefPtrTest, ConstObject) {
   // This test is only to ensure we force the compilation of a const RefCounted
   // object to ensure the generated code compiles.
   scoped_refptr<const RefCountedClass> ptr_to_const =
-      WTF::AdoptRef(new RefCountedClass());
+      base::AdoptRef(new RefCountedClass());
 }
 
 class CustomDeleter;
@@ -63,7 +63,8 @@ void Deleter::Destruct(const CustomDeleter* obj) {
 
 TEST(RefPtrTest, CustomDeleter) {
   bool deleted = false;
-  scoped_refptr<CustomDeleter> obj = WTF::AdoptRef(new CustomDeleter(&deleted));
+  scoped_refptr<CustomDeleter> obj =
+      base::AdoptRef(new CustomDeleter(&deleted));
   EXPECT_FALSE(deleted);
   obj = nullptr;
   EXPECT_TRUE(deleted);
@@ -96,7 +97,7 @@ void DeleterThreadSafe::Destruct(const CustomDeleterThreadSafe* obj) {
 TEST(RefPtrTest, CustomDeleterThreadSafe) {
   bool deleted = false;
   scoped_refptr<CustomDeleterThreadSafe> obj =
-      WTF::AdoptRef(new CustomDeleterThreadSafe(&deleted));
+      base::AdoptRef(new CustomDeleterThreadSafe(&deleted));
   EXPECT_FALSE(deleted);
   obj = nullptr;
   EXPECT_TRUE(deleted);

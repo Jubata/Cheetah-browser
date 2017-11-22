@@ -19,6 +19,7 @@
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/compositor/surface_utils.h"
+#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -41,6 +42,7 @@
 
 #if defined(USE_AURA)
 #include "content/browser/renderer_host/ui_events_helper.h"
+#include "ui/aura/env.h"
 #endif
 
 namespace content {
@@ -87,7 +89,7 @@ RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
       // |guest| is NULL during test.
       guest_(guest ? guest->AsWeakPtr() : base::WeakPtr<BrowserPluginGuest>()),
       platform_view_(platform_view),
-      should_forward_text_selection_(false) {
+      weak_ptr_factory_(this) {
   // In tests |guest_| and therefore |owner| can be null.
   auto* owner = GetOwnerRenderWidgetHostView();
   if (owner)
@@ -380,17 +382,31 @@ void RenderWidgetHostViewGuest::SendSurfaceInfoToEmbedderImpl(
 
 void RenderWidgetHostViewGuest::SubmitCompositorFrame(
     const viz::LocalSurfaceId& local_surface_id,
-    viz::CompositorFrame frame) {
+    viz::CompositorFrame frame,
+    viz::mojom::HitTestRegionListPtr hit_test_region_list) {
   TRACE_EVENT0("content", "RenderWidgetHostViewGuest::OnSwapCompositorFrame");
 
   last_scroll_offset_ = frame.metadata.root_scroll_offset;
-  ProcessCompositorFrame(local_surface_id, std::move(frame));
+  ProcessCompositorFrame(local_surface_id, std::move(frame),
+                         std::move(hit_test_region_list));
 
   // If after detaching we are sent a frame, we should finish processing it, and
   // then we should clear the surface so that we are not holding resources we
   // no longer need.
   if (!guest_ || !guest_->attached())
     ClearCompositorSurfaceIfNecessary();
+}
+
+void RenderWidgetHostViewGuest::OnAttached() {
+  RegisterFrameSinkId();
+#if defined(USE_AURA)
+  if (IsUsingMus()) {
+    aura::Env::GetInstance()->ScheduleEmbed(
+        GetWindowTreeClientFromRenderer(),
+        base::BindOnce(&RenderWidgetHostViewGuest::OnGotEmbedToken,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
+#endif
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
@@ -549,7 +565,7 @@ bool RenderWidgetHostViewGuest::LockMouse() {
 }
 
 void RenderWidgetHostViewGuest::UnlockMouse() {
-  return platform_view_->UnlockMouse();
+  platform_view_->UnlockMouse();
 }
 
 viz::LocalSurfaceId RenderWidgetHostViewGuest::GetLocalSurfaceId() const {
@@ -708,6 +724,13 @@ void RenderWidgetHostViewGuest::GetScreenInfo(ScreenInfo* screen_info) {
   *screen_info = guest_->screen_info();
 }
 
+void RenderWidgetHostViewGuest::ResizeDueToAutoResize(
+    const gfx::Size& new_size,
+    uint64_t sequence_number) {
+  if (guest_)
+    guest_->ResizeDueToAutoResize(new_size, sequence_number);
+}
+
 bool RenderWidgetHostViewGuest::IsRenderWidgetHostViewGuest() {
   return true;
 }
@@ -809,5 +832,17 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
 bool RenderWidgetHostViewGuest::HasEmbedderChanged() {
   return guest_ && guest_->has_attached_since_surface_set();
 }
+
+#if defined(USE_AURA)
+void RenderWidgetHostViewGuest::OnGotEmbedToken(
+    const base::UnguessableToken& token) {
+  if (!guest_)
+    return;
+
+  guest_->SendMessageToEmbedder(
+      base::MakeUnique<BrowserPluginMsg_SetMusEmbedToken>(
+          guest_->browser_plugin_instance_id(), token));
+}
+#endif
 
 }  // namespace content

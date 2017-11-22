@@ -38,8 +38,9 @@ static constexpr float kFullscreenVerticalOffset = -0.1f * kFullscreenDistance;
 
 static constexpr float kExitPromptWidth = 0.672f * kContentDistance;
 static constexpr float kExitPromptHeight = 0.2f * kContentDistance;
+
 static constexpr float kExitPromptVerticalOffset = -0.09f * kContentDistance;
-static constexpr float kExitPromptBackplaneSize = 1000.0;
+static constexpr float kPromptBackplaneSize = 1000.0;
 
 // Distance-independent milimeter size of the URL bar.
 static constexpr float kUrlBarWidthDMM = 0.672f;
@@ -49,6 +50,12 @@ static constexpr float kUrlBarWidth = kUrlBarWidthDMM * kUrlBarDistance;
 static constexpr float kUrlBarHeight = kUrlBarHeightDMM * kUrlBarDistance;
 static constexpr float kUrlBarVerticalOffset = -0.516f * kUrlBarDistance;
 static constexpr float kUrlBarRotationRad = -0.175f;
+
+static constexpr float kOverlayPlaneDistance = 2.3f;
+
+static constexpr float kAudioPermissionPromptWidth = 0.63f * kUrlBarDistance;
+static constexpr float kAudioPermissionPromptHeight = 0.218f * kUrlBarDistance;
+static constexpr float kAudionPermisionPromptDepth = 0.11f;
 
 static constexpr float kIndicatorHeight = 0.08f;
 static constexpr float kIndicatorGap = 0.05f;
@@ -85,6 +92,8 @@ static constexpr float kSplashScreenTextHeightM =
 static constexpr float kSplashScreenTextVerticalOffset = -0.18f;
 static constexpr float kSplashScreenMinDurationSeconds = 3;
 
+static constexpr float kButtonZOffsetHoverDMM = 0.048;
+
 static constexpr float kCloseButtonDistance = 2.4f;
 static constexpr float kCloseButtonHeight =
     kUrlBarHeightDMM * kCloseButtonDistance;
@@ -112,13 +121,27 @@ static constexpr int kFloorGridlineCount = 40;
 // Tiny distance to offset textures that should appear in the same plane.
 static constexpr float kTextureOffset = 0.01f;
 
+static constexpr float kVoiceSearchUIGroupButtonDMM = 0.096f;
+static constexpr float kVoiceSearchButtonWidth =
+    kVoiceSearchUIGroupButtonDMM * kUrlBarDistance;
+static constexpr float kVoiceSearchButtonHeight = kVoiceSearchButtonWidth;
+static constexpr float kVoiceSearchButtonYOffset =
+    (0.5f * kUrlBarHeightDMM + 0.032f) * kUrlBarDistance;
+static constexpr float kVoiceSearchCloseButtonWidth =
+    kVoiceSearchUIGroupButtonDMM * kContentDistance;
+static constexpr float kVoiceSearchCloseButtonHeight =
+    kVoiceSearchCloseButtonWidth;
+static constexpr float kVoiceSearchCloseButtonYOffset =
+    0.316f * kContentDistance + 0.5f * kVoiceSearchCloseButtonWidth;
+
 static constexpr float kUnderDevelopmentNoticeFontHeightM =
     0.02f * kUrlBarDistance;
 static constexpr float kUnderDevelopmentNoticeHeightM = 0.1f * kUrlBarDistance;
 static constexpr float kUnderDevelopmentNoticeWidthM = 0.44f * kUrlBarDistance;
 static constexpr float kUnderDevelopmentNoticeVerticalOffsetM =
-    0.5f * kUnderDevelopmentNoticeHeightM + kUrlBarHeight;
-static constexpr float kUnderDevelopmentNoticeRotationRad = -0.19f;
+    kVoiceSearchButtonYOffset + kVoiceSearchButtonHeight +
+    0.04f * kUrlBarDistance;
+static constexpr float kUnderDevelopmentNoticeRotationRad = -0.78f;
 
 static constexpr float kSpinnerWidth = kCloseButtonWidth;
 static constexpr float kSpinnerHeight = kCloseButtonHeight;
@@ -182,8 +205,6 @@ static constexpr float kLaserWidth = 0.01f;
 static constexpr float kReticleWidth = 0.025f;
 static constexpr float kReticleHeight = 0.025f;
 
-static constexpr float kVoiceSearchButtonXOffset = 0.25f;
-
 static constexpr float kSuggestionGap = 0.01f;
 static constexpr float kSuggestionLineGap = 0.01f;
 static constexpr float kSuggestionIconGap = 0.01f;
@@ -191,6 +212,15 @@ static constexpr float kSuggestionIconSize = 0.1f;
 static constexpr float kSuggestionTextFieldWidth = 0.3f;
 static constexpr float kSuggestionContentTextHeight = 0.02f;
 static constexpr float kSuggestionDescriptionTextHeight = 0.015f;
+
+static constexpr int kControllerFadeInMs = 200;
+static constexpr int kControllerFadeOutMs = 550;
+
+static constexpr float kSpeechRecognitionResultTextYOffset = 0.5f;
+static constexpr int kSpeechRecognitionResultTimeoutSeconds = 2;
+static constexpr int kSpeechRecognitionOpacityAnimationDurationMs = 200;
+
+static constexpr float kModalPromptFadeOpacity = 0.5f;
 
 }  // namespace vr
 

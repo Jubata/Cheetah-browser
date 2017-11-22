@@ -11,12 +11,10 @@
 #include "components/favicon/core/large_icon_service.h"
 #include "components/favicon_base/fallback_icon_style.h"
 #include "components/favicon_base/favicon_types.h"
-#include "components/pref_registry/pref_registry_syncable.h"
 #include "ios/chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "ios/chrome/browser/bookmarks/bookmarks_utils.h"
 #include "ios/chrome/browser/experimental_flags.h"
 #include "ios/chrome/browser/favicon/ios_chrome_large_icon_service_factory.h"
-#include "ios/chrome/browser/pref_names.h"
 #import "ios/chrome/browser/sync/synced_sessions_bridge.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view.h"
 #import "ios/chrome/browser/ui/authentication/signin_promo_view_configurator.h"
@@ -105,8 +103,8 @@ using IntegerPair = std::pair<NSInteger, NSInteger>;
 // The loading spinner background which appears when syncing.
 @property(nonatomic, strong) BookmarkHomeWaitingView* spinnerView;
 
-// Dispatcher for sending commands.
-@property(nonatomic, readonly, weak) id<ApplicationCommands> dispatcher;
+// Presenter for showing signin UI.
+@property(nonatomic, readonly, weak) id<SigninPresenter> presenter;
 
 // Section indices.
 @property(nonatomic, readonly, assign) NSInteger promoSection;
@@ -132,27 +130,22 @@ using IntegerPair = std::pair<NSInteger, NSInteger>;
 @synthesize emptyTableBackgroundView = _emptyTableBackgroundView;
 @synthesize spinnerView = _spinnerView;
 @synthesize editing = _editing;
-@synthesize dispatcher = _dispatcher;
+@synthesize presenter = _presenter;
 @synthesize addingNewFolder = _addingNewFolder;
 @synthesize editingFolderCell = _editingFolderCell;
-
-+ (void)registerBrowserStatePrefs:(user_prefs::PrefRegistrySyncable*)registry {
-  registry->RegisterIntegerPref(prefs::kIosBookmarkSigninPromoDisplayedCount,
-                                0);
-}
 
 - (instancetype)initWithBrowserState:(ios::ChromeBrowserState*)browserState
                             delegate:(id<BookmarkTableViewDelegate>)delegate
                             rootNode:(const BookmarkNode*)rootNode
                                frame:(CGRect)frame
-                          dispatcher:(id<ApplicationCommands>)dispatcher {
+                           presenter:(id<SigninPresenter>)presenter {
   self = [super initWithFrame:frame];
   if (self) {
     DCHECK(rootNode);
     _browserState = browserState;
     _delegate = delegate;
     _currentRootNode = rootNode;
-    _dispatcher = dispatcher;
+    _presenter = presenter;
 
     // Set up connection to the BookmarkModel.
     _bookmarkModel =
@@ -183,7 +176,6 @@ using IntegerPair = std::pair<NSInteger, NSInteger>;
     self.tableView.estimatedRowHeight = kCellHeightPt;
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     // Remove extra rows.
-    self.tableView.tableFooterView = [[UIView alloc] initWithFrame:CGRectZero];
     self.tableView.autoresizingMask =
         UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.tableView.allowsMultipleSelectionDuringEditing = YES;
@@ -238,7 +230,7 @@ using IntegerPair = std::pair<NSInteger, NSInteger>;
         initWithBrowserState:_browserState
                  accessPoint:signin_metrics::AccessPoint::
                                  ACCESS_POINT_BOOKMARK_MANAGER
-                  dispatcher:self.dispatcher];
+                   presenter:self.presenter];
     _signinPromoViewMediator.consumer = self;
     [_signinPromoViewMediator signinPromoViewVisible];
   }

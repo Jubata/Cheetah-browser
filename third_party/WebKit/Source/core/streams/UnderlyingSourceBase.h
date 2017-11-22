@@ -5,12 +5,12 @@
 #ifndef UnderlyingSourceBase_h
 #define UnderlyingSourceBase_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/CoreExport.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/ExecutionContext.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/GarbageCollected.h"
@@ -18,7 +18,7 @@
 
 namespace blink {
 
-class ReadableStreamController;
+class ReadableStreamDefaultControllerWrapper;
 
 class CORE_EXPORT UnderlyingSourceBase
     : public ScriptWrappable,
@@ -52,10 +52,12 @@ class CORE_EXPORT UnderlyingSourceBase
   explicit UnderlyingSourceBase(ScriptState* script_state)
       : ContextLifecycleObserver(ExecutionContext::From(script_state)) {}
 
-  ReadableStreamController* Controller() const { return controller_; }
+  ReadableStreamDefaultControllerWrapper* Controller() const {
+    return controller_;
+  }
 
  private:
-  Member<ReadableStreamController> controller_;
+  Member<ReadableStreamDefaultControllerWrapper> controller_;
   bool is_stream_locked_ = false;
 };
 

@@ -5,16 +5,16 @@
 #ifndef NGContainerFragmentBuilder_h
 #define NGContainerFragmentBuilder_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/layout/ng/geometry/ng_bfc_offset.h"
 #include "core/layout/ng/geometry/ng_logical_size.h"
 #include "core/layout/ng/geometry/ng_margin_strut.h"
 #include "core/layout/ng/ng_base_fragment_builder.h"
 #include "core/layout/ng/ng_out_of_flow_positioned_descendant.h"
-#include "core/layout/ng/ng_writing_mode.h"
 #include "platform/text/TextDirection.h"
+#include "platform/text/WritingMode.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -51,6 +51,9 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGBaseFragmentBuilder {
 
   virtual NGContainerFragmentBuilder& AddChild(scoped_refptr<NGLayoutResult>,
                                                const NGLogicalOffset&);
+
+  // This version of AddChild will not propagate floats/out_of_flow.
+  // Use the AddChild(NGLayoutResult) variant if NGLayoutResult is available.
   virtual NGContainerFragmentBuilder& AddChild(
       scoped_refptr<NGPhysicalFragment>,
       const NGLogicalOffset&);
@@ -89,8 +92,13 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGBaseFragmentBuilder {
   // Pass in direction if candidates direction does not match.
   NGContainerFragmentBuilder& AddOutOfFlowChildCandidate(
       NGBlockNode,
-      const NGLogicalOffset& child_offset,
-      Optional<TextDirection> direction = WTF::nullopt);
+      const NGLogicalOffset& child_offset);
+
+  // Inline candidates are laid out line-relative, not fragment-relative.
+  NGContainerFragmentBuilder& AddInlineOutOfFlowChildCandidate(
+      NGBlockNode,
+      const NGLogicalOffset& child_line_offset,
+      TextDirection line_direction);
 
   NGContainerFragmentBuilder& AddOutOfFlowDescendant(
       NGOutOfFlowPositionedDescendant);
@@ -117,10 +125,28 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGBaseFragmentBuilder {
   struct NGOutOfFlowPositionedCandidate {
     NGOutOfFlowPositionedDescendant descendant;
     NGLogicalOffset child_offset;  // Logical offset of child's top left vertex.
+    bool is_line_relative;  // True if offset is relative to line, not fragment.
+    TextDirection line_direction;
+
+    NGOutOfFlowPositionedCandidate(
+        NGOutOfFlowPositionedDescendant descendant_arg,
+        NGLogicalOffset child_offset_arg)
+        : descendant(descendant_arg),
+          child_offset(child_offset_arg),
+          is_line_relative(false) {}
+
+    NGOutOfFlowPositionedCandidate(
+        NGOutOfFlowPositionedDescendant descendant_arg,
+        NGLogicalOffset child_offset_arg,
+        TextDirection line_direction_arg)
+        : descendant(descendant_arg),
+          child_offset(child_offset_arg),
+          is_line_relative(true),
+          line_direction(line_direction_arg) {}
   };
 
   NGContainerFragmentBuilder(scoped_refptr<const ComputedStyle>,
-                             NGWritingMode,
+                             WritingMode,
                              TextDirection);
 
   LayoutUnit inline_size_;

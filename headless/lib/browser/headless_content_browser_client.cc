@@ -314,8 +314,7 @@ void HeadlessContentBrowserClient::AllowCertificateError(
 
 void HeadlessContentBrowserClient::ResourceDispatcherHostCreated() {
   resource_dispatcher_host_delegate_.reset(
-      new HeadlessResourceDispatcherHostDelegate(
-          browser_->options()->enable_resource_scheduler));
+      new HeadlessResourceDispatcherHostDelegate);
   content::ResourceDispatcherHost::Get()->SetDelegate(
       resource_dispatcher_host_delegate_.get());
 }
@@ -343,7 +342,7 @@ bool HeadlessContentBrowserClient::AllowGetCookie(
 bool HeadlessContentBrowserClient::AllowSetCookie(
     const GURL& url,
     const GURL& first_party,
-    const std::string& cookie_line,
+    const net::CanonicalCookie& cookie,
     content::ResourceContext* context,
     int render_process_id,
     int render_frame_id,

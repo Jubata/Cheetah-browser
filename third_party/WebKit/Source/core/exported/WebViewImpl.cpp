@@ -32,6 +32,7 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "core/CSSValueKeywords.h"
 #include "core/CoreInitializer.h"
@@ -97,6 +98,7 @@
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
+#include "core/page/PageLifecycleState.h"
 #include "core/page/PageOverlay.h"
 #include "core/page/PagePopupClient.h"
 #include "core/page/PointerLockController.h"
@@ -135,9 +137,8 @@
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/wtf/AutoReset.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -168,6 +169,7 @@
 #include "public/web/WebSelection.h"
 #include "public/web/WebViewClient.h"
 #include "public/web/WebWindowFeatures.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 
 #if defined(WTF_USE_DEFAULT_RENDER_THEME)
 #include "core/layout/LayoutThemeDefault.h"
@@ -229,7 +231,7 @@ static Vector<std::unique_ptr<ScopedPagePauser>>& PagePauserStack() {
 }
 
 void WebView::WillEnterModalLoop() {
-  PagePauserStack().push_back(WTF::MakeUnique<ScopedPagePauser>());
+  PagePauserStack().push_back(std::make_unique<ScopedPagePauser>());
 }
 
 void WebView::DidExitModalLoop() {
@@ -294,14 +296,14 @@ class ColorOverlay final : public PageOverlay::Delegate {
 // WebView ----------------------------------------------------------------
 
 WebView* WebView::Create(WebViewClient* client,
-                         WebPageVisibilityState visibility_state) {
+                         mojom::PageVisibilityState visibility_state) {
   return WebViewImpl::Create(client, visibility_state);
 }
 
 WebViewImpl* WebViewImpl::Create(WebViewClient* client,
-                                 WebPageVisibilityState visibility_state) {
+                                 mojom::PageVisibilityState visibility_state) {
   // Pass the WebViewImpl's self-reference to the caller.
-  auto web_view = WTF::AdoptRef(new WebViewImpl(client, visibility_state));
+  auto web_view = base::AdoptRef(new WebViewImpl(client, visibility_state));
   web_view->AddRef();
   return web_view.get();
 }
@@ -329,12 +331,11 @@ void WebViewImpl::SetPrerendererClient(
 }
 
 WebViewImpl::WebViewImpl(WebViewClient* client,
-                         WebPageVisibilityState visibility_state)
+                         mojom::PageVisibilityState visibility_state)
     : client_(client),
       chrome_client_(ChromeClientImpl::Create(this)),
       context_menu_client_(*this),
       editor_client_(*this),
-      spell_checker_client_impl_(this),
       should_auto_resize_(false),
       zoom_level_(0),
       minimum_zoom_level_(ZoomFactorToZoomLevel(kMinTextSizeMultiplier)),
@@ -379,7 +380,6 @@ WebViewImpl::WebViewImpl(WebViewClient* client,
   page_clients.chrome_client = chrome_client_.Get();
   page_clients.context_menu_client = &context_menu_client_;
   page_clients.editor_client = &editor_client_;
-  page_clients.spell_checker_client = &spell_checker_client_impl_;
 
   page_ = Page::CreateOrdinary(page_clients);
   CoreInitializer::GetInstance().ProvideModulesToPage(*page_, client_);
@@ -947,6 +947,15 @@ void WebViewImpl::RequestBeginMainFrameNotExpected(bool new_state) {
   if (layer_tree_view_) {
     layer_tree_view_->RequestBeginMainFrameNotExpected(new_state);
   }
+}
+
+void WebViewImpl::SetPageStopped(bool stopped) {
+  if (!GetPage())
+    return;
+  GetPage()->SetLifecycleState(
+      stopped ? PageLifecycleState::kStopped
+              // TODO(fmeawad): if not stopped, fall back to visibility state.
+              : PageLifecycleState::kUnknown);
 }
 
 WebInputEventResult WebViewImpl::HandleKeyEvent(const WebKeyboardEvent& event) {
@@ -1525,8 +1534,8 @@ PagePopup* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
     HidePopups();
   DCHECK(!page_popup_);
 
-  WebWidget* popup_widget = client_->CreatePopupMenu(kWebPopupTypePage);
-  // createPopupMenu returns nullptr if this renderer process is about to die.
+  WebWidget* popup_widget = client_->CreatePopup(kWebPopupTypePage);
+  // CreatePopup returns nullptr if this renderer process is about to die.
   if (!popup_widget)
     return nullptr;
   page_popup_ = ToWebPagePopupImpl(popup_widget);
@@ -2163,73 +2172,22 @@ void WebViewImpl::SetFocus(bool enable) {
   }
 }
 
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-WebRange WebViewImpl::CompositionRange() {
-  LocalFrame* focused = FocusedLocalFrameAvailableForIme();
-  if (!focused)
-    return WebRange();
-
-  const EphemeralRange range =
-      focused->GetInputMethodController().CompositionEphemeralRange();
-  if (range.IsNull())
-    return WebRange();
-
-  Element* editable =
-      focused->Selection().RootEditableElementOrDocumentElement();
-  DCHECK(editable);
-
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  editable->GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  return PlainTextRange::Create(*editable, range);
-}
-
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-bool WebViewImpl::SelectionBounds(WebRect& anchor, WebRect& focus) const {
+bool WebViewImpl::SelectionBounds(WebRect& anchor_web,
+                                  WebRect& focus_web) const {
   const Frame* frame = FocusedCoreFrame();
   if (!frame || !frame->IsLocalFrame())
     return false;
-
   const LocalFrame* local_frame = ToLocalFrame(frame);
   if (!local_frame)
     return false;
-  FrameSelection& selection = local_frame->Selection();
-  if (!selection.IsAvailable() || selection.GetSelectionInDOMTree().IsNone())
+
+  IntRect anchor;
+  IntRect focus;
+  if (!local_frame->Selection().ComputeAbsoluteBounds(anchor, focus))
     return false;
 
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  local_frame->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-  if (selection.ComputeVisibleSelectionInDOMTree().IsNone()) {
-    // plugins/mouse-capture-inside-shadow.html reaches here.
-    return false;
-  }
-
-  DocumentLifecycle::DisallowTransitionScope disallow_transition(
-      local_frame->GetDocument()->Lifecycle());
-
-  if (selection.ComputeVisibleSelectionInDOMTree().IsCaret()) {
-    anchor = focus = selection.AbsoluteCaretBounds();
-  } else {
-    const EphemeralRange selected_range =
-        selection.ComputeVisibleSelectionInDOMTree()
-            .ToNormalizedEphemeralRange();
-    if (selected_range.IsNull())
-      return false;
-    anchor = local_frame->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.StartPosition()));
-    focus = local_frame->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.EndPosition()));
-  }
-
-  anchor = local_frame->View()->ContentsToViewport(anchor);
-  focus = local_frame->View()->ContentsToViewport(focus);
-
-  if (!selection.ComputeVisibleSelectionInDOMTree().IsBaseFirst())
-    std::swap(anchor, focus);
+  anchor_web = local_frame->View()->ContentsToViewport(anchor);
+  focus_web = local_frame->View()->ContentsToViewport(focus);
   return true;
 }
 
@@ -2374,7 +2332,11 @@ void WebViewImpl::DidLosePointerLock() {
 // TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
 // well. This code needs to be refactored  (http://crbug.com/629721).
 bool WebViewImpl::GetCompositionCharacterBounds(WebVector<WebRect>& bounds) {
-  WebRange range = CompositionRange();
+  WebInputMethodController* controller = GetActiveWebInputMethodController();
+  if (!controller)
+    return false;
+
+  WebRange range = controller->CompositionRange();
   if (range.IsEmpty())
     return false;
 
@@ -3519,7 +3481,7 @@ void WebViewImpl::SetPageOverlayColor(WebColor color) {
     return;
 
   page_color_overlay_ = PageOverlay::Create(
-      MainFrameImpl(), WTF::MakeUnique<ColorOverlay>(color));
+      MainFrameImpl(), std::make_unique<ColorOverlay>(color));
 
   // Run compositing update before calling updatePageOverlays.
   MainFrameImpl()
@@ -3756,7 +3718,7 @@ void WebViewImpl::InitializeLayerTreeView() {
   if (client_) {
     layer_tree_view_ = client_->InitializeLayerTreeView();
     if (layer_tree_view_ && layer_tree_view_->CompositorAnimationHost()) {
-      animation_host_ = WTF::MakeUnique<CompositorAnimationHost>(
+      animation_host_ = std::make_unique<CompositorAnimationHost>(
           layer_tree_view_->CompositorAnimationHost());
     }
   }
@@ -3871,19 +3833,14 @@ WebViewScheduler* WebViewImpl::Scheduler() const {
   return scheduler_.get();
 }
 
-void WebViewImpl::SetVisibilityState(WebPageVisibilityState visibility_state,
-                                     bool is_initial_state) {
-  DCHECK(visibility_state == kWebPageVisibilityStateVisible ||
-         visibility_state == kWebPageVisibilityStateHidden ||
-         visibility_state == kWebPageVisibilityStatePrerender);
-
+void WebViewImpl::SetVisibilityState(
+    mojom::PageVisibilityState visibility_state,
+    bool is_initial_state) {
   if (GetPage()) {
-    page_->SetVisibilityState(
-        static_cast<PageVisibilityState>(static_cast<int>(visibility_state)),
-        is_initial_state);
+    page_->SetVisibilityState(visibility_state, is_initial_state);
   }
 
-  bool visible = visibility_state == kWebPageVisibilityStateVisible;
+  bool visible = visibility_state == mojom::PageVisibilityState::kVisible;
   if (layer_tree_view_ && !override_compositor_visibility_)
     layer_tree_view_->SetVisible(visible);
   scheduler_->SetPageVisible(visible);

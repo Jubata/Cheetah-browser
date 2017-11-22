@@ -327,7 +327,8 @@ UserMediaProcessor::UserMediaProcessor(
       media_stream_dispatcher_(std::move(media_stream_dispatcher)),
       media_devices_dispatcher_cb_(std::move(media_devices_dispatcher_cb)),
       worker_task_runner_(worker_task_runner),
-      render_frame_(render_frame),
+      render_frame_id_(render_frame ? render_frame->GetRoutingID()
+                                    : MSG_ROUTING_NONE),
       weak_factory_(this) {
   DCHECK(dependency_factory_);
   DCHECK(media_stream_dispatcher_.get());
@@ -681,7 +682,7 @@ void UserMediaProcessor::OnStreamGenerationFailed(
     return;
   }
 
-  GetUserMediaRequestFailed(result, "");
+  GetUserMediaRequestFailed(result);
   DeleteWebRequest(current_request_info_->web_request());
 }
 
@@ -784,15 +785,15 @@ MediaStreamAudioSource* UserMediaProcessor::CreateAudioSource(
       !MediaStreamAudioProcessor::WouldModifyAudio(
           audio_processing_properties)) {
     *has_sw_echo_cancellation = false;
-    return new LocalMediaStreamAudioSource(render_frame_->GetRoutingID(),
-                                           device, source_ready);
+    return new LocalMediaStreamAudioSource(render_frame_id_, device,
+                                           source_ready);
   }
 
   // The audio device is not associated with screen capture and also requires
   // processing.
   ProcessedLocalAudioSource* source = new ProcessedLocalAudioSource(
-      render_frame_->GetRoutingID(), device, audio_processing_properties,
-      source_ready, dependency_factory_);
+      render_frame_id_, device, audio_processing_properties, source_ready,
+      dependency_factory_);
   *has_sw_echo_cancellation =
       audio_processing_properties.enable_sw_echo_cancellation;
   return source;
@@ -807,8 +808,7 @@ MediaStreamVideoSource* UserMediaProcessor::CreateVideoSource(
 
   return new MediaStreamVideoCapturerSource(
       stop_callback, device,
-      current_request_info_->video_capture_settings().capture_params(),
-      render_frame_);
+      current_request_info_->video_capture_settings().capture_params());
 }
 
 void UserMediaProcessor::CreateVideoTracks(
@@ -866,14 +866,14 @@ void UserMediaProcessor::OnCreateNativeTracksCompleted(
     const std::string& label,
     RequestInfo* request_info,
     MediaStreamRequestResult result,
-    const blink::WebString& result_name) {
+    const blink::WebString& constraint_name) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (result == MEDIA_DEVICE_OK) {
     GetUserMediaRequestSucceeded(*request_info->web_stream(),
                                  request_info->web_request());
     media_stream_dispatcher_->OnStreamStarted(label);
   } else {
-    GetUserMediaRequestFailed(result, result_name);
+    GetUserMediaRequestFailed(result, constraint_name);
 
     blink::WebVector<blink::WebMediaStreamTrack> tracks;
     request_info->web_stream()->AudioTracks(tracks);
@@ -891,19 +891,6 @@ void UserMediaProcessor::OnCreateNativeTracksCompleted(
   }
 
   DeleteWebRequest(request_info->web_request());
-}
-
-void UserMediaProcessor::OnDeviceOpened(int request_id,
-                                        const std::string& label,
-                                        const MediaStreamDevice& device) {
-  DVLOG(1) << "UserMediaClientImpl::OnDeviceOpened(" << request_id << ", "
-           << label << ")";
-  NOTIMPLEMENTED();
-}
-
-void UserMediaProcessor::OnDeviceOpenFailed(int request_id) {
-  DVLOG(1) << "UserMediaProcessor::VideoDeviceOpenFailed(" << request_id << ")";
-  NOTIMPLEMENTED();
 }
 
 void UserMediaProcessor::GetUserMediaRequestSucceeded(
@@ -935,7 +922,7 @@ void UserMediaProcessor::DelayedGetUserMediaRequestSucceeded(
 
 void UserMediaProcessor::GetUserMediaRequestFailed(
     MediaStreamRequestResult result,
-    const blink::WebString& result_name) {
+    const blink::WebString& constraint_name) {
   DCHECK(current_request_info_);
   WebRtcLogMessage(
       base::StringPrintf("UMCI::GetUserMediaRequestFailed. request_id=%d",
@@ -950,13 +937,13 @@ void UserMediaProcessor::GetUserMediaRequestFailed(
       base::BindOnce(&UserMediaProcessor::DelayedGetUserMediaRequestFailed,
                      weak_factory_.GetWeakPtr(),
                      current_request_info_->web_request(), result,
-                     result_name));
+                     constraint_name));
 }
 
 void UserMediaProcessor::DelayedGetUserMediaRequestFailed(
     blink::WebUserMediaRequest web_request,
     MediaStreamRequestResult result,
-    const blink::WebString& result_name) {
+    const blink::WebString& constraint_name) {
   LogUserMediaRequestResult(result);
   DeleteWebRequest(web_request);
   switch (result) {
@@ -965,47 +952,63 @@ void UserMediaProcessor::DelayedGetUserMediaRequestFailed(
       NOTREACHED();
       return;
     case MEDIA_DEVICE_PERMISSION_DENIED:
-      web_request.RequestDenied();
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kPermissionDenied,
+          "Permission denied");
       return;
     case MEDIA_DEVICE_PERMISSION_DISMISSED:
-      web_request.RequestFailedUASpecific("PermissionDismissedError");
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kPermissionDismissed,
+          "Permission dismissed");
       return;
     case MEDIA_DEVICE_INVALID_STATE:
-      web_request.RequestFailedUASpecific("InvalidStateError");
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kInvalidState, "Invalid state");
       return;
     case MEDIA_DEVICE_NO_HARDWARE:
-      web_request.RequestFailedUASpecific("DevicesNotFoundError");
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kDevicesNotFound);
       return;
     case MEDIA_DEVICE_INVALID_SECURITY_ORIGIN_DEPRECATED:
       NOTREACHED();
       return;
     case MEDIA_DEVICE_TAB_CAPTURE_FAILURE:
-      web_request.RequestFailedUASpecific("TabCaptureError");
+      web_request.RequestFailed(blink::WebUserMediaRequest::Error::kTabCapture,
+                                "Error starting tab capture");
       return;
     case MEDIA_DEVICE_SCREEN_CAPTURE_FAILURE:
-      web_request.RequestFailedUASpecific("ScreenCaptureError");
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kScreenCapture,
+          "Error starting screen capture");
       return;
     case MEDIA_DEVICE_CAPTURE_FAILURE:
-      web_request.RequestFailedUASpecific("DeviceCaptureError");
+      web_request.RequestFailed(blink::WebUserMediaRequest::Error::kCapture,
+                                "Error starting capture");
       return;
     case MEDIA_DEVICE_CONSTRAINT_NOT_SATISFIED:
-      web_request.RequestFailedConstraint(result_name);
+      web_request.RequestFailedConstraint(constraint_name);
       return;
     case MEDIA_DEVICE_TRACK_START_FAILURE:
-      web_request.RequestFailedUASpecific("TrackStartError");
+      web_request.RequestFailed(blink::WebUserMediaRequest::Error::kTrackStart,
+                                "Could not start source");
       return;
     case MEDIA_DEVICE_NOT_SUPPORTED:
-      web_request.RequestFailedUASpecific("MediaDeviceNotSupported");
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kNotSupported, "Not supported");
       return;
     case MEDIA_DEVICE_FAILED_DUE_TO_SHUTDOWN:
-      web_request.RequestFailedUASpecific("MediaDeviceFailedDueToShutdown");
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kFailedDueToShutdown,
+          "Failed due to shutdown");
       return;
     case MEDIA_DEVICE_KILL_SWITCH_ON:
-      web_request.RequestFailedUASpecific("MediaDeviceKillSwitchOn");
+      web_request.RequestFailed(
+          blink::WebUserMediaRequest::Error::kKillSwitchOn);
       return;
   }
   NOTREACHED();
-  web_request.RequestFailed();
+  web_request.RequestFailed(
+      blink::WebUserMediaRequest::Error::kPermissionDenied);
 }
 
 const blink::WebMediaStreamSource* UserMediaProcessor::FindLocalSource(

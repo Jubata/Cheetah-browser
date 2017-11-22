@@ -68,6 +68,7 @@
 #include "content/renderer/resizing_mode_selector.h"
 #include "ipc/ipc_message_start.h"
 #include "ipc/ipc_sync_message.h"
+#include "ipc/ipc_sync_message_filter.h"
 #include "ppapi/features/features.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/FilePathConversion.h"
@@ -352,7 +353,7 @@ RenderWidget::RenderWidget(int32_t widget_routing_id,
       owner_delegate_(nullptr),
       next_paint_flags_(0),
       auto_resize_mode_(false),
-      need_update_rect_for_auto_resize_(false),
+      need_resize_ack_for_auto_resize_(false),
       did_show_(false),
       is_hidden_(hidden),
       compositor_never_visible_(never_visible),
@@ -402,7 +403,7 @@ RenderWidget::RenderWidget(int32_t widget_routing_id,
   }
 #if defined(USE_AURA)
   RendererWindowTreeClient::CreateIfNecessary(routing_id_);
-  if (IsRunningInMash())
+  if (IsRunningWithMus())
     RendererWindowTreeClient::Get(routing_id_)->SetVisible(!is_hidden_);
 #endif
 }
@@ -604,6 +605,30 @@ void RenderWidget::SetExternalPopupOriginAdjustmentsForEmulation(
 }
 #endif
 
+void RenderWidget::SetLocalSurfaceIdForAutoResize(
+    uint64_t sequence_number,
+    const content::ScreenInfo& screen_info,
+    const viz::LocalSurfaceId& local_surface_id) {
+  bool screen_info_changed = screen_info_ != screen_info;
+
+  screen_info_ = screen_info;
+  if (device_scale_factor_ != screen_info_.device_scale_factor) {
+    device_scale_factor_ = screen_info_.device_scale_factor;
+    OnDeviceScaleFactorChanged();
+  }
+
+  if (screen_info_changed) {
+    for (auto& observer : render_frame_proxies_)
+      observer.OnScreenInfoChanged(screen_info);
+
+    // Notify all BrowserPlugins of the updated ScreenInfo.
+    if (BrowserPluginManager::Get())
+      BrowserPluginManager::Get()->ScreenInfoChanged(screen_info);
+  }
+
+  AutoResizeCompositor(local_surface_id);
+}
+
 void RenderWidget::OnShowHostContextMenu(ContextMenuParams* params) {
   if (screen_metrics_emulator_)
     screen_metrics_emulator_->OnShowContextMenu(params);
@@ -649,6 +674,8 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetViewportIntersection,
                         OnSetViewportIntersection)
     IPC_MESSAGE_HANDLER(ViewMsg_SetIsInert, OnSetIsInert)
+    IPC_MESSAGE_HANDLER(ViewMsg_UpdateRenderThrottlingStatus,
+                        OnUpdateRenderThrottlingStatus)
     IPC_MESSAGE_HANDLER(ViewMsg_WaitForNextFrameForTests,
                         OnWaitNextFrameForTests)
     IPC_MESSAGE_HANDLER(InputMsg_RequestCompositionUpdates,
@@ -768,11 +795,15 @@ void RenderWidget::OnResize(const ResizeParams& params) {
 
 void RenderWidget::OnSetLocalSurfaceIdForAutoResize(
     uint64_t sequence_number,
+    const gfx::Size& min_size,
+    const gfx::Size& max_size,
+    const content::ScreenInfo& screen_info,
     const viz::LocalSurfaceId& local_surface_id) {
   if (!auto_resize_mode_ || resize_or_repaint_ack_num_ != sequence_number)
     return;
-  local_surface_id_ = local_surface_id;
-  compositor_->SetViewportSize(physical_backing_size_, local_surface_id);
+
+  SetLocalSurfaceIdForAutoResize(sequence_number, screen_info,
+                                 local_surface_id);
 }
 
 void RenderWidget::OnEnableDeviceEmulation(
@@ -1103,9 +1134,8 @@ void RenderWidget::ClearEditCommands() {
 
 void RenderWidget::OnDidOverscroll(const ui::DidOverscrollParams& params) {
   if (widget_input_handler_manager_) {
-    WidgetInputHandlerManager::WidgetInputHandlerHost host =
-        widget_input_handler_manager_->GetWidgetInputHandlerHost();
-    (*host)->DidOverscroll(params);
+    widget_input_handler_manager_->GetWidgetInputHandlerHost()->DidOverscroll(
+        params);
   } else {
     Send(new InputHostMsg_DidOverscroll(routing_id_, params));
   }
@@ -1171,6 +1201,7 @@ void RenderWidget::UpdateTextInputStateInternal(bool show_virtual_keyboard,
     params.type = new_type;
     params.mode = new_mode;
     params.flags = new_info.flags;
+#if defined(OS_ANDROID)
     if (next_previous_flags_ == kInvalidNextPreviousFlagsValue) {
       // Due to a focus change, values will be reset by the frame.
       // That case we only need fresh NEXT/PREVIOUS information.
@@ -1185,6 +1216,9 @@ void RenderWidget::UpdateTextInputStateInternal(bool show_virtual_keyboard,
         next_previous_flags_ = 0;
       }
     }
+#else
+    next_previous_flags_ = 0;
+#endif
     params.flags |= next_previous_flags_;
     params.value = new_info.value.Utf8();
     params.selection_start = new_info.selection_start;
@@ -1370,11 +1404,10 @@ void RenderWidget::SetScreenRects(const gfx::Rect& view_screen_rect,
 ///////////////////////////////////////////////////////////////////////////////
 // WebWidgetClient
 
-void RenderWidget::AutoResizeCompositor()  {
+void RenderWidget::AutoResizeCompositor(
+    const viz::LocalSurfaceId& local_surface_id) {
   physical_backing_size_ = gfx::ScaleToCeiledSize(size_, device_scale_factor_);
-  // A new LocalSurfaceId will need to be allocated by the browser for the new
-  // size.
-  local_surface_id_ = viz::LocalSurfaceId();
+  local_surface_id_ = local_surface_id;
   if (compositor_)
     compositor_->SetViewportSize(physical_backing_size_, local_surface_id_);
 }
@@ -1705,9 +1738,8 @@ void RenderWidget::OnImeSetComposition(
     // process to cancel the input method's ongoing composition session, to make
     // sure we are in a consistent state.
     if (widget_input_handler_manager_) {
-      WidgetInputHandlerManager::WidgetInputHandlerHost host =
-          widget_input_handler_manager_->GetWidgetInputHandlerHost();
-      (*host)->ImeCancelComposition();
+      widget_input_handler_manager_->GetWidgetInputHandlerHost()
+          ->ImeCancelComposition();
     } else {
       Send(new InputHostMsg_ImeCancelComposition(routing_id()));
     }
@@ -1820,24 +1852,36 @@ void RenderWidget::OnUpdateWindowScreenRect(
 
 void RenderWidget::OnSetViewportIntersection(
     const gfx::Rect& viewport_intersection) {
-  if (GetWebWidget() && GetWebWidget()->IsWebFrameWidget()) {
-    DCHECK(popup_type_ == WebPopupType::kWebPopupTypeNone);
+  if (GetWebWidget()) {
+    DCHECK(GetWebWidget()->IsWebFrameWidget());
+    DCHECK_EQ(popup_type_, WebPopupType::kWebPopupTypeNone);
     static_cast<WebFrameWidget*>(GetWebWidget())
         ->SetRemoteViewportIntersection(viewport_intersection);
   }
 }
 
 void RenderWidget::OnSetIsInert(bool inert) {
-  if (GetWebWidget() && GetWebWidget()->IsWebFrameWidget()) {
-    DCHECK(popup_type_ == WebPopupType::kWebPopupTypeNone);
+  if (GetWebWidget()) {
+    DCHECK(GetWebWidget()->IsWebFrameWidget());
+    DCHECK_EQ(popup_type_, WebPopupType::kWebPopupTypeNone);
     static_cast<WebFrameWidget*>(GetWebWidget())->SetIsInert(inert);
+  }
+}
+
+void RenderWidget::OnUpdateRenderThrottlingStatus(bool is_throttled,
+                                                  bool subtree_throttled) {
+  if (GetWebWidget()) {
+    DCHECK(GetWebWidget()->IsWebFrameWidget());
+    DCHECK_EQ(popup_type_, WebPopupType::kWebPopupTypeNone);
+    static_cast<WebFrameWidget*>(GetWebWidget())
+        ->UpdateRenderThrottlingStatus(is_throttled, subtree_throttled);
   }
 }
 
 void RenderWidget::OnDragTargetDragEnter(
     const std::vector<DropData::Metadata>& drop_meta_data,
-    const gfx::Point& client_point,
-    const gfx::Point& screen_point,
+    const gfx::PointF& client_point,
+    const gfx::PointF& screen_point,
     WebDragOperationsMask ops,
     int key_modifiers) {
   if (!GetWebWidget())
@@ -1852,8 +1896,8 @@ void RenderWidget::OnDragTargetDragEnter(
   Send(new DragHostMsg_UpdateDragCursor(routing_id(), operation));
 }
 
-void RenderWidget::OnDragTargetDragOver(const gfx::Point& client_point,
-                                        const gfx::Point& screen_point,
+void RenderWidget::OnDragTargetDragOver(const gfx::PointF& client_point,
+                                        const gfx::PointF& screen_point,
                                         WebDragOperationsMask ops,
                                         int key_modifiers) {
   if (!GetWebWidget())
@@ -1868,8 +1912,8 @@ void RenderWidget::OnDragTargetDragOver(const gfx::Point& client_point,
   Send(new DragHostMsg_UpdateDragCursor(routing_id(), operation));
 }
 
-void RenderWidget::OnDragTargetDragLeave(const gfx::Point& client_point,
-                                         const gfx::Point& screen_point) {
+void RenderWidget::OnDragTargetDragLeave(const gfx::PointF& client_point,
+                                         const gfx::PointF& screen_point) {
   if (!GetWebWidget())
     return;
   DCHECK(GetWebWidget()->IsWebFrameWidget());
@@ -1879,8 +1923,8 @@ void RenderWidget::OnDragTargetDragLeave(const gfx::Point& client_point,
 }
 
 void RenderWidget::OnDragTargetDrop(const DropData& drop_data,
-                                    const gfx::Point& client_point,
-                                    const gfx::Point& screen_point,
+                                    const gfx::PointF& client_point,
+                                    const gfx::PointF& screen_point,
                                     int key_modifiers) {
   if (!GetWebWidget())
     return;
@@ -1892,8 +1936,8 @@ void RenderWidget::OnDragTargetDrop(const DropData& drop_data,
                        key_modifiers);
 }
 
-void RenderWidget::OnDragSourceEnded(const gfx::Point& client_point,
-                                     const gfx::Point& screen_point,
+void RenderWidget::OnDragSourceEnded(const gfx::PointF& client_point,
+                                     const gfx::PointF& screen_point,
                                      WebDragOperation op) {
   if (!GetWebWidget())
     return;
@@ -1960,10 +2004,9 @@ void RenderWidget::UpdateCompositionInfo(bool immediate_request) {
   composition_character_bounds_ = character_bounds;
   composition_range_ = range;
   if (widget_input_handler_manager_) {
-    WidgetInputHandlerManager::WidgetInputHandlerHost host =
-        widget_input_handler_manager_->GetWidgetInputHandlerHost();
-    (*host)->ImeCompositionRangeChanged(composition_range_,
-                                        composition_character_bounds_);
+    widget_input_handler_manager_->GetWidgetInputHandlerHost()
+        ->ImeCompositionRangeChanged(composition_range_,
+                                     composition_character_bounds_);
   } else {
     Send(new InputHostMsg_ImeCompositionRangeChanged(
         routing_id(), composition_range_, composition_character_bounds_));
@@ -2042,7 +2085,7 @@ void RenderWidget::SetHidden(bool hidden) {
   is_hidden_ = hidden;
 
 #if defined(USE_AURA)
-  if (IsRunningInMash())
+  if (IsRunningWithMus())
     RendererWindowTreeClient::Get(routing_id_)->SetVisible(!hidden);
 #endif
 
@@ -2178,10 +2221,10 @@ void RenderWidget::DidAutoResize(const gfx::Size& new_size) {
       window_screen_rect_ = new_pos;
     }
 
-    AutoResizeCompositor();
+    AutoResizeCompositor(viz::LocalSurfaceId());
 
     if (!resizing_mode_selector_->is_synchronous_mode()) {
-      need_update_rect_for_auto_resize_ = true;
+      need_resize_ack_for_auto_resize_ = true;
       // If surface synchronization is off, then ResizeAcks go to the browser in
       // response to a DidReceiveCompositorFrame. With surface synchronization
       // on, that notification will not arrive here because the compositor is
@@ -2221,7 +2264,8 @@ void RenderWidget::GetCompositionRange(gfx::Range* range) {
   if (GetFocusedPepperPluginInsideWidget())
     return;
 #endif
-  WebRange web_range = GetWebWidget()->CompositionRange();
+  blink::WebInputMethodController* controller = GetInputMethodController();
+  WebRange web_range = controller ? controller->CompositionRange() : WebRange();
   if (web_range.IsNull()) {
     *range = gfx::Range::InvalidRange();
     return;
@@ -2419,11 +2463,15 @@ float RenderWidget::GetOriginalDeviceScaleFactor() const {
       device_scale_factor_;
 }
 
-gfx::Point RenderWidget::ConvertWindowPointToViewport(
-    const gfx::Point& point) {
+gfx::PointF RenderWidget::ConvertWindowPointToViewport(
+    const gfx::PointF& point) {
   blink::WebFloatRect point_in_viewport(point.x(), point.y(), 0, 0);
   ConvertWindowToViewport(&point_in_viewport);
-  return gfx::Point(point_in_viewport.x, point_in_viewport.y);
+  return gfx::PointF(point_in_viewport.x, point_in_viewport.y);
+}
+
+gfx::Point RenderWidget::ConvertWindowPointToViewport(const gfx::Point& point) {
+  return gfx::ToRoundedPoint(ConvertWindowPointToViewport(gfx::PointF(point)));
 }
 
 bool RenderWidget::RequestPointerLock() {
@@ -2484,8 +2532,8 @@ blink::WebInputMethodController* RenderWidget::GetInputMethodController()
 void RenderWidget::SetupWidgetInputHandler(
     mojom::WidgetInputHandlerRequest request,
     mojom::WidgetInputHandlerHostPtr host) {
-  widget_input_handler_manager_->AddInterface(std::move(request));
-  widget_input_handler_manager_->SetWidgetInputHandlerHost(std::move(host));
+  widget_input_handler_manager_->AddInterface(std::move(request),
+                                              std::move(host));
 }
 
 void RenderWidget::SetWidgetBinding(mojom::WidgetRequest request) {
@@ -2496,7 +2544,7 @@ void RenderWidget::SetWidgetBinding(mojom::WidgetRequest request) {
 }
 
 void RenderWidget::DidResizeOrRepaintAck() {
-  if (!next_paint_flags_ && !need_update_rect_for_auto_resize_)
+  if (!next_paint_flags_ && !need_resize_ack_for_auto_resize_)
     return;
 
   ViewHostMsg_ResizeOrRepaint_ACK_Params params;
@@ -2506,7 +2554,7 @@ void RenderWidget::DidResizeOrRepaintAck() {
 
   Send(new ViewHostMsg_ResizeOrRepaint_ACK(routing_id_, params));
   next_paint_flags_ = 0;
-  need_update_rect_for_auto_resize_ = false;
+  need_resize_ack_for_auto_resize_ = false;
 }
 
 void RenderWidget::UpdateURLForCompositorUkm() {

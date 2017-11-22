@@ -11,7 +11,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/files/file_util.h"
-#include "base/memory/ptr_util.h"
+#include "base/memory/ref_counted.h"
 #include "base/task_scheduler/post_task.h"
 #include "base/threading/thread_restrictions.h"
 #include "components/component_updater/component_installer.h"
@@ -55,6 +55,7 @@ class CRLSetPolicy : public ComponentInstallerPolicy {
   update_client::CrxInstaller::Result OnCustomInstall(
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) override;
+  void OnCustomUninstall() override;
   bool VerifyInstallation(const base::DictionaryValue& manifest,
                           const base::FilePath& install_dir) const override;
   void ComponentReady(const base::Version& version,
@@ -86,6 +87,8 @@ update_client::CrxInstaller::Result CRLSetPolicy::OnCustomInstall(
     const base::FilePath& install_dir) {
   return update_client::CrxInstaller::Result(0);  // Nothing custom here.
 }
+
+void CRLSetPolicy::OnCustomUninstall() {}
 
 bool CRLSetPolicy::VerifyInstallation(const base::DictionaryValue& manifest,
                                       const base::FilePath& install_dir) const {
@@ -127,10 +130,9 @@ std::vector<std::string> CRLSetPolicy::GetMimeTypes() const {
 
 void RegisterCRLSetComponent(ComponentUpdateService* cus,
                              const base::FilePath& user_data_dir) {
-  // |cus| will take ownership of |installer| during installer->Register(cus).
-  ComponentInstaller* installer =
-      new ComponentInstaller(base::MakeUnique<CRLSetPolicy>());
-  installer->Register(cus, base::Closure());
+  auto installer = base::MakeRefCounted<ComponentInstaller>(
+      std::make_unique<CRLSetPolicy>());
+  installer->Register(cus, base::OnceClosure());
 }
 
 }  // namespace component_updater

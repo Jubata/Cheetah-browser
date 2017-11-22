@@ -35,7 +35,7 @@
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/web/window_features.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -207,8 +207,12 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Get the effective URL for the given actual URL, to allow an embedder to
   // group different url schemes in the same SiteInstance.
+  // |is_isolated_origin| specifies whether |url| corresponds to an origin that
+  // requires process isolation.  Certain kinds of effective URLs should be
+  // ignored for such origins.
   virtual GURL GetEffectiveURL(BrowserContext* browser_context,
-                               const GURL& url);
+                               const GURL& url,
+                               bool is_isolated_origin);
 
   // Returns whether all instances of the specified effective URL should be
   // rendered by the same process, rather than using process-per-site-instance.
@@ -340,6 +344,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // process.
   virtual std::vector<url::Origin> GetOriginsRequiringDedicatedProcess();
 
+  // Indicates whether a file path should be accessible via file URL given a
+  // request from a browser context which lives within |profile_path|.
+  virtual bool IsFileAccessAllowed(const base::FilePath& path,
+                                   const base::FilePath& absolute_path,
+                                   const base::FilePath& profile_path);
+
   // Allows the embedder to pass extra command line flags.
   // switches::kProcessType will already be set at this point.
   virtual void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
@@ -406,7 +416,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual bool AllowSetCookie(const GURL& url,
                               const GURL& first_party,
-                              const std::string& cookie_line,
+                              const net::CanonicalCookie& cookie,
                               ResourceContext* context,
                               int render_process_id,
                               int render_frame_id,
@@ -788,7 +798,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // |visibility_state| should not be null. It will only be set if needed.
   virtual void OverridePageVisibilityState(
       RenderFrameHost* render_frame_host,
-      blink::WebPageVisibilityState* visibility_state) {}
+      blink::mojom::PageVisibilityState* visibility_state) {}
 
   // Allows an embedder to provide its own ControllerPresentationServiceDelegate
   // implementation. Returns nullptr if unavailable.
@@ -889,6 +899,25 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual std::vector<std::unique_ptr<URLLoaderThrottle>>
   CreateURLLoaderThrottles(const base::Callback<WebContents*()>& wc_getter);
+
+  // Allows the embedder to register per-scheme URLLoaderFactory implementations
+  // to handle navigation URL requests for schemes not handled by the Network
+  // Service. Only called when the Network Service is enabled.
+  using NonNetworkURLLoaderFactoryMap =
+      std::map<std::string, std::unique_ptr<mojom::URLLoaderFactory>>;
+  virtual void RegisterNonNetworkNavigationURLLoaderFactories(
+      RenderFrameHost* frame_host,
+      NonNetworkURLLoaderFactoryMap* factories);
+
+  // Allows the embedder to register per-scheme URLLoaderFactory implementations
+  // to handle subresource URL requests for schemes not handled by the Network
+  // Service. The factories added to this map will only be used to service
+  // subresource requests from |frame_host| as long as it's navigated to
+  // |frame_url|. Only called when the Network Service is enabled.
+  virtual void RegisterNonNetworkSubresourceURLLoaderFactories(
+      RenderFrameHost* frame_host,
+      const GURL& frame_url,
+      NonNetworkURLLoaderFactoryMap* factories);
 
   // Creates a NetworkContext for a BrowserContext's StoragePartition. If the
   // network service is enabled, it must return a NetworkContext using the

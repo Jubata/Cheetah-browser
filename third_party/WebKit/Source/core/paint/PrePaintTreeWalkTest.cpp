@@ -17,7 +17,6 @@
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/text/TextStream.h"
 #include "platform/wtf/HashMap.h"
-#include "platform/wtf/Vector.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
@@ -29,8 +28,7 @@ class PrePaintTreeWalkTest : public PaintControllerPaintTest {
     if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
       return frame_view->GetLayoutView()
           ->FirstFragment()
-          .GetRarePaintData()
-          ->PaintProperties()
+          .PaintProperties()
           ->PaintOffsetTranslation();
     }
     return frame_view->PreTranslation();
@@ -41,8 +39,7 @@ class PrePaintTreeWalkTest : public PaintControllerPaintTest {
     if (RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
       return frame_view->GetLayoutView()
           ->FirstFragment()
-          .GetRarePaintData()
-          ->PaintProperties()
+          .PaintProperties()
           ->ScrollTranslation();
     }
     return frame_view->ScrollTranslation();
@@ -55,16 +52,8 @@ class PrePaintTreeWalkTest : public PaintControllerPaintTest {
 
  private:
   void SetUp() override {
-    Settings::SetMockScrollbarsEnabled(true);
-
     RenderingTest::SetUp();
     EnableCompositing();
-  }
-
-  void TearDown() override {
-    RenderingTest::TearDown();
-
-    Settings::SetMockScrollbarsEnabled(false);
   }
 };
 

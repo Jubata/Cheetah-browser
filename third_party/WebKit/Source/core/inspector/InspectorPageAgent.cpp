@@ -72,8 +72,8 @@
 #include "platform/loader/fetch/TextResourceDecoderOptions.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/ListHashSet.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/Base64.h"
 #include "platform/wtf/text/TextEncoding.h"
@@ -598,12 +598,12 @@ Response InspectorPageAgent::navigate(const String& url,
                                       Maybe<String> referrer,
                                       Maybe<String> transitionType,
                                       String* out_frame_id,
-                                      String* loader_id) {
+                                      Maybe<String>* out_loader_id,
+                                      Maybe<String>* errorText) {
   LocalFrame* frame = inspected_frames_->Root();
-  DocumentLoader* loader = frame->Loader().GetDocumentLoader();
-
   *out_frame_id = IdentifiersFactory::FrameId(frame);
-  *loader_id = IdentifiersFactory::LoaderId(loader);
+  DocumentLoader* loader = frame->Loader().GetDocumentLoader();
+  *out_loader_id = IdentifiersFactory::LoaderId(loader);
   return Response::OK();
 }
 
@@ -824,8 +824,6 @@ void InspectorPageAgent::WillCommitLoad(LocalFrame*, DocumentLoader* loader) {
     script_to_evaluate_on_load_once_ = pending_script_to_evaluate_on_load_once_;
     pending_script_to_evaluate_on_load_once_ = String();
   }
-  LifecycleEvent(loader->GetFrame(), loader, "commit",
-                 MonotonicallyIncreasingTime());
   GetFrontend()->frameNavigated(BuildObjectForFrame(loader->GetFrame()));
 }
 
@@ -931,9 +929,10 @@ void InspectorPageAgent::PageLayoutInvalidated(bool resized) {
 }
 
 void InspectorPageAgent::WindowCreated(LocalFrame* created) {
-  if (enabled_ &&
-      state_->booleanProperty(PageAgentState::kAutoAttachToCreatedPages, false))
-    client_->WaitForCreateWindow(created);
+  if (enabled_ && state_->booleanProperty(
+                      PageAgentState::kAutoAttachToCreatedPages, false)) {
+    client_->WaitForCreateWindow(this, created);
+  }
 }
 
 void InspectorPageAgent::WindowOpen(Document* document,
@@ -941,7 +940,8 @@ void InspectorPageAgent::WindowOpen(Document* document,
                                     const AtomicString& window_name,
                                     const WebWindowFeatures& window_features,
                                     bool user_gesture) {
-  GetFrontend()->windowOpen(document->CompleteURL(url).GetString(), window_name,
+  KURL completed_url = url.IsEmpty() ? BlankURL() : document->CompleteURL(url);
+  GetFrontend()->windowOpen(completed_url.GetString(), window_name,
                             GetEnabledWindowFeatures(window_features),
                             user_gesture);
 }

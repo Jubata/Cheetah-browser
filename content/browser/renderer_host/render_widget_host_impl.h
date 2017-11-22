@@ -191,30 +191,30 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // |drop_data| must have been filtered. The embedder should call
   // FilterDropData before passing the drop data to RWHI.
   void DragTargetDragEnter(const DropData& drop_data,
-                           const gfx::Point& client_pt,
-                           const gfx::Point& screen_pt,
+                           const gfx::PointF& client_pt,
+                           const gfx::PointF& screen_pt,
                            blink::WebDragOperationsMask operations_allowed,
                            int key_modifiers) override;
   void DragTargetDragEnterWithMetaData(
       const std::vector<DropData::Metadata>& metadata,
-      const gfx::Point& client_pt,
-      const gfx::Point& screen_pt,
+      const gfx::PointF& client_pt,
+      const gfx::PointF& screen_pt,
       blink::WebDragOperationsMask operations_allowed,
       int key_modifiers) override;
-  void DragTargetDragOver(const gfx::Point& client_pt,
-                          const gfx::Point& screen_pt,
+  void DragTargetDragOver(const gfx::PointF& client_pt,
+                          const gfx::PointF& screen_pt,
                           blink::WebDragOperationsMask operations_allowed,
                           int key_modifiers) override;
-  void DragTargetDragLeave(const gfx::Point& client_point,
-                           const gfx::Point& screen_point) override;
+  void DragTargetDragLeave(const gfx::PointF& client_point,
+                           const gfx::PointF& screen_point) override;
   // |drop_data| must have been filtered. The embedder should call
   // FilterDropData before passing the drop data to RWHI.
   void DragTargetDrop(const DropData& drop_data,
-                      const gfx::Point& client_pt,
-                      const gfx::Point& screen_pt,
+                      const gfx::PointF& client_pt,
+                      const gfx::PointF& screen_pt,
                       int key_modifiers) override;
-  void DragSourceEndedAt(const gfx::Point& client_pt,
-                         const gfx::Point& screen_pt,
+  void DragSourceEndedAt(const gfx::PointF& client_pt,
+                         const gfx::PointF& screen_pt,
                          blink::WebDragOperation operation) override;
   void DragSourceSystemDragEnded() override;
   void FilterDropData(DropData* drop_data) override;
@@ -500,6 +500,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return max_size_for_auto_resize_;
   }
 
+  // Called to notify the RenderWidget that a viz::LocalSurfaceId was allocated
+  // for the auto-resize request specified by |sequence_number|.
+  void DidAllocateLocalSurfaceIdForAutoResize(uint64_t sequence_number);
+
   void DidReceiveRendererFrame();
 
   // Returns the ID that uniquely describes this component to the latency
@@ -588,6 +592,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return last_frame_metadata_;
   }
 
+  uint64_t last_auto_resize_request_number() const {
+    return last_auto_resize_request_number_;
+  }
+
   bool HasGestureStopped() override;
 
   // viz::mojom::CompositorFrameSink implementation.
@@ -608,7 +616,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // interface calls processed on the FrameInputHandler to be processed in order
   // with the interface calls processed on the WidgetInputHandler.
   void SetWidgetInputHandler(
-      mojom::WidgetInputHandlerAssociatedPtr widget_input_handler);
+      mojom::WidgetInputHandlerAssociatedPtr widget_input_handler,
+      mojom::WidgetInputHandlerHostRequest host_request);
   void SetWidget(mojom::WidgetPtr widget);
 
   // InputRouterImplClient overrides.
@@ -646,6 +655,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                            StopAndStartHangMonitorTimeout);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest,
                            ShorterDelayHangMonitorTimeout);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, AutoResizeWithScale);
   FRIEND_TEST_ALL_PREFIXES(DevToolsManagerTest,
                            NoUnresponsiveDialogInInspectedContents);
   friend class MockRenderWidgetHost;
@@ -751,7 +761,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).
-  void DelayedAutoResized(uint64_t sequence_number);
+  void DelayedAutoResized();
 
   void WindowSnapshotReachedScreen(int snapshot_id);
 
@@ -760,7 +770,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                                      const SkBitmap& bitmap,
                                      ReadbackResponse response);
 
-  void OnSnapshotReceived(int snapshot_id, const gfx::Image& image);
+  void OnSnapshotReceived(int snapshot_id, gfx::Image image);
 
   // 1. Grants permissions to URL (if any)
   // 2. Grants permissions to filenames
@@ -853,6 +863,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // The maximum size for the render widget if auto-resize is enabled.
   gfx::Size max_size_for_auto_resize_;
+
+  uint64_t last_auto_resize_request_number_ = 0ul;
 
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;

@@ -169,7 +169,8 @@ void HttpCache::Writers::RemoveTransaction(Transaction* transaction,
     }
   }
 
-  cache_->WritersDoneWritingToEntry(entry_, success, TransactionSet());
+  cache_->WritersDoneWritingToEntry(entry_, success, should_keep_entry_,
+                                    TransactionSet());
 }
 
 void HttpCache::Writers::EraseTransaction(Transaction* transaction,
@@ -376,11 +377,7 @@ int HttpCache::Writers::DoLoop(int result) {
   if (next_state_ == State::NONE) {
     read_buf_ = NULL;
     callback_.Reset();
-    if (all_writers_.empty()) {
-      DCHECK(cache_callback_);
-      network_transaction_.reset();
-    }
-
+    DCHECK(!all_writers_.empty() || cache_callback_);
     if (cache_callback_)
       std::move(cache_callback_).Run();
     // |this| may have been destroyed in the cache_callback_.
@@ -628,9 +625,9 @@ void HttpCache::Writers::SetIdleWritersFailState(int result) {
 void HttpCache::Writers::SetCacheCallback(bool success,
                                           const TransactionSet& make_readers) {
   DCHECK(!cache_callback_);
-  cache_callback_ =
-      base::BindOnce(&HttpCache::WritersDoneWritingToEntry,
-                     cache_->GetWeakPtr(), entry_, success, make_readers);
+  cache_callback_ = base::BindOnce(&HttpCache::WritersDoneWritingToEntry,
+                                   cache_->GetWeakPtr(), entry_, success,
+                                   should_keep_entry_, make_readers);
 }
 
 void HttpCache::Writers::OnIOComplete(int result) {

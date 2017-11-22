@@ -5,7 +5,7 @@
 #include "platform/bindings/ScriptWrappableVisitor.h"
 
 #include "platform/Supplementable.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
+#include "platform/bindings/ActiveScriptWrappableBase.h"
 #include "platform/bindings/DOMWrapperWorld.h"
 #include "platform/bindings/ScopedPersistent.h"
 #include "platform/bindings/ScriptWrappable.h"
@@ -18,7 +18,7 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/wtf/AutoReset.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 
 namespace blink {

@@ -18,7 +18,9 @@ class IVRSystem;
 
 namespace device {
 
-class OpenVRDeviceProvider : public VRDeviceProvider {
+class OpenVRDevice;
+
+class DEVICE_VR_EXPORT OpenVRDeviceProvider : public VRDeviceProvider {
  public:
   OpenVRDeviceProvider();
   ~OpenVRDeviceProvider() override;
@@ -29,6 +31,7 @@ class OpenVRDeviceProvider : public VRDeviceProvider {
  private:
   bool initialized_;
   vr::IVRSystem* vr_system_;
+  std::unique_ptr<OpenVRDevice> device_;
 
   DISALLOW_COPY_AND_ASSIGN(OpenVRDeviceProvider);
 };

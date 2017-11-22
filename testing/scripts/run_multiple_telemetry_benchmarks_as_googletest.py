@@ -14,6 +14,14 @@ argument:
 json is written to that file in the format detailed here:
 https://www.chromium.org/developers/the-json-test-results-format
 
+Optional argument:
+
+  --isolated-script-test-filter=[TEST_NAMES]
+
+is a double-colon-separated ("::") list of test names, to run just that subset
+of tests. This list is forwarded to the run_telemetry_benchmark_as_googletest
+script.
+
 This script is intended to be the base command invoked by the isolate,
 followed by a subsequent Python script. It could be generalized to
 invoke an arbitrary executable.
@@ -58,6 +66,8 @@ def main():
       '--isolated-script-test-chartjson-output', required=False)
   parser.add_argument(
       '--isolated-script-test-perf-output', required=False)
+  parser.add_argument(
+      '--isolated-script-test-filter', type=str, required=False)
   parser.add_argument('--xvfb', help='Start xvfb.', action='store_true')
   parser.add_argument('--output-format', action='append')
   parser.add_argument('--builder', required=True)

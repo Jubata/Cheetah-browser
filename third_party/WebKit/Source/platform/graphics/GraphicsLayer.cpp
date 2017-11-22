@@ -55,11 +55,11 @@
 #include "platform/json/JSONValues.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextStream.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/MathExtras.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/StringUTF8Adaptor.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
@@ -72,7 +72,7 @@
 #include "public/platform/WebSize.h"
 
 #ifndef NDEBUG
-#include <stdio.h>
+#include "platform/graphics/LoggingCanvas.h"
 #endif
 
 namespace blink {
@@ -279,10 +279,38 @@ IntRect GraphicsLayer::InterestRect() {
   return previous_interest_rect_;
 }
 
+void GraphicsLayer::PaintRecursively() {
+#if DCHECK_IS_ON()
+  if (VLOG_IS_ON(2)) {
+    LayerTreeFlags flags = VLOG_IS_ON(3) ? 0xffffffff : kOutputAsLayerTree;
+    LOG(ERROR) << "GraphicsLayer::PaintRecursively()\nGraphicsLayer tree:\n"
+               << GetLayerTreeAsTextForTesting(flags).Utf8().data();
+  }
+#endif
+
+  PaintRecursivelyInternal();
+}
+
+void GraphicsLayer::PaintRecursivelyInternal() {
+  if (DrawsContent())
+    Paint(nullptr);
+
+  if (MaskLayer())
+    MaskLayer()->PaintRecursivelyInternal();
+  if (ContentsClippingMaskLayer())
+    ContentsClippingMaskLayer()->PaintRecursivelyInternal();
+
+  for (auto* child : Children())
+    child->PaintRecursivelyInternal();
+}
+
 void GraphicsLayer::Paint(const IntRect* interest_rect,
                           GraphicsContext::DisabledMode disabled_mode) {
   if (!PaintWithoutCommit(interest_rect, disabled_mode))
     return;
+
+  DVLOG(2) << "Painted GraphicsLayer: " << DebugName()
+           << " interest_rect=" << InterestRect().ToString();
 
   GetPaintController().CommitNewDisplayItems();
 
@@ -489,7 +517,7 @@ WebLayer* GraphicsLayer::ContentsLayerIfRegistered() {
 
 CompositedLayerRasterInvalidator& GraphicsLayer::EnsureRasterInvalidator() {
   if (!raster_invalidator_) {
-    raster_invalidator_ = WTF::MakeUnique<CompositedLayerRasterInvalidator>(
+    raster_invalidator_ = std::make_unique<CompositedLayerRasterInvalidator>(
         [this](const IntRect& r) { SetNeedsDisplayInRectInternal(r); });
     raster_invalidator_->SetTracksRasterInvalidations(
         client_->IsTrackingRasterInvalidations());
@@ -802,6 +830,11 @@ std::unique_ptr<JSONObject> GraphicsLayer::LayerAsJSONInternal(
     json->SetArray("contentsClippingMaskLayer",
                    std::move(contents_clipping_mask_layer_json));
   }
+
+#ifndef NDEBUG
+  if (DrawsContent() && (flags & kLayerTreeIncludesPaintRecords))
+    json->SetValue("paintRecord", RecordAsJSON(*CapturePaintRecord()));
+#endif
 
   return json;
 }
@@ -1357,25 +1390,25 @@ bool ScopedSetNeedsDisplayInRectForTrackingOnly::s_enabled_ = false;
 
 }  // namespace blink
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
 void showGraphicsLayerTree(const blink::GraphicsLayer* layer) {
   if (!layer) {
-    LOG(INFO) << "Cannot showGraphicsLayerTree for (nil).";
+    LOG(ERROR) << "Cannot showGraphicsLayerTree for (nil).";
     return;
   }
 
   String output = layer->GetLayerTreeAsTextForTesting(0xffffffff);
-  LOG(INFO) << output.Utf8().data();
+  LOG(ERROR) << output.Utf8().data();
 }
 
 void showGraphicsLayers(const blink::GraphicsLayer* layer) {
   if (!layer) {
-    LOG(INFO) << "Cannot showGraphicsLayers for (nil).";
+    LOG(ERROR) << "Cannot showGraphicsLayers for (nil).";
     return;
   }
 
   String output = layer->GetLayerTreeAsTextForTesting(
       0xffffffff & ~blink::kOutputAsLayerTree);
-  LOG(INFO) << output.Utf8().data();
+  LOG(ERROR) << output.Utf8().data();
 }
 #endif

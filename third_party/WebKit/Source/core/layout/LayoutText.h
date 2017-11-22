@@ -24,13 +24,13 @@
 #define LayoutText_h
 
 #include <iterator>
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/dom/Text.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/TextRunConstructor.h"
 #include "platform/LengthFunctions.h"
 #include "platform/wtf/Forward.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -196,6 +196,10 @@ class CORE_EXPORT LayoutText : public LayoutObject {
 
   InlineTextBox* FirstTextBox() const { return first_text_box_; }
   InlineTextBox* LastTextBox() const { return last_text_box_; }
+
+  // Returns upper left corner point in local coordinate if this object has
+  // rendered text.
+  Optional<FloatPoint> GetUpperLeftCorner() const;
 
   // True if we have inline text box children which implies rendered text (or
   // whitespace) output.

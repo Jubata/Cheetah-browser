@@ -266,12 +266,6 @@ class Port(object):
         flag_specific_path = self._flag_specific_baseline_search_path()
         return flag_specific_path[-1] if flag_specific_path else None
 
-    def virtual_baseline_search_path(self, test_name):
-        suite = self.lookup_virtual_suite(test_name)
-        if not suite:
-            return None
-        return [self._filesystem.join(path, suite.name) for path in self.default_baseline_search_path()]
-
     def baseline_search_path(self):
         return (self.get_option('additional_platform_directory', []) +
                 self._flag_specific_baseline_search_path() +
@@ -548,7 +542,7 @@ class Port(object):
 
         return [(None, baseline_filename)]
 
-    def expected_filename(self, test_name, suffix, return_default=True):
+    def expected_filename(self, test_name, suffix, return_default=True, fallback_base_for_virtual=True):
         """Given a test name, returns an absolute path to its expected results.
 
         If no expected results are found in any of the searched directories,
@@ -567,15 +561,20 @@ class Port(object):
                 search list of directories, e.g., 'win'.
             return_default: if True, returns the path to the generic expectation if nothing
                 else is found; if False, returns None.
+            fallback_base_for_virtual: For virtual test only. When no virtual specific
+                baseline is found, if this parameter is True, fallback to find baselines
+                of the base test; if False, depending on |return_default|, returns the
+                generic virtual baseline or None.
         """
         # FIXME: The [0] here is very mysterious, as is the destructured return.
         platform_dir, baseline_filename = self.expected_baselines(test_name, suffix)[0]
         if platform_dir:
             return self._filesystem.join(platform_dir, baseline_filename)
 
-        actual_test_name = self.lookup_virtual_test_base(test_name)
-        if actual_test_name:
-            return self.expected_filename(actual_test_name, suffix)
+        if fallback_base_for_virtual:
+            actual_test_name = self.lookup_virtual_test_base(test_name)
+            if actual_test_name:
+                return self.expected_filename(actual_test_name, suffix, return_default)
 
         if return_default:
             return self._filesystem.join(self.layout_tests_dir(), baseline_filename)
@@ -1342,6 +1341,8 @@ class Port(object):
         for (_, _, filenames) in self._filesystem.walk(flag_path):
             if 'README.txt' in filenames:
                 filenames.remove('README.txt')
+            if 'PRESUBMIT.py' in filenames:
+                filenames.remove('PRESUBMIT.py')
             for filename in filenames:
                 path = self._filesystem.join(flag_path, filename)
                 expectations[path] = self._filesystem.read_text_file(path)

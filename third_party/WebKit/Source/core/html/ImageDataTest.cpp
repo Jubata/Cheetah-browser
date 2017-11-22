@@ -65,10 +65,10 @@ TEST_F(ImageDataTest,
   std::unique_ptr<SkColorSpaceXform> xform =
       SkColorSpaceXform::New(SkColorSpace::MakeSRGBLinear().get(),
                              SkColorSpace::MakeSRGBLinear().get());
-  xform->apply(SkColorSpaceXform::ColorFormat::kRGBA_F16_ColorFormat,
-               f16_pixels,
-               SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat,
-               rgba32_pixels, 4, SkAlphaType::kUnpremul_SkAlphaType);
+  EXPECT_TRUE(xform->apply(
+      SkColorSpaceXform::ColorFormat::kRGBA_F16_ColorFormat, f16_pixels,
+      SkColorSpaceXform::ColorFormat::kRGBA_8888_ColorFormat, rgba32_pixels, 4,
+      SkAlphaType::kUnpremul_SkAlphaType));
 
   // Creating ArrayBufferContents objects. We need two buffers for RGBA32 data
   // because kRGBA8CanvasPixelFormat->kUint8ClampedArrayStorageFormat consumes
@@ -245,7 +245,7 @@ TEST_F(ImageDataTest, TestGetImageDataInCanvasColorSettings) {
         // Convert the image data to the color settings of the canvas.
         EXPECT_TRUE(image_data->ImageDataInCanvasColorSettings(
             canvas_color_spaces[k], canvas_pixel_formats[k],
-            pixels_converted_in_image_data));
+            pixels_converted_in_image_data.get(), kRGBAColorType));
 
         // Compare the converted pixels
         ColorCorrectionTestUtils::CompareColorCorrectedPixels(

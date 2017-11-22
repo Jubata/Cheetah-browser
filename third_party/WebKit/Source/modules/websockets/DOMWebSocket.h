@@ -34,6 +34,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <memory>
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/dom/PausableObject.h"
 #include "core/dom/events/EventListener.h"
 #include "core/dom/events/EventTarget.h"
@@ -43,7 +44,6 @@
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "platform/Timer.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
@@ -122,8 +122,8 @@ class MODULES_EXPORT DOMWebSocket : public EventTargetWithInlineData,
 
   // PausableObject functions.
   void ContextDestroyed(ExecutionContext*) override;
-  void Suspend() override;
-  void Resume() override;
+  void Pause() override;
+  void Unpause() override;
 
   // ScriptWrappable functions.
   // Prevent this instance from being collected while it's not in CLOSED

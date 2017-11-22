@@ -63,8 +63,8 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
 
   Document* getSVGDocument(ExceptionState&) const;
 
-  virtual bool LoadedNonEmptyDocument() const { return false; }
-  virtual void DidLoadNonEmptyDocument() {}
+  bool LoadedNonEmptyDocument() const { return did_load_non_empty_document_; }
+  void DidLoadNonEmptyDocument() { did_load_non_empty_document_ = true; }
 
   void SetEmbeddedContentView(EmbeddedContentView*);
   EmbeddedContentView* ReleaseEmbeddedContentView();
@@ -110,7 +110,7 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
   bool AllowPaymentRequest() const override { return false; }
   bool IsDisplayNone() const override { return !embedded_content_view_; }
   AtomicString Csp() const override { return g_null_atom; }
-  const WebParsedFeaturePolicy& ContainerPolicy() const override;
+  const ParsedFeaturePolicy& ContainerPolicy() const override;
 
   // For unit tests, manually trigger the UpdateContainerPolicy method.
   void UpdateContainerPolicyForTests() { UpdateContainerPolicy(); }
@@ -145,7 +145,7 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
   // TODO(loonybear): remove the boolean once the space separated feature list
   // syntax is deprecated.
   // https://crbug.com/761009.
-  virtual Vector<WebParsedFeaturePolicyDeclaration> ConstructContainerPolicy(
+  virtual ParsedFeaturePolicy ConstructContainerPolicy(
       Vector<String>* /*  messages */,
       bool* /* old_syntax */) const = 0;
 
@@ -169,8 +169,9 @@ class CORE_EXPORT HTMLFrameOwnerElement : public HTMLElement,
   Member<Frame> content_frame_;
   Member<EmbeddedContentView> embedded_content_view_;
   SandboxFlags sandbox_flags_;
+  bool did_load_non_empty_document_;
 
-  WebParsedFeaturePolicy container_policy_;
+  ParsedFeaturePolicy container_policy_;
 };
 
 DEFINE_ELEMENT_TYPE_CASTS(HTMLFrameOwnerElement, IsFrameOwnerElement());

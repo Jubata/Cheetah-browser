@@ -5,11 +5,11 @@
 #ifndef PlaceholderImage_h
 #define PlaceholderImage_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/SharedBuffer.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/ImageOrientation.h"
-#include "platform/wtf/RefPtr.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
@@ -26,7 +26,7 @@ class PLATFORM_EXPORT PlaceholderImage final : public Image {
  public:
   static scoped_refptr<PlaceholderImage> Create(ImageObserver* observer,
                                                 const IntSize& size) {
-    return WTF::AdoptRef(new PlaceholderImage(observer, size));
+    return base::AdoptRef(new PlaceholderImage(observer, size));
   }
 
   ~PlaceholderImage() override;

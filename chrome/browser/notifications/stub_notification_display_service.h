@@ -11,6 +11,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/optional.h"
 #include "chrome/browser/notifications/notification_common.h"
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "ui/message_center/notification.h"
@@ -37,26 +38,29 @@ class StubNotificationDisplayService : public NotificationDisplayService {
   std::vector<message_center::Notification> GetDisplayedNotificationsForType(
       NotificationCommon::Type type) const;
 
+  base::Optional<message_center::Notification> GetNotification(
+      const std::string& notification_id);
+
   const NotificationCommon::Metadata* GetMetadataForNotification(
       const message_center::Notification& notification);
 
   // Simulates the notification identified by |notification_id| being closed due
   // to external events, such as the user dismissing it when |by_user| is set.
-  // When |silent| is set, the notification handlers won't be informed of the
-  // change to immitate behaviour of operating systems that don't inform apps
-  // about removed notifications.
+  // Will wait for the close event to complete. When |silent| is set, the
+  // notification handlers won't be informed of the change to immitate behaviour
+  // of operating systems that don't inform apps about removed notifications.
   void RemoveNotification(NotificationCommon::Type notification_type,
                           const std::string& notification_id,
                           bool by_user,
                           bool silent);
 
-  // Removes all notifications shown by this display service.
+  // Removes all notifications shown by this display service. Will wait for the
+  // close events to complete.
   void RemoveAllNotifications(NotificationCommon::Type notification_type,
                               bool by_user);
 
   // NotificationDisplayService implementation:
   void Display(NotificationCommon::Type notification_type,
-               const std::string& notification_id,
                const message_center::Notification& notification,
                std::unique_ptr<NotificationCommon::Metadata> metadata) override;
   void Close(NotificationCommon::Type notification_type,

@@ -99,7 +99,6 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableMediaSession(bool);
   BLINK_PLATFORM_EXPORT static void EnableMiddleClickAutoscroll(bool);
   BLINK_PLATFORM_EXPORT static void EnableModernMediaControls(bool);
-  BLINK_PLATFORM_EXPORT static void EnableModuleScripts(bool);
   BLINK_PLATFORM_EXPORT static void EnableModuleScriptsDynamicImport(bool);
   BLINK_PLATFORM_EXPORT static void EnableModuleScriptsImportMetaUrl(bool);
   BLINK_PLATFORM_EXPORT static void EnableMojoBlobs(bool);
@@ -183,6 +182,7 @@ class WebRuntimeFeatures {
   BLINK_PLATFORM_EXPORT static void EnableAutomationControlled(bool);
   BLINK_PLATFORM_EXPORT static void EnableWorkStealingInScriptRunner(bool);
   BLINK_PLATFORM_EXPORT static void EnableStopLoadingInBackgroundAndroid(bool);
+  BLINK_PLATFORM_EXPORT static void EnablePWAFullCodeCache(bool);
 
  private:
   WebRuntimeFeatures();

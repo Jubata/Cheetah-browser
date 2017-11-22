@@ -16,6 +16,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/strings/string16.h"
+#include "chrome/common/plugin.mojom.h"
 #include "chrome/renderer/media/chrome_key_systems_provider.h"
 #include "components/nacl/common/features.h"
 #include "components/rappor/public/interfaces/rappor_recorder.mojom.h"
@@ -48,8 +49,6 @@ class PrescientNetworkingDispatcher;
 #if BUILDFLAG(ENABLE_SPELLCHECK)
 class SpellCheck;
 #endif
-
-struct ChromeViewHostMsg_GetPluginInfo_Output;
 
 namespace content {
 class BrowserPluginDelegate;
@@ -129,6 +128,7 @@ class ChromeContentRendererClient
   bool HasErrorPage(int http_status_code) override;
   bool ShouldSuppressErrorPage(content::RenderFrame* render_frame,
                                const GURL& url) override;
+  bool ShouldTrackUseCounter(const GURL& url) override;
   void GetNavigationErrorStrings(content::RenderFrame* render_frame,
                                  const blink::WebURLRequest& failed_request,
                                  const blink::WebURLError& error,
@@ -168,7 +168,7 @@ class ChromeContentRendererClient
   blink::WebPrescientNetworking* GetPrescientNetworking() override;
   bool ShouldOverridePageVisibilityState(
       const content::RenderFrame* render_frame,
-      blink::WebPageVisibilityState* override_state) override;
+      blink::mojom::PageVisibilityState* override_state) override;
   bool IsExternalPepperPlugin(const std::string& module_name) override;
   std::unique_ptr<blink::WebSocketHandshakeThrottle>
   CreateWebSocketHandshakeThrottle() override;
@@ -229,15 +229,18 @@ class ChromeContentRendererClient
 #endif
 
 #if BUILDFLAG(ENABLE_PLUGINS)
+  static chrome::mojom::PluginInfoHostAssociatedPtr& GetPluginInfoHost();
+
   static blink::WebPlugin* CreatePlugin(
       content::RenderFrame* render_frame,
       const blink::WebPluginParams& params,
-      const ChromeViewHostMsg_GetPluginInfo_Output& output);
+      const chrome::mojom::PluginInfo& plugin_info);
 #endif
 
 #if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_EXTENSIONS)
   static bool IsExtensionOrSharedModuleWhitelisted(
-      const GURL& url, const std::set<std::string>& whitelist);
+      const GURL& url,
+      const std::set<std::string>& whitelist);
 #endif
 
  private:
@@ -284,7 +287,7 @@ class ChromeContentRendererClient
   std::unique_ptr<network_hints::PrescientNetworkingDispatcher>
       prescient_networking_dispatcher_;
 
-  chrome::ChromeKeySystemsProvider key_systems_provider_;
+  ChromeKeySystemsProvider key_systems_provider_;
 
   safe_browsing::mojom::SafeBrowsingPtr safe_browsing_;
 

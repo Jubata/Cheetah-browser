@@ -1220,6 +1220,15 @@ void GLES2InterfaceStub::RasterCHROMIUM(const cc::DisplayItemList* /* list */,
                                         GLfloat /* post_translate_y */,
                                         GLfloat /* post_scale */) {}
 void GLES2InterfaceStub::EndRasterCHROMIUM() {}
+void GLES2InterfaceStub::CreateTransferCacheEntryCHROMIUM(
+    GLuint64 /* handle_id */,
+    GLuint /* handle_shm_id */,
+    GLuint /* handle_shm_offset */,
+    const cc::ClientTransferCacheEntry& /* entry */) {}
+void GLES2InterfaceStub::DeleteTransferCacheEntryCHROMIUM(
+    GLuint64 /* handle_id */) {}
+void GLES2InterfaceStub::UnlockTransferCacheEntryCHROMIUM(
+    GLuint64 /* handle_id */) {}
 void GLES2InterfaceStub::TexStorage2DImageCHROMIUM(GLenum /* target */,
                                                    GLenum /* internalFormat */,
                                                    GLenum /* bufferUsage */,
@@ -1228,4 +1237,7 @@ void GLES2InterfaceStub::TexStorage2DImageCHROMIUM(GLenum /* target */,
 void GLES2InterfaceStub::SetColorSpaceMetadataCHROMIUM(
     GLuint /* texture_id */,
     GLColorSpace /* color_space */) {}
+void GLES2InterfaceStub::WindowRectanglesEXT(GLenum /* mode */,
+                                             GLsizei /* count */,
+                                             const GLint* /* box */) {}
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_STUB_IMPL_AUTOGEN_H_

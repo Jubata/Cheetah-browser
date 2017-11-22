@@ -31,7 +31,7 @@
 #include "modules/filesystem/DOMFileSystem.h"
 
 #include <memory>
-#include "core/fileapi/BlobCallback.h"
+
 #include "core/probe/CoreProbes.h"
 #include "modules/filesystem/DOMFilePath.h"
 #include "modules/filesystem/DirectoryEntry.h"
@@ -192,7 +192,7 @@ void DOMFileSystem::CreateWriter(const FileEntry* file_entry,
 }
 
 void DOMFileSystem::CreateFile(const FileEntry* file_entry,
-                               BlobCallback* success_callback,
+                               FileCallback* success_callback,
                                ErrorCallbackBase* error_callback) {
   KURL file_system_url = CreateFileSystemURL(file_entry);
   if (!FileSystem()) {
@@ -210,7 +210,7 @@ void DOMFileSystem::ScheduleCallback(ExecutionContext* execution_context,
                                      WTF::Closure task) {
   DCHECK(execution_context->IsContextThread());
 
-  std::unique_ptr<int> identifier = WTF::MakeUnique<int>(0);
+  std::unique_ptr<int> identifier = std::make_unique<int>(0);
   probe::AsyncTaskScheduled(execution_context, TaskNameForInstrumentation(),
                             identifier.get());
   execution_context->GetTaskRunner(TaskType::kFileReading)

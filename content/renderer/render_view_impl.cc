@@ -73,7 +73,6 @@
 #include "content/renderer/appcache/web_application_cache_host_impl.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
-#include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/drop_data_builder.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
 #include "content/renderer/history_serialization.h"
@@ -109,6 +108,7 @@
 #include "net/http/http_util.h"
 #include "ppapi/features/features.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/FilePathConversion.h"
 #include "third_party/WebKit/public/platform/URLConversion.h"
 #include "third_party/WebKit/public/platform/WebConnectionType.h"
@@ -116,6 +116,7 @@
 #include "third_party/WebKit/public/platform/WebImage.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "third_party/WebKit/public/platform/WebInputEventResult.h"
+#include "third_party/WebKit/public/platform/WebNetworkStateNotifier.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
@@ -235,7 +236,6 @@ using blink::WebSecurityOrigin;
 using blink::WebSecurityPolicy;
 using blink::WebSettings;
 using blink::WebSize;
-using blink::WebStorageNamespace;
 using blink::WebStorageQuotaCallbacks;
 using blink::WebStorageQuotaError;
 using blink::WebStorageQuotaType;
@@ -566,9 +566,9 @@ void RenderViewImpl::Initialize(
 #endif
   display_mode_ = params->initial_size.display_mode;
 
-  webview_ = WebView::Create(this, is_hidden()
-                                       ? blink::kWebPageVisibilityStateHidden
-                                       : blink::kWebPageVisibilityStateVisible);
+  webview_ = WebView::Create(
+      this, is_hidden() ? blink::mojom::PageVisibilityState::kHidden
+                        : blink::mojom::PageVisibilityState::kVisible);
   RenderWidget::Init(show_callback, webview_->GetWidget());
 
   g_view_map.Get().insert(std::make_pair(webview(), this));
@@ -623,10 +623,12 @@ void RenderViewImpl::Initialize(
       RenderFrameImpl::ResolveOpener(params->opener_frame_route_id);
 
   if (params->main_frame_routing_id != MSG_ROUTING_NONE) {
-    CHECK(params->main_frame_interface_provider.is_bound());
+    CHECK(params->main_frame_interface_provider.is_valid());
+    service_manager::mojom::InterfaceProviderPtr main_frame_interface_provider(
+        std::move(params->main_frame_interface_provider));
     main_render_frame_ = RenderFrameImpl::CreateMainFrame(
         this, params->main_frame_routing_id,
-        std::move(params->main_frame_interface_provider),
+        std::move(main_frame_interface_provider),
         params->main_frame_widget_routing_id, params->hidden, screen_info(),
         compositor_deps_, opener_frame, params->devtools_main_frame_token,
         params->replicated_frame_state);
@@ -768,7 +770,6 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->SetLoadsImagesAutomatically(prefs.loads_images_automatically);
   settings->SetImagesEnabled(prefs.images_enabled);
   settings->SetPluginsEnabled(prefs.plugins_enabled);
-  settings->SetEncryptedMediaEnabled(prefs.encrypted_media_enabled);
   settings->SetDOMPasteAllowed(prefs.dom_paste_enabled);
   settings->SetTextAreasAreResizable(prefs.text_areas_are_resizable);
   settings->SetAllowScriptsToCloseWindows(prefs.allow_scripts_to_close_windows);
@@ -778,7 +779,7 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   WebRuntimeFeatures::EnableXSLT(prefs.xslt_enabled);
   settings->SetXSSAuditorEnabled(prefs.xss_auditor_enabled);
   settings->SetDNSPrefetchingEnabled(prefs.dns_prefetching_enabled);
-  settings->SetDataSaverEnabled(
+  blink::WebNetworkStateNotifier::SetSaveDataEnabled(
       prefs.data_saver_enabled &&
       !base::FeatureList::IsEnabled(features::kDataSaverHoldback));
   settings->SetLocalStorageEnabled(prefs.local_storage_enabled);
@@ -1152,6 +1153,8 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
                         OnEnablePreferredSizeChangedMode)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableAutoResize, OnEnableAutoResize)
     IPC_MESSAGE_HANDLER(ViewMsg_DisableAutoResize, OnDisableAutoResize)
+    IPC_MESSAGE_HANDLER(ViewMsg_SetLocalSurfaceIdForAutoResize,
+                        OnSetLocalSurfaceIdForAutoResize)
     IPC_MESSAGE_HANDLER(ViewMsg_DisableScrollbarsForSmallWindows,
                         OnDisableScrollbarsForSmallWindows)
     IPC_MESSAGE_HANDLER(ViewMsg_SetRendererPrefs, OnSetRendererPrefs)
@@ -1327,7 +1330,8 @@ WebView* RenderViewImpl::CreateView(WebLocalFrame* creator,
                                     WebSandboxFlags sandbox_flags) {
   RenderFrameImpl* creator_frame = RenderFrameImpl::FromWebFrame(creator);
   mojom::CreateNewWindowParamsPtr params = mojom::CreateNewWindowParams::New();
-  params->user_gesture = WebUserGestureIndicator::IsProcessingUserGesture();
+  params->user_gesture =
+      WebUserGestureIndicator::IsProcessingUserGesture(creator);
   if (GetContentClient()->renderer()->AllowPopup())
     params->user_gesture = true;
   params->window_container_type = WindowFeaturesToContainerType(features);
@@ -1373,7 +1377,7 @@ WebView* RenderViewImpl::CreateView(WebLocalFrame* creator,
   DCHECK_NE(MSG_ROUTING_NONE, reply->main_frame_route_id);
   DCHECK_NE(MSG_ROUTING_NONE, reply->main_frame_widget_route_id);
 
-  WebUserGestureIndicator::ConsumeUserGesture();
+  WebUserGestureIndicator::ConsumeUserGesture(creator);
 
   // While this view may be a background extension page, it can spawn a visible
   // render view. So we just assume that the new one is not another background
@@ -1431,7 +1435,7 @@ WebView* RenderViewImpl::CreateView(WebLocalFrame* creator,
   return view->webview();
 }
 
-WebWidget* RenderViewImpl::CreatePopupMenu(blink::WebPopupType popup_type) {
+WebWidget* RenderViewImpl::CreatePopup(blink::WebPopupType popup_type) {
   RenderWidget* widget = RenderWidget::CreateForPopup(this, compositor_deps_,
                                                       popup_type, screen_info_);
   if (!widget)
@@ -1443,9 +1447,9 @@ WebWidget* RenderViewImpl::CreatePopupMenu(blink::WebPopupType popup_type) {
   return widget->GetWebWidget();
 }
 
-WebStorageNamespace* RenderViewImpl::CreateSessionStorageNamespace() {
+int64_t RenderViewImpl::GetSessionStorageNamespaceId() {
   CHECK(session_storage_namespace_id_ != kInvalidSessionStorageNamespaceId);
-  return new WebStorageNamespaceImpl(session_storage_namespace_id_);
+  return session_storage_namespace_id_;
 }
 
 void RenderViewImpl::PrintPage(WebLocalFrame* frame) {
@@ -1670,7 +1674,13 @@ void RenderViewImpl::DidFocus() {
   // TODO(jcivelli): when https://bugs.webkit.org/show_bug.cgi?id=33389 is fixed
   //                 we won't have to test for user gesture anymore and we can
   //                 move that code back to render_widget.cc
-  if (WebUserGestureIndicator::IsProcessingUserGesture() &&
+  WebFrame* main_frame = webview() ? webview()->MainFrame() : nullptr;
+  bool is_processing_user_gesture =
+      WebUserGestureIndicator::IsProcessingUserGesture(
+          main_frame && main_frame->IsWebLocalFrame()
+              ? main_frame->ToWebLocalFrame()
+              : nullptr);
+  if (is_processing_user_gesture &&
       !RenderThreadImpl::current()->layout_test_mode()) {
     Send(new ViewHostMsg_Focus(GetRoutingID()));
   }
@@ -1949,7 +1959,6 @@ void RenderViewImpl::OnEnableAutoResize(const gfx::Size& min_size,
     return;
 
   auto_resize_mode_ = true;
-  AutoResizeCompositor();
 
   if (IsUseZoomForDSFEnabled()) {
     webview()->EnableAutoResizeMode(
@@ -1980,6 +1989,27 @@ void RenderViewImpl::OnDisableAutoResize(const gfx::Size& new_size) {
     resize_params.display_mode = display_mode_;
     resize_params.needs_resize_ack = false;
     Resize(resize_params);
+  }
+}
+
+void RenderViewImpl::OnSetLocalSurfaceIdForAutoResize(
+    uint64_t sequence_number,
+    const gfx::Size& min_size,
+    const gfx::Size& max_size,
+    const content::ScreenInfo& screen_info,
+    const viz::LocalSurfaceId& local_surface_id) {
+  if (!auto_resize_mode_ || resize_or_repaint_ack_num_ != sequence_number)
+    return;
+
+  SetLocalSurfaceIdForAutoResize(sequence_number, screen_info,
+                                 local_surface_id);
+
+  if (IsUseZoomForDSFEnabled()) {
+    webview()->EnableAutoResizeMode(
+        gfx::ScaleToCeiledSize(min_size, device_scale_factor_),
+        gfx::ScaleToCeiledSize(max_size, device_scale_factor_));
+  } else {
+    webview()->EnableAutoResizeMode(min_size, max_size);
   }
 }
 
@@ -2157,9 +2187,9 @@ void RenderViewImpl::OnPageWasHidden() {
     // frame. Currently, this is done because the main frame may override the
     // visibility of the page when prerendering. In order to fix this,
     // prerendering must be made aware of OOPIFs. https://crbug.com/440544
-    blink::WebPageVisibilityState visibilityState =
+    blink::mojom::PageVisibilityState visibilityState =
         GetMainRenderFrame() ? GetMainRenderFrame()->VisibilityState()
-                             : blink::kWebPageVisibilityStateHidden;
+                             : blink::mojom::PageVisibilityState::kHidden;
     webview()->SetVisibilityState(visibilityState, false);
   }
 }
@@ -2170,9 +2200,9 @@ void RenderViewImpl::OnPageWasShown() {
 #endif
 
   if (webview()) {
-    blink::WebPageVisibilityState visibilityState =
+    blink::mojom::PageVisibilityState visibilityState =
         GetMainRenderFrame() ? GetMainRenderFrame()->VisibilityState()
-                             : blink::kWebPageVisibilityStateVisible;
+                             : blink::mojom::PageVisibilityState::kVisible;
     webview()->SetVisibilityState(visibilityState, false);
   }
 }
@@ -2219,7 +2249,7 @@ void RenderViewImpl::OnDeviceScaleFactorChanged() {
   RenderWidget::OnDeviceScaleFactorChanged();
   UpdateWebViewWithDeviceScaleFactor();
   if (auto_resize_mode_)
-    AutoResizeCompositor();
+    AutoResizeCompositor(viz::LocalSurfaceId());
 }
 
 void RenderViewImpl::SetScreenMetricsEmulationParameters(

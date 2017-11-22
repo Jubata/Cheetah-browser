@@ -4,6 +4,7 @@
 
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/linux/pangocairo/pangocairo.gni")
 import("//build/config/ui.gni")
 import("//gpu/vulkan/features.gni")
@@ -13,7 +14,7 @@ import("//printing/features/features.gni")
 import("//third_party/WebKit/public/public_features.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 
-source_set("browser") {
+jumbo_source_set("browser") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
   visibility = [
@@ -40,6 +41,7 @@ source_set("browser") {
     "//cc/paint",
     "//components/discardable_memory/common",
     "//components/discardable_memory/service",
+    "//components/download/downloader/in_progress",
     "//components/filesystem:lib",
     "//components/leveldb:lib",
     "//components/link_header_util",
@@ -79,8 +81,10 @@ source_set("browser") {
     "//device/bluetooth",
     "//device/gamepad",
     "//device/geolocation",
+    "//device/geolocation/public/cpp",
     "//device/geolocation/public/interfaces",
     "//device/screen_orientation/public/interfaces",
+    "//device/u2f",
     "//device/vr:mojo_bindings",
     "//google_apis",
     "//gpu",
@@ -93,10 +97,10 @@ source_set("browser") {
     "//media:media_features",
     "//media/capture",
     "//media/capture/mojo:image_capture",
-    "//media/gpu/ipc/client",
     "//media/midi",
     "//media/midi:mojo",
     "//media/mojo:features",
+    "//media/mojo/clients:jpeg_decode_accelerator",
     "//media/mojo/interfaces",
     "//media/mojo/interfaces:constants",
     "//media/mojo/services",
@@ -104,6 +108,7 @@ source_set("browser") {
     "//mojo/edk/system",
     "//mojo/public/cpp/bindings",
     "//mojo/public/js",
+    "//mojo/public/js:resources",
     "//net",
     "//net:extras",
     "//net:http_server",
@@ -162,6 +167,7 @@ source_set("browser") {
     "//ui/accessibility",
     "//ui/accessibility:ax_gen",
     "//ui/base",
+    "//ui/base:ui_features",
     "//ui/base/ime",
     "//ui/display",
     "//ui/display/types",
@@ -400,6 +406,7 @@ source_set("browser") {
     "background_fetch/background_fetch_registration_notifier.h",
     "background_fetch/background_fetch_request_info.cc",
     "background_fetch/background_fetch_request_info.h",
+    "background_fetch/background_fetch_request_manager.h",
     "background_fetch/background_fetch_service_impl.cc",
     "background_fetch/background_fetch_service_impl.h",
     "background_fetch/storage/cleanup_task.cc",
@@ -412,6 +419,10 @@ source_set("browser") {
     "background_fetch/storage/database_task.h",
     "background_fetch/storage/delete_registration_task.cc",
     "background_fetch/storage/delete_registration_task.h",
+    "background_fetch/storage/get_developer_ids_task.cc",
+    "background_fetch/storage/get_developer_ids_task.h",
+    "background_fetch/storage/get_registration_task.cc",
+    "background_fetch/storage/get_registration_task.h",
     "background_fetch/storage/mark_registration_for_deletion_task.cc",
     "background_fetch/storage/mark_registration_for_deletion_task.h",
     "background_sync/background_sync_context.cc",
@@ -551,6 +562,8 @@ source_set("browser") {
     "devtools/devtools_frame_trace_recorder.h",
     "devtools/devtools_http_handler.cc",
     "devtools/devtools_http_handler.h",
+    "devtools/devtools_interceptor_controller.cc",
+    "devtools/devtools_interceptor_controller.h",
     "devtools/devtools_io_context.cc",
     "devtools/devtools_io_context.h",
     "devtools/devtools_manager.cc",
@@ -650,6 +663,8 @@ source_set("browser") {
     "dom_storage/local_storage_context_mojo.h",
     "dom_storage/local_storage_database_adapter.cc",
     "dom_storage/local_storage_database_adapter.h",
+    "dom_storage/session_storage_context_mojo.cc",
+    "dom_storage/session_storage_context_mojo.h",
     "dom_storage/session_storage_database.cc",
     "dom_storage/session_storage_database.h",
     "dom_storage/session_storage_database_adapter.cc",
@@ -683,8 +698,6 @@ source_set("browser") {
     "download/download_job_impl.h",
     "download/download_manager_impl.cc",
     "download/download_manager_impl.h",
-    "download/download_net_log_parameters.cc",
-    "download/download_net_log_parameters.h",
     "download/download_request_core.cc",
     "download/download_request_core.h",
     "download/download_request_handle.cc",
@@ -736,6 +749,8 @@ source_set("browser") {
     "download/url_downloader.h",
     "field_trial_recorder.cc",
     "field_trial_recorder.h",
+    "file_url_loader_factory.cc",
+    "file_url_loader_factory.h",
     "fileapi/browser_file_system_helper.cc",
     "fileapi/browser_file_system_helper.h",
     "fileapi/fileapi_message_filter.cc",
@@ -1115,6 +1130,8 @@ source_set("browser") {
     "message_port_provider.cc",
     "mime_registry_impl.cc",
     "mime_registry_impl.h",
+    "mus_util.cc",
+    "mus_util.h",
     "net/browser_online_state_observer.cc",
     "net/browser_online_state_observer.h",
     "net/network_errors_listing_ui.cc",
@@ -1129,6 +1146,8 @@ source_set("browser") {
     "net/view_blob_internals_job_factory.h",
     "net/view_http_cache_job_factory.cc",
     "net/view_http_cache_job_factory.h",
+    "network_service_client.cc",
+    "network_service_client.h",
     "notification_service_impl.cc",
     "notification_service_impl.h",
     "notifications/blink_notification_service_impl.cc",
@@ -1378,6 +1397,8 @@ source_set("browser") {
     "renderer_host/render_widget_helper.h",
     "renderer_host/render_widget_host_delegate.cc",
     "renderer_host/render_widget_host_delegate.h",
+    "renderer_host/render_widget_host_factory.cc",
+    "renderer_host/render_widget_host_factory.h",
     "renderer_host/render_widget_host_impl.cc",
     "renderer_host/render_widget_host_impl.h",
     "renderer_host/render_widget_host_input_event_router.cc",
@@ -1410,6 +1431,8 @@ source_set("browser") {
     "renderer_host/web_database_host_impl.h",
     "renderer_host/webmenurunner_mac.h",
     "renderer_host/webmenurunner_mac.mm",
+    "renderer_interface_binders.cc",
+    "renderer_interface_binders.h",
     "resolve_proxy_msg_helper.cc",
     "resolve_proxy_msg_helper.h",
     "resource_context_impl.cc",
@@ -1441,6 +1464,8 @@ source_set("browser") {
     "service_worker/service_worker_cache_writer.h",
     "service_worker/service_worker_client_utils.cc",
     "service_worker/service_worker_client_utils.h",
+    "service_worker/service_worker_consts.cc",
+    "service_worker/service_worker_consts.h",
     "service_worker/service_worker_content_settings_proxy_impl.cc",
     "service_worker/service_worker_content_settings_proxy_impl.h",
     "service_worker/service_worker_context_core.cc",
@@ -1495,8 +1520,8 @@ source_set("browser") {
     "service_worker/service_worker_register_job_base.h",
     "service_worker/service_worker_registration.cc",
     "service_worker/service_worker_registration.h",
-    "service_worker/service_worker_registration_handle.cc",
-    "service_worker/service_worker_registration_handle.h",
+    "service_worker/service_worker_registration_object_host.cc",
+    "service_worker/service_worker_registration_object_host.h",
     "service_worker/service_worker_registration_status.cc",
     "service_worker/service_worker_registration_status.h",
     "service_worker/service_worker_request_handler.cc",
@@ -1627,8 +1652,6 @@ source_set("browser") {
     "web_contents/web_drag_source_mac.mm",
     "web_contents/web_drag_utils_win.cc",
     "web_contents/web_drag_utils_win.h",
-    "webauth/authenticator_impl.cc",
-    "webauth/authenticator_impl.h",
     "webauth/cbor/cbor_values.cc",
     "webauth/cbor/cbor_values.h",
     "webauth/cbor/cbor_writer.cc",
@@ -1643,8 +1666,6 @@ source_set("browser") {
     "webui/content_web_ui_controller_factory.h",
     "webui/generic_handler.cc",
     "webui/generic_handler.h",
-    "webui/i18n_source_stream.cc",
-    "webui/i18n_source_stream.h",
     "webui/network_error_url_loader.cc",
     "webui/network_error_url_loader.h",
     "webui/shared_resources_data_source.cc",
@@ -1664,8 +1685,6 @@ source_set("browser") {
     "webui/web_ui_message_handler.cc",
     "webui/web_ui_url_loader_factory.cc",
     "webui/web_ui_url_loader_factory.h",
-    "worker_interface_binders.cc",
-    "worker_interface_binders.h",
     "zygote_host/zygote_communication_linux.cc",
     "zygote_host/zygote_communication_linux.h",
     "zygote_host/zygote_handle_linux.cc",
@@ -1945,6 +1964,8 @@ source_set("browser") {
   if (use_atk) {
     sources += [
       "accessibility/accessibility_tree_formatter_auralinux.cc",
+      "accessibility/browser_accessibility_atk_hyperlink.cc",
+      "accessibility/browser_accessibility_atk_hyperlink.h",
       "accessibility/browser_accessibility_auralinux.cc",
       "accessibility/browser_accessibility_auralinux.h",
       "accessibility/browser_accessibility_manager_auralinux.cc",
@@ -2060,6 +2081,27 @@ source_set("browser") {
       "web_contents/web_contents_view_android.h",
     ]
 
+    jumbo_excluded_sources = [
+      # Currently the Android JNI bindings generator is not compatible with
+      # Jumbo. It generates and assumes static Init() methods and those will
+      # clash in a jumbo build. Bug https://crbug.com/779013.
+      # Files with JNI Init() methods:
+      "accessibility/web_contents_accessibility_android.cc",
+      "android/content_view_core.cc",
+      "android/content_view_render_view.cc",
+      "android/dialog_overlay_impl.cc",
+      "android/ime_adapter_android.cc",
+      "android/interstitial_page_delegate_android.cc",
+      "android/popup_zoomer.cc",
+      "android/selection_popup_controller.cc",
+      "android/smart_selection_client.cc",
+      "android/text_suggestion_host_android.cc",
+      "android/tracing_controller_android.cc",
+      "android/web_contents_observer_proxy.cc",
+
+      "android/java/java_method.cc",  # kJavaLangClass and 2 others
+    ]
+
     set_sources_assignment_filter([])
     sources += [
       "memory/swap_metrics_driver_impl_linux.cc",
@@ -2117,6 +2159,30 @@ source_set("browser") {
       "speech/speech_recognition_engine.h",
       "speech/speech_recognizer_impl.cc",
       "speech/speech_recognizer_impl.h",
+
+      # Most webauth code is non-Android
+      "webauth/attestation_data.cc",
+      "webauth/attestation_data.h",
+      "webauth/attestation_object.cc",
+      "webauth/attestation_object.h",
+      "webauth/attestation_statement.cc",
+      "webauth/attestation_statement.h",
+      "webauth/authenticator_data.cc",
+      "webauth/authenticator_data.h",
+      "webauth/authenticator_impl.cc",
+      "webauth/authenticator_impl.h",
+      "webauth/authenticator_utils.cc",
+      "webauth/authenticator_utils.h",
+      "webauth/collected_client_data.cc",
+      "webauth/collected_client_data.h",
+      "webauth/ec_public_key.cc",
+      "webauth/ec_public_key.h",
+      "webauth/fido_attestation_statement.cc",
+      "webauth/fido_attestation_statement.h",
+      "webauth/public_key.cc",
+      "webauth/public_key.h",
+      "webauth/register_response_data.cc",
+      "webauth/register_response_data.h",
     ]
     deps += [ "//third_party/flac" ]
   }
@@ -2143,6 +2209,7 @@ source_set("browser") {
 
   if (use_aura) {
     deps += [
+      "//services/ui:lib",
       "//services/ui/public/cpp",
       "//services/ui/public/interfaces",
       "//ui/aura",
@@ -2217,6 +2284,16 @@ source_set("browser") {
       "renderer_host/delegated_frame_host.cc",
       "renderer_host/delegated_frame_host.h",
     ]
+    if (is_mac) {
+      jumbo_excluded_sources = [
+        # Both Mac SDK headers and third_party/khronos/GLES2/gl2ext.h
+        # declare macros GL_LINES_ADJACENCY_EXT, GL_LINE_STRIP_ADJACENCY_EXT,
+        # GL_TRIANGLES_ADJACENCY_EXT and GL_TRIANGLE_STRIP_ADJACENCY_EXT. They
+        # get the same values but with different formatting (0xD vs 0x000D).
+        # https://crbug.com/783666
+        "compositor/gpu_output_surface_mac.mm",
+      ]
+    }
     if (enable_vulkan) {
       sources += [
         "compositor/vulkan_browser_compositor_output_surface.cc",

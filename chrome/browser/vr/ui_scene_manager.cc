@@ -11,13 +11,13 @@
 #include "base/numerics/math_constants.h"
 #include "chrome/browser/vr/databinding/binding.h"
 #include "chrome/browser/vr/databinding/vector_binding.h"
+#include "chrome/browser/vr/elements/audio_permission_prompt.h"
 #include "chrome/browser/vr/elements/button.h"
 #include "chrome/browser/vr/elements/content_element.h"
 #include "chrome/browser/vr/elements/controller.h"
 #include "chrome/browser/vr/elements/draw_phase.h"
 #include "chrome/browser/vr/elements/exclusive_screen_toast.h"
 #include "chrome/browser/vr/elements/exit_prompt.h"
-#include "chrome/browser/vr/elements/exit_prompt_backplane.h"
 #include "chrome/browser/vr/elements/full_screen_rect.h"
 #include "chrome/browser/vr/elements/grid.h"
 #include "chrome/browser/vr/elements/invisible_hit_target.h"
@@ -26,17 +26,16 @@
 #include "chrome/browser/vr/elements/rect.h"
 #include "chrome/browser/vr/elements/reticle.h"
 #include "chrome/browser/vr/elements/spinner.h"
+#include "chrome/browser/vr/elements/suggestion.h"
 #include "chrome/browser/vr/elements/system_indicator.h"
 #include "chrome/browser/vr/elements/text.h"
 #include "chrome/browser/vr/elements/throbber.h"
 #include "chrome/browser/vr/elements/transient_element.h"
 #include "chrome/browser/vr/elements/ui_element.h"
 #include "chrome/browser/vr/elements/ui_element_name.h"
-#include "chrome/browser/vr/elements/ui_element_transform_operations.h"
 #include "chrome/browser/vr/elements/ui_texture.h"
 #include "chrome/browser/vr/elements/url_bar.h"
 #include "chrome/browser/vr/elements/vector_icon.h"
-#include "chrome/browser/vr/elements/vector_icon_button_texture.h"
 #include "chrome/browser/vr/elements/viewport_aware_root.h"
 #include "chrome/browser/vr/elements/webvr_url_toast.h"
 #include "chrome/browser/vr/model/model.h"
@@ -75,11 +74,22 @@ void BindColor(UiSceneManager* model, Text* text, P p) {
                  base::Unretained(text))));
 }
 
-typedef LinearLayout SuggestionItem;
-typedef VectorBinding<OmniboxSuggestion, SuggestionItem> SuggestionSetBinding;
+template <typename P>
+void BindColor(UiSceneManager* model, Button* button, P p) {
+  button->AddBinding(base::MakeUnique<Binding<ButtonColors>>(
+      base::Bind([](UiSceneManager* m, P p) { return (m->color_scheme()).*p; },
+                 base::Unretained(model), p),
+      base::Bind(
+          [](Button* b, const ButtonColors& c) { b->SetButtonColors(c); },
+          base::Unretained(button))));
+}
+
+typedef VectorBinding<OmniboxSuggestion, Suggestion> SuggestionSetBinding;
 typedef typename SuggestionSetBinding::ElementBinding SuggestionBinding;
 
 void OnSuggestionModelAdded(UiScene* scene,
+                            UiBrowserInterface* browser,
+                            Model* model,
                             SuggestionBinding* element_binding) {
   auto icon = base::MakeUnique<VectorIcon>(100);
   icon->SetVisible(true);
@@ -102,20 +112,25 @@ void OnSuggestionModelAdded(UiScene* scene,
   Text* p_description_text = description_text.get();
 
   auto text_layout = base::MakeUnique<LinearLayout>(LinearLayout::kDown);
-  text_layout->set_hit_testable(false);
   text_layout->set_margin(kSuggestionLineGap);
   text_layout->AddChild(std::move(content_text));
   text_layout->AddChild(std::move(description_text));
   text_layout->SetVisible(true);
 
-  auto suggestion_layout = base::MakeUnique<LinearLayout>(LinearLayout::kRight);
-  suggestion_layout->set_hit_testable(false);
-  suggestion_layout->set_margin(kSuggestionIconGap);
-  suggestion_layout->SetVisible(true);
-  suggestion_layout->AddChild(std::move(icon));
-  suggestion_layout->AddChild(std::move(text_layout));
+  auto suggestion = base::MakeUnique<Suggestion>(base::Bind(
+      [](UiBrowserInterface* browser, Model* m, GURL gurl) {
+        browser->Navigate(gurl);
+        m->omnibox_input_active = false;
+      },
+      base::Unretained(browser), base::Unretained(model)));
 
-  element_binding->set_view(suggestion_layout.get());
+  suggestion->set_margin(kSuggestionIconGap);
+  suggestion->SetVisible(true);
+  suggestion->AddChild(std::move(icon));
+  suggestion->AddChild(std::move(text_layout));
+  Suggestion* p_suggestion = suggestion.get();
+
+  element_binding->set_view(suggestion.get());
 
   element_binding->bindings().push_back(
       VR_BIND_FUNC(base::string16, SuggestionBinding, element_binding,
@@ -127,8 +142,11 @@ void OnSuggestionModelAdded(UiScene* scene,
       VR_BIND(AutocompleteMatch::Type, SuggestionBinding, element_binding,
               model()->type, VectorIcon, p_icon,
               SetIcon(AutocompleteMatch::TypeToVectorIcon(value))));
+  element_binding->bindings().push_back(VR_BIND_FUNC(
+      GURL, SuggestionBinding, element_binding, model()->destination,
+      Suggestion, p_suggestion, set_destination));
 
-  scene->AddUiElement(kSuggestionLayout, std::move(suggestion_layout));
+  scene->AddUiElement(kSuggestionLayout, std::move(suggestion));
 }
 
 void OnSuggestionModelRemoved(UiScene* scene, SuggestionBinding* binding) {
@@ -156,14 +174,15 @@ UiSceneManager::UiSceneManager(UiBrowserInterface* browser,
   CreateBackground();
   CreateViewportAwareRoot();
   CreateContentQuad(content_input_delegate);
+  CreateExitPrompt(model);
+  CreateAudioPermissionPrompt(model);
   CreateWebVRExitWarning();
-  CreateSystemIndicators();
+  CreateSystemIndicators(model);
   CreateUrlBar(model);
   CreateSuggestionList(model);
-  CreateWebVrUrlToast();
+  CreateWebVrUrlToast(model);
   CreateCloseButton();
   CreateScreenDimmer();
-  CreateExitPrompt();
   CreateToasts(model);
   CreateSplashScreen(model);
   CreateUnderDevelopmentNotice();
@@ -188,18 +207,40 @@ void UiSceneManager::Create2dBrowsingSubtreeRoots(Model* model) {
   element->set_hit_testable(false);
   scene_->AddUiElement(k2dBrowsingRoot, std::move(element));
 
+  auto browsing_mode_toggle = base::MakeUnique<UiElement>();
+  browsing_mode_toggle->set_hit_testable(false);
+  browsing_mode_toggle->AddBinding(
+      VR_BIND_FUNC(bool, UiSceneManager, this, browsing_mode(), UiElement,
+                   browsing_mode_toggle.get(), SetVisible));
+
   element = base::MakeUnique<UiElement>();
   element->set_name(k2dBrowsingForeground);
   element->set_hit_testable(false);
-  element->AddBinding(VR_BIND(bool, Model, model, recognizing_speech, UiElement,
-                              element.get(), SetVisible(!value)));
-  scene_->AddUiElement(k2dBrowsingRoot, std::move(element));
+  element->SetTransitionedProperties({OPACITY});
+  element->SetTransitionDuration(base::TimeDelta::FromMilliseconds(
+      kSpeechRecognitionOpacityAnimationDurationMs));
+  element->AddBinding(base::MakeUnique<Binding<ModalPromptType>>(
+      base::Bind([](Model* m) { return m->active_modal_prompt_type; },
+                 base::Unretained(model)),
+      base::Bind(
+          [](UiElement* e, const ModalPromptType& t) {
+            if (t == kModalPromptTypeExitVRForSiteInfo) {
+              e->SetVisibleImmediately(false);
+            } else if (t == kModalPromptTypeExitVRForAudioPermission) {
+              e->SetOpacity(kModalPromptFadeOpacity);
+            } else {
+              e->SetVisible(true);
+            }
+          },
+          base::Unretained(element.get()))));
+
+  browsing_mode_toggle->AddChild(std::move(element));
+  scene_->AddUiElement(k2dBrowsingRoot, std::move(browsing_mode_toggle));
 
   element = base::MakeUnique<UiElement>();
   element->set_name(k2dBrowsingContentGroup);
   element->SetTranslate(0, kContentVerticalOffset, -kContentDistance);
   element->SetSize(kContentWidth, kContentHeight);
-  element->SetVisible(true);
   element->set_hit_testable(false);
   element->SetTransitionedProperties({TRANSFORM});
   scene_->AddUiElement(k2dBrowsingForeground, std::move(element));
@@ -244,26 +285,29 @@ void UiSceneManager::CreateWebVRExitWarning() {
   scene_->AddUiElement(k2dBrowsingViewportAwareRoot, std::move(element));
 }
 
-void UiSceneManager::CreateSystemIndicators() {
+void UiSceneManager::CreateSystemIndicators(Model* model) {
   std::unique_ptr<UiElement> element;
 
   struct Indicator {
-    UiElement** element;
     UiElementName name;
     const gfx::VectorIcon& icon;
     int resource_string;
+    bool PermissionsModel::*signal;
   };
   const std::vector<Indicator> indicators = {
-      {&audio_capture_indicator_, kAudioCaptureIndicator,
-       vector_icons::kMicrophoneIcon, IDS_AUDIO_CALL_NOTIFICATION_TEXT_2},
-      {&video_capture_indicator_, kVideoCaptureIndicator,
-       vector_icons::kVideocamIcon, IDS_VIDEO_CALL_NOTIFICATION_TEXT_2},
-      {&screen_capture_indicator_, kScreenCaptureIndicator,
-       vector_icons::kScreenShareIcon, IDS_SCREEN_CAPTURE_NOTIFICATION_TEXT_2},
-      {&bluetooth_connected_indicator_, kBluetoothConnectedIndicator,
-       vector_icons::kBluetoothConnectedIcon, 0},
-      {&location_access_indicator_, kLocationAccessIndicator,
-       vector_icons::kLocationOnIcon, 0},
+      {kAudioCaptureIndicator, vector_icons::kMicrophoneIcon,
+       IDS_AUDIO_CALL_NOTIFICATION_TEXT_2,
+       &PermissionsModel::audio_capture_enabled},
+      {kVideoCaptureIndicator, vector_icons::kVideocamIcon,
+       IDS_VIDEO_CALL_NOTIFICATION_TEXT_2,
+       &PermissionsModel::video_capture_enabled},
+      {kScreenCaptureIndicator, vector_icons::kScreenShareIcon,
+       IDS_SCREEN_CAPTURE_NOTIFICATION_TEXT_2,
+       &PermissionsModel::screen_capture_enabled},
+      {kBluetoothConnectedIndicator, vector_icons::kBluetoothConnectedIcon, 0,
+       &PermissionsModel::bluetooth_connected},
+      {kLocationAccessIndicator, vector_icons::kLocationOnIcon, 0,
+       &PermissionsModel::location_access},
   };
 
   std::unique_ptr<LinearLayout> indicator_layout =
@@ -274,6 +318,9 @@ void UiSceneManager::CreateSystemIndicators() {
   indicator_layout->SetTranslate(0, kIndicatorVerticalOffset,
                                  kIndicatorDistanceOffset);
   indicator_layout->set_margin(kIndicatorGap);
+  indicator_layout->AddBinding(
+      VR_BIND_FUNC(bool, UiSceneManager, this, fullscreen() == false, UiElement,
+                   indicator_layout.get(), SetVisible));
   scene_->AddUiElement(k2dBrowsingContentGroup, std::move(indicator_layout));
 
   for (const auto& indicator : indicators) {
@@ -281,9 +328,20 @@ void UiSceneManager::CreateSystemIndicators() {
         512, kIndicatorHeight, indicator.icon, indicator.resource_string);
     element->set_name(indicator.name);
     element->set_draw_phase(kPhaseForeground);
+    element->set_requires_layout(false);
     element->SetVisible(false);
-    *(indicator.element) = element.get();
-    system_indicators_.push_back(element.get());
+    element->AddBinding(base::MakeUnique<Binding<bool>>(
+        base::Bind(
+            [](Model* m, bool PermissionsModel::*permission) {
+              return m->permissions.*permission;
+            },
+            base::Unretained(model), indicator.signal),
+        base::Bind(
+            [](UiElement* e, const bool& v) {
+              e->SetVisible(v);
+              e->set_requires_layout(v);
+            },
+            base::Unretained(element.get()))));
     scene_->AddUiElement(kIndicatorLayout, std::move(element));
   }
 }
@@ -294,20 +352,17 @@ void UiSceneManager::CreateContentQuad(ContentInputDelegate* delegate) {
   auto hit_plane = base::MakeUnique<InvisibleHitTarget>();
   hit_plane->set_name(kBackplane);
   hit_plane->set_draw_phase(kPhaseForeground);
-  hit_plane->SetSize(kBackplaneSize, kBackplaneSize);
+  hit_plane->SetSize(kBackplaneSize, kSceneHeight);
   hit_plane->SetTranslate(0, 0, -kTextureOffset);
-  content_elements_.push_back(hit_plane.get());
   scene_->AddUiElement(k2dBrowsingContentGroup, std::move(hit_plane));
 
   auto main_content = base::MakeUnique<ContentElement>(delegate);
   main_content->set_name(kContentQuad);
   main_content->set_draw_phase(kPhaseForeground);
   main_content->SetSize(kContentWidth, kContentHeight);
-  main_content->SetVisible(false);
   main_content->set_corner_radius(kContentCornerRadius);
   main_content->SetTransitionedProperties({BOUNDS});
   main_content_ = main_content.get();
-  content_elements_.push_back(main_content.get());
   scene_->AddUiElement(k2dBrowsingContentGroup, std::move(main_content));
 
   // Limit reticle distance to a sphere based on content distance.
@@ -371,6 +426,7 @@ void UiSceneManager::CreateSplashScreen(Model* model) {
   auto spinner = base::MakeUnique<Spinner>(512);
   spinner->set_name(kWebVrTimeoutSpinner);
   spinner->set_draw_phase(kPhaseOverlayForeground);
+  spinner->SetVisible(false);
   spinner->SetSize(kSpinnerWidth, kSpinnerHeight);
   spinner->SetTranslate(0, kSpinnerVerticalOffset, -kSpinnerDistance);
   spinner->SetColor(color_scheme().spinner_color);
@@ -385,6 +441,7 @@ void UiSceneManager::CreateSplashScreen(Model* model) {
   auto spinner_bg = base::MakeUnique<FullScreenRect>();
   spinner_bg->set_name(kWebVrTimeoutSpinnerBackground);
   spinner_bg->set_draw_phase(kPhaseOverlayBackground);
+  spinner_bg->SetVisible(false);
   spinner_bg->set_hit_testable(false);
   spinner_bg->SetColor(color_scheme().spinner_background);
   spinner_bg->SetTransitionedProperties({OPACITY});
@@ -397,6 +454,7 @@ void UiSceneManager::CreateSplashScreen(Model* model) {
   auto timeout_message = base::MakeUnique<Rect>();
   timeout_message->set_name(kWebVrTimeoutMessage);
   timeout_message->set_draw_phase(kPhaseOverlayForeground);
+  timeout_message->SetVisible(false);
   timeout_message->SetSize(kTimeoutMessageBackgroundWidthM,
                            kTimeoutMessageBackgroundHeightM);
   timeout_message->SetTranslate(0, kSpinnerVerticalOffset, -kSpinnerDistance);
@@ -438,17 +496,19 @@ void UiSceneManager::CreateSplashScreen(Model* model) {
 
   auto button = base::MakeUnique<Button>(
       base::Bind(&UiSceneManager::OnWebVrTimedOut, base::Unretained(this)),
-      base::MakeUnique<VectorIconButtonTexture>(vector_icons::kClose16Icon));
+      kPhaseOverlayForeground, kTimeoutButtonWidth, kTimeoutButtonHeight,
+      kButtonZOffsetHoverDMM * kTimeoutButtonDistance,
+      vector_icons::kClose16Icon);
   button->set_name(kWebVrTimeoutMessageButton);
-  button->set_draw_phase(kPhaseOverlayForeground);
+  button->SetVisible(false);
   button->SetTranslate(0, kTimeoutButtonVerticalOffset,
                        -kTimeoutButtonDistance);
   button->SetRotate(1, 0, 0, kTimeoutButtonRotationRad);
-  button->SetSize(kTimeoutButtonWidth, kTimeoutButtonHeight);
   button->SetTransitionedProperties({OPACITY});
   button->AddBinding(VR_BIND_FUNC(bool, Model, model,
                                   web_vr_timeout_state == kWebVrTimedOut,
                                   Button, button.get(), SetVisible));
+  BindColor(this, button.get(), &ColorScheme::button_colors);
   scene_->AddUiElement(kSplashScreenViewportAwareRoot, std::move(button));
 
   timeout_text = base::MakeUnique<Text>(512, kTimeoutMessageTextFontHeightM,
@@ -478,7 +538,6 @@ void UiSceneManager::CreateUnderDevelopmentNotice() {
   text->SetRotate(1, 0, 0, kUnderDevelopmentNoticeRotationRad);
   text->SetVisible(true);
   text->set_y_anchoring(BOTTOM);
-  control_elements_.push_back(text.get());
   scene_->AddUiElement(kUrlBar, std::move(text));
 }
 
@@ -555,36 +614,124 @@ void UiSceneManager::CreateViewportAwareRoot() {
 }
 
 void UiSceneManager::CreateVoiceSearchUiGroup(Model* model) {
-  std::unique_ptr<UiElement> element = base::MakeUnique<Button>(
+  auto voice_search_button = base::MakeUnique<Button>(
       base::Bind(&UiSceneManager::OnVoiceSearchButtonClicked,
                  base::Unretained(this)),
-      base::MakeUnique<VectorIconButtonTexture>(vector_icons::kMicrophoneIcon));
-  element->set_name(kVoiceSearchButton);
-  element->set_draw_phase(kPhaseForeground);
-  element->SetTranslate(kVoiceSearchButtonXOffset, 0.f, 0.f);
-  element->SetSize(kCloseButtonWidth, kCloseButtonHeight);
-  element->set_x_anchoring(RIGHT);
-  element->AddBinding(base::MakeUnique<Binding<bool>>(
+      kPhaseForeground, kVoiceSearchButtonWidth, kVoiceSearchButtonHeight,
+      kButtonZOffsetHoverDMM * kUrlBarDistance, vector_icons::kMicrophoneIcon);
+  voice_search_button->set_name(kVoiceSearchButton);
+  voice_search_button->SetTranslate(0.f, -kVoiceSearchButtonYOffset, 0.f);
+  voice_search_button->set_y_anchoring(BOTTOM);
+  voice_search_button->AddBinding(base::MakeUnique<Binding<bool>>(
       base::Bind(
           [](Model* m) {
-            return !m->incognito && m->experimental_features_enabled;
+            return !m->incognito &&
+                   m->speech.has_or_can_request_audio_permission;
           },
           base::Unretained(model)),
       base::Bind([](UiElement* e, const bool& v) { e->SetVisible(v); },
-                 element.get())));
-  scene_->AddUiElement(kUrlBar, std::move(element));
+                 voice_search_button.get())));
+  BindColor(this, voice_search_button.get(), &ColorScheme::button_colors);
+  scene_->AddUiElement(kUrlBar, std::move(voice_search_button));
 
-  auto speech_recognition_prompt = base::MakeUnique<UiElement>();
-  element = std::move(speech_recognition_prompt);
-  element->set_name(kSpeechRecognitionPrompt);
-  element->SetTranslate(0.f, 0.f, -kContentDistance);
-  element->set_hit_testable(false);
-  element->AddBinding(VR_BIND_FUNC(bool, Model, model, recognizing_speech,
-                                   UiElement, element.get(), SetVisible));
-  scene_->AddUiElement(k2dBrowsingRoot, std::move(element));
+  auto speech_recognition_root = base::MakeUnique<UiElement>();
+  speech_recognition_root->set_name(kSpeechRecognitionRoot);
+  speech_recognition_root->SetTranslate(0.f, 0.f, -kContentDistance);
+  speech_recognition_root->set_hit_testable(false);
+  scene_->AddUiElement(k2dBrowsingRoot, std::move(speech_recognition_root));
+
+  TransientElement* speech_result_parent =
+      AddTransientParent(kSpeechRecognitionResult, kSpeechRecognitionRoot,
+                         kSpeechRecognitionResultTimeoutSeconds, false);
+  // We need to explicitly set the initial visibility of
+  // kSpeechRecognitionResult as k2dBrowsingForeground's visibility depends on
+  // it in a binding. However, k2dBrowsingForeground's binding updated before
+  // kSpeechRecognitionResult. So the initial value needs to be correctly set
+  // instead of depend on binding to kick in.
+  speech_result_parent->SetVisibleImmediately(false);
+  speech_result_parent->SetTransitionedProperties({OPACITY});
+  speech_result_parent->SetTransitionDuration(base::TimeDelta::FromMilliseconds(
+      kSpeechRecognitionOpacityAnimationDurationMs));
+  speech_result_parent->AddBinding(base::MakeUnique<Binding<bool>>(
+      base::Bind([](Model* m) { return m->speech.recognition_result.empty(); },
+                 base::Unretained(model)),
+      base::Bind(
+          [](UiElement* e, const bool& v) {
+            if (v) {
+              e->SetVisible(false);
+            } else {
+              e->SetVisibleImmediately(true);
+            }
+          },
+          speech_result_parent)));
+  auto speech_result = base::MakeUnique<Text>(512, kSuggestionContentTextHeight,
+                                              kSuggestionTextFieldWidth);
+  speech_result->set_name(kSpeechRecognitionResultText);
+  speech_result->set_draw_phase(kPhaseForeground);
+  speech_result->SetTranslate(0.f, kSpeechRecognitionResultTextYOffset, 0.f);
+  speech_result->set_hit_testable(false);
+  speech_result->SetTextAlignment(UiTexture::kTextAlignmentCenter);
+  BindColor(this, speech_result.get(), &ColorScheme::prompt_foreground);
+  speech_result->AddBinding(VR_BIND_FUNC(base::string16, Model, model,
+                                         speech.recognition_result, Text,
+                                         speech_result.get(), SetText));
+  speech_result_parent->AddChild(std::move(speech_result));
+
+  auto circle = base::MakeUnique<Rect>();
+  circle->set_name(kSpeechRecognitionResultCircle);
+  circle->set_draw_phase(kPhaseForeground);
+  circle->SetSize(kCloseButtonWidth * 2, kCloseButtonHeight * 2);
+  circle->set_corner_radius(kCloseButtonWidth);
+  circle->SetTranslate(0.0, 0.0, -kTextureOffset);
+  circle->set_hit_testable(false);
+  BindColor(this, circle.get(),
+            &ColorScheme::speech_recognition_circle_background);
+  scene_->AddUiElement(kSpeechRecognitionResult, std::move(circle));
+
+  auto microphone = base::MakeUnique<VectorIcon>(512);
+  microphone->set_name(kSpeechRecognitionResultMicrophoneIcon);
+  microphone->SetIcon(vector_icons::kMicrophoneIcon);
+  microphone->set_draw_phase(kPhaseForeground);
+  microphone->set_hit_testable(false);
+  microphone->SetSize(kCloseButtonWidth, kCloseButtonHeight);
+  scene_->AddUiElement(kSpeechRecognitionResult, std::move(microphone));
+
+  auto hit_target = base::MakeUnique<InvisibleHitTarget>();
+  hit_target->set_name(kSpeechRecognitionResultBackplane);
+  hit_target->set_draw_phase(kPhaseForeground);
+  hit_target->SetSize(kPromptBackplaneSize, kPromptBackplaneSize);
+  hit_target->SetTranslate(0.0, 0.0, kTextureOffset);
+  scene_->AddUiElement(kSpeechRecognitionResult, std::move(hit_target));
+
+  auto speech_recognition_listening = base::MakeUnique<UiElement>();
+  UiElement* listening_ui_root = speech_recognition_listening.get();
+  speech_recognition_listening->set_name(kSpeechRecognitionListening);
+  speech_recognition_listening->set_hit_testable(false);
+  // We need to explicitly set the initial visibility of this element for the
+  // same reason as kSpeechRecognitionResult.
+  speech_recognition_listening->SetVisibleImmediately(false);
+  speech_recognition_listening->SetTransitionedProperties({OPACITY});
+  speech_recognition_listening->SetTransitionDuration(
+      base::TimeDelta::FromMilliseconds(
+          kSpeechRecognitionOpacityAnimationDurationMs));
+  speech_recognition_listening->AddBinding(base::MakeUnique<Binding<bool>>(
+      base::Bind([](Model* m) { return m->speech.recognizing_speech; },
+                 base::Unretained(model)),
+      base::Bind(
+          [](UiElement* listening, UiElement* result, const bool& value) {
+            if (result->GetTargetOpacity() != 0.f && !value) {
+              listening->SetVisibleImmediately(false);
+            } else {
+              listening->SetVisible(value);
+            }
+          },
+          base::Unretained(listening_ui_root),
+          base::Unretained(speech_result_parent))));
+  scene_->AddUiElement(kSpeechRecognitionRoot,
+                       std::move(speech_recognition_listening));
 
   auto growing_circle = base::MakeUnique<Throbber>();
-  growing_circle->set_name(kSpeechRecognitionPromptGrowingCircle);
+  growing_circle->set_name(kSpeechRecognitionListeningGrowingCircle);
   growing_circle->set_draw_phase(kPhaseForeground);
   growing_circle->SetSize(kCloseButtonWidth * 2, kCloseButtonHeight * 2);
   growing_circle->set_corner_radius(kCloseButtonWidth);
@@ -593,15 +740,15 @@ void UiSceneManager::CreateVoiceSearchUiGroup(Model* model) {
   BindColor(this, growing_circle.get(),
             &ColorScheme::speech_recognition_circle_background);
   growing_circle->AddBinding(VR_BIND(
-      int, Model, model, speech_recognition_state, Throbber,
+      int, Model, model, speech.speech_recognition_state, Throbber,
       growing_circle.get(),
       SetCircleGrowAnimationEnabled(value == SPEECH_RECOGNITION_IN_SPEECH ||
                                     value == SPEECH_RECOGNITION_RECOGNIZING ||
                                     value == SPEECH_RECOGNITION_READY)));
-  scene_->AddUiElement(kSpeechRecognitionPrompt, std::move(growing_circle));
+  scene_->AddUiElement(kSpeechRecognitionListening, std::move(growing_circle));
 
   auto inner_circle = base::MakeUnique<Rect>();
-  inner_circle->set_name(kSpeechRecognitionPromptInnerCircle);
+  inner_circle->set_name(kSpeechRecognitionListeningInnerCircle);
   inner_circle->set_draw_phase(kPhaseForeground);
   inner_circle->SetSize(kCloseButtonWidth * 2, kCloseButtonHeight * 2);
   inner_circle->set_corner_radius(kCloseButtonWidth);
@@ -609,42 +756,77 @@ void UiSceneManager::CreateVoiceSearchUiGroup(Model* model) {
   inner_circle->set_hit_testable(false);
   BindColor(this, inner_circle.get(),
             &ColorScheme::speech_recognition_circle_background);
-  scene_->AddUiElement(kSpeechRecognitionPrompt, std::move(inner_circle));
+  scene_->AddUiElement(kSpeechRecognitionListening, std::move(inner_circle));
 
   auto microphone_icon = base::MakeUnique<VectorIcon>(512);
   microphone_icon->SetIcon(vector_icons::kMicrophoneIcon);
-  microphone_icon->set_name(kSpeechRecognitionPromptMicrophoneIcon);
+  microphone_icon->set_name(kSpeechRecognitionListeningMicrophoneIcon);
   microphone_icon->set_draw_phase(kPhaseForeground);
+  microphone_icon->set_hit_testable(false);
   microphone_icon->SetSize(kCloseButtonWidth, kCloseButtonHeight);
-  scene_->AddUiElement(kSpeechRecognitionPrompt, std::move(microphone_icon));
+  scene_->AddUiElement(kSpeechRecognitionListening, std::move(microphone_icon));
 
-  auto backplane = base::MakeUnique<ExitPromptBackplane>(base::Bind(
-      &UiSceneManager::OnExitRecognizingSpeechClicked, base::Unretained(this)));
-  speech_recognition_prompt_backplane_ = backplane.get();
-  element = std::move(backplane);
-  element->set_name(kSpeechRecognitionPromptBackplane);
-  element->set_draw_phase(kPhaseForeground);
-  element->SetSize(kExitPromptBackplaneSize, kExitPromptBackplaneSize);
-  element->SetTranslate(0.0, 0.0, -kTextureOffset);
-  scene_->AddUiElement(kSpeechRecognitionPrompt, std::move(element));
+  auto close_button = base::MakeUnique<Button>(
+      base::Bind(&UiSceneManager::OnExitRecognizingSpeechClicked,
+                 base::Unretained(this)),
+      kPhaseForeground, kVoiceSearchCloseButtonWidth,
+      kVoiceSearchCloseButtonHeight, kButtonZOffsetHoverDMM * kContentDistance,
+      vector_icons::kClose16Icon);
+  close_button->set_name(kSpeechRecognitionListeningCloseButton);
+  close_button->SetTranslate(0.0, -kVoiceSearchCloseButtonYOffset, 0.f);
+  BindColor(this, close_button.get(), &ColorScheme::button_colors);
+  scene_->AddUiElement(kSpeechRecognitionListening, std::move(close_button));
+
+  UiElement* browser_foregroud =
+      scene_->GetUiElementByName(k2dBrowsingForeground);
+  // k2dBrowsingForeground's visibility binding use the visibility of two
+  // other elements which update their bindings after this one. So the
+  // visibility of k2dBrowsingForeground will be one frame behind correct value.
+  // This is not noticable in practice and simplify our logic a lot.
+  browser_foregroud->AddBinding(base::MakeUnique<Binding<bool>>(
+      base::Bind(
+          [](UiElement* listening, UiElement* result) {
+            return listening->GetTargetOpacity() == 0.f &&
+                   result->GetTargetOpacity() == 0.f;
+          },
+          base::Unretained(listening_ui_root),
+          base::Unretained(speech_result_parent)),
+      base::Bind([](UiElement* e, const bool& value) { e->SetVisible(value); },
+                 base::Unretained(browser_foregroud))));
 }
 
 void UiSceneManager::CreateController(Model* model) {
+  auto root = base::MakeUnique<UiElement>();
+  root->set_name(kControllerRoot);
+  root->SetVisible(true);
+  root->set_hit_testable(false);
+  root->AddBinding(base::MakeUnique<Binding<bool>>(
+      base::Bind(
+          [](Model* m, UiSceneManager* mgr) {
+            return mgr->browsing_mode() ||
+                   m->web_vr_timeout_state == kWebVrTimedOut;
+          },
+          base::Unretained(model), base::Unretained(this)),
+      base::Bind([](UiElement* v, const bool& b) { v->SetVisible(b); },
+                 base::Unretained(root.get()))));
+  scene_->AddUiElement(kRoot, std::move(root));
+
   auto group = base::MakeUnique<UiElement>();
   group->set_name(kControllerGroup);
   group->SetVisible(true);
   group->set_hit_testable(false);
+  group->SetTransitionedProperties({OPACITY});
   group->AddBinding(base::MakeUnique<Binding<bool>>(
+      base::Bind([](Model* m) { return !m->controller.quiescent; },
+                 base::Unretained(model)),
       base::Bind(
-          [](Model* m, UiSceneManager* mgr) {
-            bool browsing_mode =
-                !mgr->web_vr_mode() && !mgr->showing_web_vr_splash_screen();
-            return browsing_mode || m->web_vr_timeout_state == kWebVrTimedOut;
+          [](UiElement* e, const bool& visible) {
+            e->SetTransitionDuration(base::TimeDelta::FromMilliseconds(
+                visible ? kControllerFadeInMs : kControllerFadeOutMs));
+            e->SetVisible(visible);
           },
-          base::Unretained(model), base::Unretained(this)),
-      base::Bind([](UiElement* v, const bool& b) { v->SetVisible(b); },
-                 base::Unretained(group.get()))));
-  scene_->AddUiElement(kRoot, std::move(group));
+          base::Unretained(group.get()))));
+  scene_->AddUiElement(kControllerRoot, std::move(group));
 
   auto controller = base::MakeUnique<Controller>();
   controller->set_draw_phase(kPhaseForeground);
@@ -689,8 +871,11 @@ void UiSceneManager::CreateUrlBar(Model* model) {
   url_bar->SetTranslate(0, kUrlBarVerticalOffset, -kUrlBarDistance);
   url_bar->SetRotate(1, 0, 0, kUrlBarRotationRad);
   url_bar->SetSize(kUrlBarWidth, kUrlBarHeight);
+  url_bar->AddBinding(VR_BIND(bool, UiSceneManager, this, fullscreen(),
+                              UiElement, url_bar.get(), SetVisible(!value)));
+  url_bar->AddBinding(VR_BIND_FUNC(ToolbarState, Model, model, toolbar_state,
+                                   UrlBar, url_bar.get(), SetToolbarState));
   url_bar_ = url_bar.get();
-  control_elements_.push_back(url_bar.get());
   scene_->AddUiElement(k2dBrowsingForeground, std::move(url_bar));
 
   auto indicator_bg = base::MakeUnique<Rect>();
@@ -742,7 +927,8 @@ void UiSceneManager::CreateSuggestionList(Model* model) {
   layout->SetVisible(true);
 
   SuggestionSetBinding::ModelAddedCallback added_callback =
-      base::Bind(&OnSuggestionModelAdded, base::Unretained(scene_));
+      base::Bind(&OnSuggestionModelAdded, base::Unretained(scene_),
+                 base::Unretained(browser_), base::Unretained(model));
   SuggestionSetBinding::ModelRemovedCallback removed_callback =
       base::Bind(&OnSuggestionModelRemoved, base::Unretained(scene_));
 
@@ -768,41 +954,68 @@ TransientElement* UiSceneManager::AddTransientParent(UiElementName name,
   return to_return;
 }
 
-void UiSceneManager::CreateWebVrUrlToast() {
+void UiSceneManager::CreateWebVrUrlToast(Model* model) {
   webvr_url_toast_transient_parent_ =
       AddTransientParent(kWebVrUrlToastTransientParent, kWebVrViewportAwareRoot,
                          kWebVrUrlToastTimeoutSeconds, true);
-  auto url_bar = base::MakeUnique<WebVrUrlToast>(
+  auto element = base::MakeUnique<WebVrUrlToast>(
       512,
       base::Bind(&UiSceneManager::OnUnsupportedMode, base::Unretained(this)));
-  url_bar->set_name(kWebVrUrlToast);
-  url_bar->set_opacity_when_visible(0.8f);
-  url_bar->set_draw_phase(kPhaseOverlayForeground);
-  url_bar->SetVisible(true);
-  url_bar->set_hit_testable(false);
-  url_bar->SetTranslate(0, kWebVrToastDistance * sin(kWebVrUrlToastRotationRad),
+  element->set_name(kWebVrUrlToast);
+  element->set_opacity_when_visible(0.8f);
+  element->set_draw_phase(kPhaseOverlayForeground);
+  element->SetVisible(true);
+  element->set_hit_testable(false);
+  element->SetTranslate(0, kWebVrToastDistance * sin(kWebVrUrlToastRotationRad),
                         -kWebVrToastDistance * cos(kWebVrUrlToastRotationRad));
-  url_bar->SetRotate(1, 0, 0, kWebVrUrlToastRotationRad);
-  url_bar->SetSize(kWebVrUrlToastWidth, kWebVrUrlToastHeight);
-  webvr_url_toast_ = url_bar.get();
-  scene_->AddUiElement(kWebVrUrlToastTransientParent, std::move(url_bar));
+  element->SetRotate(1, 0, 0, kWebVrUrlToastRotationRad);
+  element->SetSize(kWebVrUrlToastWidth, kWebVrUrlToastHeight);
+  element->AddBinding(VR_BIND_FUNC(ToolbarState, Model, model, toolbar_state,
+                                   WebVrUrlToast, element.get(),
+                                   SetToolbarState));
+  webvr_url_toast_ = element.get();
+  scene_->AddUiElement(kWebVrUrlToastTransientParent, std::move(element));
 }
 
 void UiSceneManager::CreateCloseButton() {
   std::unique_ptr<Button> element = base::MakeUnique<Button>(
       base::Bind(&UiSceneManager::OnCloseButtonClicked, base::Unretained(this)),
-      base::MakeUnique<VectorIconButtonTexture>(vector_icons::kClose16Icon));
+      kPhaseForeground, kCloseButtonWidth, kCloseButtonHeight,
+      kButtonZOffsetHoverDMM * kCloseButtonDistance,
+      vector_icons::kClose16Icon);
   element->set_name(kCloseButton);
-  element->set_draw_phase(kPhaseForeground);
   element->SetTranslate(0, kContentVerticalOffset - (kContentHeight / 2) - 0.3f,
                         -kCloseButtonDistance);
-  element->SetSize(kCloseButtonWidth, kCloseButtonHeight);
+  BindColor(this, element.get(), &ColorScheme::button_colors);
   close_button_ = element.get();
   scene_->AddUiElement(k2dBrowsingForeground, std::move(element));
 }
 
-void UiSceneManager::CreateExitPrompt() {
+void UiSceneManager::CreateExitPrompt(Model* model) {
   std::unique_ptr<UiElement> element;
+
+  // Place an invisible but hittable plane behind the exit prompt, to keep the
+  // reticle roughly planar with the content if near content.
+  auto backplane = base::MakeUnique<InvisibleHitTarget>();
+  backplane->set_name(kExitPromptBackplane);
+  backplane->set_draw_phase(kPhaseForeground);
+  backplane->SetSize(kPromptBackplaneSize, kPromptBackplaneSize);
+  backplane->SetTranslate(0.0,
+                          kContentVerticalOffset + kExitPromptVerticalOffset,
+                          kTextureOffset - kContentDistance);
+  EventHandlers event_handlers;
+  event_handlers.button_up = base::Bind(
+      [](UiSceneManager* manager, Model* m) {
+        manager->OnExitPromptBackplaneClicked(
+            GetReasonForPrompt(m->active_modal_prompt_type));
+      },
+      base::Unretained(this), base::Unretained(model));
+  backplane->set_event_handlers(event_handlers);
+  backplane->AddBinding(VR_BIND_FUNC(
+      bool, Model, model,
+      active_modal_prompt_type == kModalPromptTypeExitVRForSiteInfo, UiElement,
+      backplane.get(), SetVisible));
+  scene_->AddUiElement(k2dBrowsingRoot, std::move(backplane));
 
   std::unique_ptr<ExitPrompt> exit_prompt = base::MakeUnique<ExitPrompt>(
       512,
@@ -810,28 +1023,77 @@ void UiSceneManager::CreateExitPrompt() {
                  false),
       base::Bind(&UiSceneManager::OnExitPromptChoice, base::Unretained(this),
                  true));
-  exit_prompt_ = exit_prompt.get();
-  element = std::move(exit_prompt);
-  element->set_name(kExitPrompt);
-  element->set_draw_phase(kPhaseForeground);
-  element->SetSize(kExitPromptWidth, kExitPromptHeight);
-  element->SetTranslate(0.0, kExitPromptVerticalOffset, kTextureOffset);
-  element->SetVisible(false);
-  scene_->AddUiElement(k2dBrowsingContentGroup, std::move(element));
+  exit_prompt->set_name(kExitPrompt);
+  exit_prompt->set_draw_phase(kPhaseForeground);
+  exit_prompt->SetVisible(true);
+  exit_prompt->SetSize(kExitPromptWidth, kExitPromptHeight);
+  exit_prompt->SetTranslate(0.0, 0.0, kTextureOffset);
+  exit_prompt->AddBinding(base::MakeUnique<Binding<ModalPromptType>>(
+      base::Bind([](Model* m) { return m->active_modal_prompt_type; },
+                 base::Unretained(model)),
+      base::Bind(
+          [](ExitPrompt* e, const ModalPromptType& p) {
+            e->set_reason(GetReasonForPrompt(p));
+            switch (p) {
+              case kModalPromptTypeExitVRForSiteInfo:
+                e->SetContentMessageId(
+                    IDS_VR_SHELL_EXIT_PROMPT_DESCRIPTION_SITE_INFO);
+                break;
+              default:
+                e->SetContentMessageId(IDS_VR_SHELL_EXIT_PROMPT_DESCRIPTION);
+                break;
+            }
+          },
+          base::Unretained(exit_prompt.get()))));
+  scene_->AddUiElement(kExitPromptBackplane, std::move(exit_prompt));
+}
+
+void UiSceneManager::CreateAudioPermissionPrompt(Model* model) {
+  std::unique_ptr<UiElement> element;
 
   // Place an invisible but hittable plane behind the exit prompt, to keep the
   // reticle roughly planar with the content if near content.
-  auto backplane = base::MakeUnique<ExitPromptBackplane>(base::Bind(
-      &UiSceneManager::OnExitPromptBackplaneClicked, base::Unretained(this)));
-  exit_prompt_backplane_ = backplane.get();
-  element = std::move(backplane);
-  element->set_name(kExitPromptBackplane);
-  element->set_draw_phase(kPhaseForeground);
-  element->SetSize(kExitPromptBackplaneSize, kExitPromptBackplaneSize);
-  element->SetTranslate(0.0, 0.0, -kTextureOffset);
-  exit_prompt_backplane_ = element.get();
-  content_elements_.push_back(element.get());
-  scene_->AddUiElement(kExitPrompt, std::move(element));
+  auto backplane = base::MakeUnique<InvisibleHitTarget>();
+  backplane->set_draw_phase(kPhaseForeground);
+  backplane->set_name(kAudioPermissionPromptBackplane);
+  backplane->SetSize(kPromptBackplaneSize, kPromptBackplaneSize);
+  backplane->SetTranslate(0.0, kContentVerticalOffset, -kOverlayPlaneDistance);
+  EventHandlers event_handlers;
+  event_handlers.button_up = base::Bind(
+      [](UiSceneManager* manager, Model* m) {
+        manager->OnExitPromptBackplaneClicked(
+            GetReasonForPrompt(m->active_modal_prompt_type));
+      },
+      base::Unretained(this), base::Unretained(model));
+  backplane->set_event_handlers(event_handlers);
+  backplane->SetVisible(false);
+  backplane->SetTransitionedProperties({OPACITY});
+  backplane->AddBinding(VR_BIND_FUNC(
+      bool, Model, model,
+      active_modal_prompt_type == kModalPromptTypeExitVRForAudioPermission,
+      UiElement, backplane.get(), SetVisible));
+
+  std::unique_ptr<Shadow> shadow = base::MakeUnique<Shadow>();
+  shadow->set_draw_phase(kPhaseForeground);
+  shadow->set_name(kAudioPermissionPromptShadow);
+  shadow->set_corner_radius(kContentCornerRadius);
+
+  std::unique_ptr<AudioPermissionPrompt> prompt =
+      base::MakeUnique<AudioPermissionPrompt>(
+          1024,
+          base::Bind(&UiSceneManager::OnExitPromptChoice,
+                     base::Unretained(this), true,
+                     UiUnsupportedMode::kAndroidPermissionNeeded),
+          base::Bind(&UiSceneManager::OnExitPromptChoice,
+                     base::Unretained(this), false,
+                     UiUnsupportedMode::kAndroidPermissionNeeded));
+  prompt->set_name(kAudioPermissionPrompt);
+  prompt->set_draw_phase(kPhaseForeground);
+  prompt->SetSize(kAudioPermissionPromptWidth, kAudioPermissionPromptHeight);
+  prompt->SetTranslate(0.0, 0.0f, kAudionPermisionPromptDepth);
+  shadow->AddChild(std::move(prompt));
+  backplane->AddChild(std::move(shadow));
+  scene_->AddUiElement(k2dBrowsingRoot, std::move(backplane));
 }
 
 void UiSceneManager::CreateToasts(Model* model) {
@@ -839,6 +1101,24 @@ void UiSceneManager::CreateToasts(Model* model) {
   exclusive_screen_toast_transient_parent_ =
       AddTransientParent(kExclusiveScreenToastTransientParent,
                          k2dBrowsingForeground, kToastTimeoutSeconds, false);
+  // This binding toggles fullscreen toast's visibility if fullscreen state
+  // changed.
+  exclusive_screen_toast_transient_parent_->AddBinding(
+      VR_BIND_FUNC(bool, UiSceneManager, this, fullscreen(), UiElement,
+                   exclusive_screen_toast_transient_parent_, SetVisible));
+  // This binding makes sure fullscreen toast becomes invisible if entering
+  // webvr mode.
+  exclusive_screen_toast_transient_parent_->AddBinding(
+      base::MakeUnique<Binding<bool>>(
+          base::Bind([](UiSceneManager* mgr) { return mgr->web_vr_mode(); },
+                     base::Unretained(this)),
+          base::Bind(
+              [](UiElement* v, const bool& b) {
+                if (b)
+                  v->SetVisible(false);
+              },
+              base::Unretained(exclusive_screen_toast_transient_parent_))));
+
   auto element = base::MakeUnique<ExclusiveScreenToast>(512);
   element->set_name(kExclusiveScreenToast);
   element->set_draw_phase(kPhaseForeground);
@@ -857,6 +1137,22 @@ void UiSceneManager::CreateToasts(Model* model) {
   exclusive_screen_toast_viewport_aware_transient_parent_ =
       AddTransientParent(kExclusiveScreenToastViewportAwareTransientParent,
                          kWebVrViewportAwareRoot, kToastTimeoutSeconds, false);
+  // When we first get a web vr frame, we switch states to
+  // kWebVrNoTimeoutPending, when that happens, we want to SetVisible(true) to
+  // kick the visibility of this element.
+  exclusive_screen_toast_viewport_aware_transient_parent_->AddBinding(
+      base::MakeUnique<Binding<bool>>(
+          base::Bind(
+              [](Model* m, UiSceneManager* mgr) {
+                return m->web_vr_timeout_state == kWebVrNoTimeoutPending &&
+                       mgr->web_vr_mode() && mgr->web_vr_show_toast();
+              },
+              base::Unretained(model), base::Unretained(this)),
+          base::Bind(
+              [](UiElement* v, const bool& b) { v->SetVisible(b); },
+              base::Unretained(
+                  exclusive_screen_toast_viewport_aware_transient_parent_))));
+
   element = base::MakeUnique<ExclusiveScreenToast>(512);
   element->set_name(kExclusiveScreenToastViewportAware);
   element->set_draw_phase(kPhaseOverlayForeground);
@@ -866,24 +1162,6 @@ void UiSceneManager::CreateToasts(Model* model) {
   element->SetRotate(1, 0, 0, kWebVrAngleRadians);
   element->SetScale(kWebVrToastDistance, kWebVrToastDistance, 1);
   element->set_hit_testable(false);
-
-  // When we first get a web vr frame, we switch states to
-  // kWebVrNoTimeoutPending, when that happens, we want to SetVisible(true) to
-  // kick the visibility of this element.
-  element->AddBinding(base::MakeUnique<Binding<bool>>(
-      base::Bind(
-          [](Model* m) {
-            return m->web_vr_timeout_state == kWebVrNoTimeoutPending;
-          },
-          base::Unretained(model)),
-      base::Bind(
-          [](UiElement* v, const bool& b) {
-            if (b)
-              v->SetVisible(b);
-          },
-          base::Unretained(
-              exclusive_screen_toast_viewport_aware_transient_parent_))));
-
   scene_->AddUiElement(kExclusiveScreenToastViewportAwareTransientParent,
                        std::move(element));
 }
@@ -903,11 +1181,8 @@ void UiSceneManager::SetWebVrMode(bool web_vr, bool show_toast) {
 
   // Because we may be transitioning from and to fullscreen, where the toast is
   // also shown, explicitly kick or end visibility here.
-  if (web_vr) {
+  if (web_vr)
     exclusive_screen_toast_viewport_aware_transient_parent_->RefreshVisible();
-  } else {
-    exclusive_screen_toast_transient_parent_->SetVisible(false);
-  }
 }
 
 void UiSceneManager::OnWebVrFrameAvailable() {
@@ -996,39 +1271,21 @@ void UiSceneManager::ConfigureScene() {
   exit_warning_->SetVisible(exiting_);
   screen_dimmer_->SetVisible(exiting_);
 
-  bool browsing_mode = !web_vr_mode_ && !showing_web_vr_splash_screen_;
-  scene_->GetUiElementByName(k2dBrowsingRoot)->SetVisible(browsing_mode);
-  scene_->GetUiElementByName(kWebVrRoot)->SetVisible(!browsing_mode);
-
-  // Controls (URL bar, loading progress, voice search button etc).
-  bool controls_visible = browsing_mode && !fullscreen_ && !prompting_to_exit_;
-  for (UiElement* element : control_elements_) {
-    element->SetVisible(controls_visible);
-  }
+  scene_->GetUiElementByName(k2dBrowsingRoot)->SetVisible(browsing_mode());
+  scene_->GetUiElementByName(kWebVrRoot)->SetVisible(!browsing_mode());
 
   // Close button is a special control element that needs to be hidden when in
   // WebVR, but it needs to be visible when in cct or fullscreen.
-  close_button_->SetVisible(browsing_mode && (fullscreen_ || in_cct_));
-
-  // Content elements.
-  for (UiElement* element : content_elements_) {
-    element->SetVisible(browsing_mode && !prompting_to_exit_);
-  }
+  close_button_->SetVisible(browsing_mode() && (fullscreen_ || in_cct_));
 
   // Background elements.
   for (UiElement* element : background_panels_) {
     element->SetVisible(!showing_web_vr_content);
   }
-  floor_->SetVisible(browsing_mode);
-  ceiling_->SetVisible(browsing_mode);
-
-  // Exit prompt.
-  bool showExitPrompt = browsing_mode && prompting_to_exit_;
-  exit_prompt_->SetVisible(showExitPrompt);
-  exit_prompt_backplane_->SetVisible(showExitPrompt);
+  floor_->SetVisible(browsing_mode());
+  ceiling_->SetVisible(browsing_mode());
 
   // Update content quad parameters depending on fullscreen.
-  // TODO(http://crbug.com/642937): Animate fullscreen transitions.
   if (fullscreen_) {
     scene_->GetUiElementByName(k2dBrowsingContentGroup)
         ->SetTranslate(0, kFullscreenVerticalOffset, -kFullscreenDistance);
@@ -1057,35 +1314,8 @@ void UiSceneManager::ConfigureScene() {
   scene_->set_reticle_rendering_enabled(
       !(web_vr_mode_ || exiting_ || showing_web_vr_splash_screen_));
 
-  ConfigureExclusiveScreenToast();
-  ConfigureIndicators();
   ConfigureBackgroundColor();
   scene_->set_dirty();
-}
-
-void UiSceneManager::ConfigureExclusiveScreenToast() {
-  DCHECK(configuring_scene_);
-  exclusive_screen_toast_transient_parent_->SetVisible(fullscreen_ &&
-                                                       !web_vr_mode_);
-  exclusive_screen_toast_viewport_aware_transient_parent_->SetVisible(
-      web_vr_mode_ && web_vr_show_toast_);
-}
-
-void UiSceneManager::ConfigureIndicators() {
-  DCHECK(configuring_scene_);
-  bool allowed = !web_vr_mode_ && !fullscreen_;
-  audio_capture_indicator_->SetVisible(allowed && audio_capturing_);
-  video_capture_indicator_->SetVisible(allowed && video_capturing_);
-  screen_capture_indicator_->SetVisible(allowed && screen_capturing_);
-  location_access_indicator_->SetVisible(allowed && location_access_);
-  bluetooth_connected_indicator_->SetVisible(allowed && bluetooth_connected_);
-
-  audio_capture_indicator_->set_requires_layout(allowed && audio_capturing_);
-  video_capture_indicator_->set_requires_layout(allowed && video_capturing_);
-  screen_capture_indicator_->set_requires_layout(allowed && screen_capturing_);
-  location_access_indicator_->set_requires_layout(allowed && location_access_);
-  bluetooth_connected_indicator_->set_requires_layout(allowed &&
-                                                      bluetooth_connected_);
 }
 
 void UiSceneManager::ConfigureBackgroundColor() {
@@ -1098,31 +1328,6 @@ void UiSceneManager::ConfigureBackgroundColor() {
   floor_->SetCenterColor(color_scheme().floor);
   floor_->SetEdgeColor(color_scheme().world_background);
   floor_->SetGridColor(color_scheme().floor_grid);
-}
-
-void UiSceneManager::SetAudioCapturingIndicator(bool enabled) {
-  audio_capturing_ = enabled;
-  ConfigureScene();
-}
-
-void UiSceneManager::SetVideoCapturingIndicator(bool enabled) {
-  video_capturing_ = enabled;
-  ConfigureScene();
-}
-
-void UiSceneManager::SetScreenCapturingIndicator(bool enabled) {
-  screen_capturing_ = enabled;
-  ConfigureScene();
-}
-
-void UiSceneManager::SetLocationAccessIndicator(bool enabled) {
-  location_access_ = enabled;
-  ConfigureScene();
-}
-
-void UiSceneManager::SetBluetoothConnectedIndicator(bool enabled) {
-  bluetooth_connected_ = enabled;
-  ConfigureScene();
 }
 
 void UiSceneManager::SetIncognito(bool incognito) {
@@ -1138,9 +1343,10 @@ bool UiSceneManager::ShouldRenderWebVr() {
 
 void UiSceneManager::OnGlInitialized(
     unsigned int content_texture_id,
-    UiElementRenderer::TextureLocation content_location) {
+    UiElementRenderer::TextureLocation content_location,
+    SkiaSurfaceProvider* provider) {
   main_content_->SetTexture(content_texture_id, content_location);
-  scene_->OnGlInitialized();
+  scene_->OnGlInitialized(provider);
 
   ConfigureScene();
 }
@@ -1160,28 +1366,12 @@ void UiSceneManager::OnAppButtonClicked() {
 }
 
 void UiSceneManager::OnAppButtonGesturePerformed(
-    UiInterface::Direction direction) {}
+    PlatformController::SwipeDirection direction) {}
 
 void UiSceneManager::SetFullscreen(bool fullscreen) {
   if (fullscreen_ == fullscreen)
     return;
   fullscreen_ = fullscreen;
-  ConfigureScene();
-}
-
-void UiSceneManager::SetExitVrPromptEnabled(bool enabled,
-                                            UiUnsupportedMode reason) {
-  DCHECK(enabled || reason == UiUnsupportedMode::kCount);
-  if (prompting_to_exit_ && enabled) {
-    browser_->OnExitVrPromptResult(exit_vr_prompt_reason_,
-                                   ExitVrPromptChoice::CHOICE_NONE);
-  }
-  exit_prompt_->SetContentMessageId(
-      (reason == UiUnsupportedMode::kUnhandledPageInfo)
-          ? IDS_VR_SHELL_EXIT_PROMPT_DESCRIPTION_SITE_INFO
-          : IDS_VR_SHELL_EXIT_PROMPT_DESCRIPTION);
-  exit_vr_prompt_reason_ = reason;
-  prompting_to_exit_ = enabled;
   ConfigureScene();
 }
 
@@ -1193,32 +1383,28 @@ void UiSceneManager::OnSecurityIconClickedForTesting() {
   OnSecurityIconClicked();
 }
 
-void UiSceneManager::OnExitPromptChoiceForTesting(bool chose_exit) {
-  OnExitPromptChoice(chose_exit);
+void UiSceneManager::OnExitPromptChoiceForTesting(bool chose_exit,
+                                                  UiUnsupportedMode reason) {
+  OnExitPromptChoice(chose_exit, reason);
 }
 
 void UiSceneManager::OnSecurityIconClicked() {
   browser_->OnUnsupportedMode(UiUnsupportedMode::kUnhandledPageInfo);
 }
 
-void UiSceneManager::OnExitPromptBackplaneClicked() {
-  browser_->OnExitVrPromptResult(exit_vr_prompt_reason_,
-                                 ExitVrPromptChoice::CHOICE_NONE);
+void UiSceneManager::OnExitPromptBackplaneClicked(UiUnsupportedMode reason) {
+  browser_->OnExitVrPromptResult(reason, ExitVrPromptChoice::CHOICE_NONE);
 }
 
 void UiSceneManager::OnExitRecognizingSpeechClicked() {
   browser_->SetVoiceSearchActive(false);
 }
 
-void UiSceneManager::OnExitPromptChoice(bool chose_exit) {
-  browser_->OnExitVrPromptResult(exit_vr_prompt_reason_,
-                                 chose_exit ? ExitVrPromptChoice::CHOICE_EXIT
-                                            : ExitVrPromptChoice::CHOICE_STAY);
-}
-
-void UiSceneManager::SetToolbarState(const ToolbarState& state) {
-  url_bar_->SetToolbarState(state);
-  webvr_url_toast_->SetToolbarState(state);
+void UiSceneManager::OnExitPromptChoice(bool chose_exit,
+                                        UiUnsupportedMode reason) {
+  browser_->OnExitVrPromptResult(reason, chose_exit
+                                             ? ExitVrPromptChoice::CHOICE_EXIT
+                                             : ExitVrPromptChoice::CHOICE_STAY);
 }
 
 void UiSceneManager::SetIsExiting() {

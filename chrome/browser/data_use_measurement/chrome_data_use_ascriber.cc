@@ -236,6 +236,8 @@ void ChromeDataUseAscriber::OnUrlRequestDestroyed(net::URLRequest* request) {
   }
 
   DataUseAscriber::OnUrlRequestDestroyed(request);
+  request->RemoveUserData(
+      DataUseRecorderEntryAsUserData::kDataUseAscriberUserDataKey);
 
   // If all requests are done for |entry| and no more requests can be attributed
   // to it, it is safe to delete.
@@ -395,9 +397,12 @@ void ChromeDataUseAscriber::DidFinishMainFrameNavigation(
     std::vector<net::URLRequest*> pending_url_requests;
     entry->GetPendingURLRequests(&pending_url_requests);
     for (net::URLRequest* request : pending_url_requests) {
-      AscribeRecorderWithRequest(request, old_frame_entry);
       entry->MovePendingURLRequestTo(&(*old_frame_entry), request);
+      request->RemoveUserData(
+          DataUseRecorderEntryAsUserData::kDataUseAscriberUserDataKey);
+      AscribeRecorderWithRequest(request, old_frame_entry);
     }
+    DCHECK(entry->IsDataUseComplete());
     data_use_recorders_.erase(entry);
 
     NotifyPageLoadCommit(old_frame_entry);
@@ -426,6 +431,8 @@ void ChromeDataUseAscriber::DidFinishMainFrameNavigation(
           !old_frame_entry->GetPendingURLRequestStartTime(request).is_null());
       if (old_frame_entry->GetPendingURLRequestStartTime(request) > time) {
         old_frame_entry->MovePendingURLRequestTo(&*entry, request);
+        request->RemoveUserData(
+            DataUseRecorderEntryAsUserData::kDataUseAscriberUserDataKey);
         AscribeRecorderWithRequest(request, entry);
       }
     }
@@ -451,7 +458,7 @@ void ChromeDataUseAscriber::NotifyDataUseCompleted(DataUseRecorderEntry entry) {
 
 std::unique_ptr<URLRequestClassifier>
 ChromeDataUseAscriber::CreateURLRequestClassifier() const {
-  return base::MakeUnique<ContentURLRequestClassifier>();
+  return std::make_unique<ContentURLRequestClassifier>();
 }
 
 ChromeDataUseAscriber::DataUseRecorderEntry
@@ -471,7 +478,7 @@ void ChromeDataUseAscriber::AscribeRecorderWithRequest(
   entry->AddPendingURLRequest(request);
   request->SetUserData(
       DataUseRecorderEntryAsUserData::kDataUseAscriberUserDataKey,
-      base::MakeUnique<DataUseRecorderEntryAsUserData>(entry));
+      std::make_unique<DataUseRecorderEntryAsUserData>(entry));
 }
 
 void ChromeDataUseAscriber::WasShownOrHidden(int main_render_process_id,

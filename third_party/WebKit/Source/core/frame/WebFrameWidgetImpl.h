@@ -95,7 +95,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
                            float browser_controls_delta) override;
   void MouseCaptureLost() override;
   void SetFocus(bool enable) override;
-  WebRange CompositionRange() override;
   WebColor BackgroundColor() const override;
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
   bool SelectionTextDirection(WebTextDirection& start,
@@ -107,10 +106,12 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   bool GetCompositionCharacterBounds(WebVector<WebRect>& bounds) override;
   void SetRemoteViewportIntersection(const WebRect&) override;
   void SetIsInert(bool) override;
+  void UpdateRenderThrottlingStatus(bool is_throttled,
+                                    bool subtree_throttled) override;
 
   // WebFrameWidget implementation.
   WebLocalFrameImpl* LocalRoot() const override { return local_root_; }
-  void SetVisibilityState(WebPageVisibilityState) override;
+  void SetVisibilityState(mojom::PageVisibilityState) override;
   void SetBackgroundColorOverride(WebColor) override;
   void ClearBackgroundColorOverride() override;
   void SetBaseBackgroundColorOverride(WebColor) override;

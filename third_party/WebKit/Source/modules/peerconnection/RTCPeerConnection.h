@@ -32,15 +32,15 @@
 #define RTCPeerConnection_h
 
 #include <memory>
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ScriptPromise.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "modules/EventTargetModules.h"
 #include "modules/crypto/NormalizeAlgorithm.h"
 #include "modules/mediastream/MediaStream.h"
 #include "modules/peerconnection/RTCIceCandidate.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/WebFrameScheduler.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/heap/HeapAllocator.h"
 #include "public/platform/WebMediaConstraints.h"
 #include "public/platform/WebRTCPeerConnectionHandler.h"
@@ -72,7 +72,7 @@ class MODULES_EXPORT RTCPeerConnection final
     : public EventTargetWithInlineData,
       public WebRTCPeerConnectionHandlerClient,
       public ActiveScriptWrappable<RTCPeerConnection>,
-      public SuspendableObject,
+      public PausableObject,
       public MediaStreamObserver {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(RTCPeerConnection);
@@ -191,7 +191,7 @@ class MODULES_EXPORT RTCPeerConnection final
 
   // WebRTCPeerConnectionHandlerClient
   void NegotiationNeeded() override;
-  void DidGenerateICECandidate(const WebRTCICECandidate&) override;
+  void DidGenerateICECandidate(scoped_refptr<WebRTCICECandidate>) override;
   void DidChangeSignalingState(SignalingState) override;
   void DidChangeICEGatheringState(ICEGatheringState) override;
   void DidChangeICEConnectionState(ICEConnectionState) override;
@@ -205,9 +205,9 @@ class MODULES_EXPORT RTCPeerConnection final
   const AtomicString& InterfaceName() const override;
   ExecutionContext* GetExecutionContext() const override;
 
-  // SuspendableObject
-  void Suspend() override;
-  void Resume() override;
+  // PausableObject
+  void Pause() override;
+  void Unpause() override;
   void ContextDestroyed(ExecutionContext*) override;
 
   // ScriptWrappable

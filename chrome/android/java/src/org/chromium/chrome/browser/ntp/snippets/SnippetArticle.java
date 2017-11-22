@@ -46,6 +46,12 @@ public class SnippetArticle implements OfflinableSuggestion {
     /** The flag that indicates whether this is a video suggestion. */
     public boolean mIsVideoSuggestion;
 
+    /** Stores whether any part of this article has been exposed to the user. */
+    public boolean mExposed;
+
+    /** Stores whether the user has seen a substantial part of this article. */
+    public boolean mSeen;
+
     /** The rank of this article within its section. */
     private int mPerSectionRank = -1;
 
@@ -57,9 +63,6 @@ public class SnippetArticle implements OfflinableSuggestion {
 
     /** The thumbnail dominant color. */
     private @ColorInt Integer mThumbnailDominantColor;
-
-    /** Stores whether impression of this article has been tracked already. */
-    private boolean mImpressionTracked;
 
     /** Whether the linked article represents an asset download. */
     private boolean mIsAssetDownload;
@@ -115,8 +118,10 @@ public class SnippetArticle implements OfflinableSuggestion {
     }
 
     /**
-     * Returns this article's thumbnail. Can return {@code null} as it is initially unset.
+     * Returns this article's thumbnail, or {@code null} if it hasn't been fetched yet or has been
+     * discarded.
      */
+    @Nullable
     public Drawable getThumbnail() {
         return mThumbnail == null ? null : mThumbnail.get();
     }
@@ -127,20 +132,19 @@ public class SnippetArticle implements OfflinableSuggestion {
     }
 
     /**
+     * Clears this article's thumbnail if there is one.
+     */
+    public void clearThumbnail() {
+        mThumbnail = null;
+    }
+
+    /**
      * Returns this article's thumbnail dominant color. Can return {@code null} if there is none.
      */
     @Nullable
     @ColorInt
     public Integer getThumbnailDominantColor() {
         return mThumbnailDominantColor;
-    }
-
-    /** Returns whether to track an impression for this article. */
-    public boolean trackImpression() {
-        // Track UMA only upon the first impression per life-time of this object.
-        if (mImpressionTracked) return false;
-        mImpressionTracked = true;
-        return true;
     }
 
     /** @return whether a snippet is a remote suggestion. */

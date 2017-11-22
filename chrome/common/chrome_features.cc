@@ -32,6 +32,10 @@ const base::Feature kAppleScriptExecuteJavaScriptMenuItem{
 const base::Feature kFullscreenToolbarReveal{"FullscreenToolbarReveal",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Use toolkit-views for profile chooser menu.
+const base::Feature kViewsProfileChooser{"ViewsProfileChooser",
+                                         base::FEATURE_ENABLED_BY_DEFAULT};
+
 // Use the Toolkit-Views Task Manager window.
 const base::Feature kViewsTaskManager{"ViewsTaskManager",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
@@ -131,16 +135,22 @@ const base::Feature kTabsInCbd{"TabsInCBD", base::FEATURE_ENABLED_BY_DEFAULT};
 // one that qualifies for inclusion in TopSites.
 const base::Feature kCaptureThumbnailDependingOnTransitionType{
     "CaptureThumbnailDependingOnTransitionType",
-    base::FEATURE_ENABLED_BY_DEFAULT};
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Whether to capture page thumbnails when navigating away from the current page
 // (in addition to any other times this might happen).
 const base::Feature kCaptureThumbnailOnNavigatingAway{
-    "CaptureThumbnailOnNavigatingAway", base::FEATURE_ENABLED_BY_DEFAULT};
+    "CaptureThumbnailOnNavigatingAway", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Whether to trigger app banner installability checks on page load.
 const base::Feature kCheckInstallabilityForBannerOnLoad{
     "CheckInstallabilityForBannerOnLoad", base::FEATURE_DISABLED_BY_DEFAULT};
+
+#if defined(OS_ANDROID)
+// Enables clearing of browsing data which is older than given time period.
+const base::Feature kClearOldBrowsingData{"ClearOldBrowsingData",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
 
 const base::Feature kClickToOpenPDFPlaceholder{
     "ClickToOpenPDFPlaceholder", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -149,6 +159,11 @@ const base::Feature kClickToOpenPDFPlaceholder{
 const base::Feature kContentFullscreen{"ContentFullscreen",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
+
+// Enables a site-wide permission in the UI which controls access to the
+// asynchronous Clipboard web API.
+const base::Feature kClipboardContentSetting{"ClipboardContentSetting",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_ANDROID)
 // Experiment to extract structured metadata for app indexing.
@@ -181,7 +196,7 @@ const base::Feature kDoodlesOnLocalNtp{"DoodlesOnLocalNtp",
 #if defined(OS_ANDROID)
 // Enables downloads as a foreground service for all versions of Android.
 const base::Feature kDownloadsForeground{"DownloadsForeground",
-                                         base::FEATURE_DISABLED_BY_DEFAULT};
+                                         base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
 // Enables Expect CT reporting, which sends reports for opted-in sites
@@ -199,11 +214,31 @@ const base::Feature kExperimentalAppBanners{"ExperimentalAppBanners",
 const base::Feature kExperimentalKeyboardLockUI{
     "ExperimentalKeyboardLockUI", base::FEATURE_DISABLED_BY_DEFAULT};
 
-#if BUILDFLAG(ENABLE_VR)
-// Enables features related to VR browsing that are under development.
-const base::Feature kExperimentalVRFeatures{"ExperimentalVRFeatures",
-                                            base::FEATURE_DISABLED_BY_DEFAULT};
+#if BUILDFLAG(ENABLE_VR) || defined(OS_ANDROID)
+// Controls whether browsing in VR headsets is enabled.
+const base::Feature kVrBrowsing {
+  "VrBrowsing",
+#if defined(OS_ANDROID)
+      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+      base::FEATURE_DISABLED_BY_DEFAULT
 #endif
+};
+#endif  // BUILDFLAG(ENABLE_VR) || defined(OS_ANDROID)
+
+#if BUILDFLAG(ENABLE_VR)
+// Enables the virtual keyboard for Chrome VR.
+const base::Feature kVrBrowserKeyboard{"VrBrowserKeyboard",
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Controls features related to VR browsing that are under development.
+const base::Feature kVrBrowsingExperimentalFeatures{
+    "VrBrowsingExperimentalFeatures", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Controls experimental rendering features for VR browsing.
+const base::Feature kVrBrowsingExperimentalRendering{
+    "VrBrowsingExperimentalRendering", base::FEATURE_DISABLED_BY_DEFAULT};
+#endif  // BUILDFLAG(ENABLE_VR)
 
 #if defined(OS_WIN)
 // Enables using GDI to print text as simply text.
@@ -226,6 +261,12 @@ const base::Feature kImportantSitesInCbd{"ImportantSitesInCBD",
 const base::Feature kImprovedRecoveryComponent{
     "ImprovedRecoveryComponent", base::FEATURE_DISABLED_BY_DEFAULT};
 
+#if !defined(OS_ANDROID)
+// Enables Casting a Presentation API-enabled website to a secondary display.
+const base::Feature kLocalScreenCasting{"LocalScreenCasting",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
+
 // Enables or disables the Location Settings Dialog (LSD). The LSD is an Android
 // system-level geolocation permission prompt.
 const base::Feature kLsdPermissionPrompt{"LsdPermissionPrompt",
@@ -243,7 +284,7 @@ const base::Feature kMacFullSizeContentView{"MacFullSizeContentView",
 
 // Enables "Share" submenu in File menu.
 const base::Feature kMacSystemShareMenu{"MacSystemShareMenu",
-                                        base::FEATURE_DISABLED_BY_DEFAULT};
+                                        base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
 // Enables or disables the Material Design version of chrome://bookmarks.
@@ -429,9 +470,9 @@ const base::Feature kSafeSearchUrlReporting{"SafeSearchUrlReporting",
 
 #if defined(OS_MACOSX)
 // Whether to show all dialogs with toolkit-views on Mac, rather than Cocoa. A
-// subset of "pilot" dialogs can be enabled with kExtendMdToSecondaryUi.
+// subset of "pilot" dialogs can be enabled with kSecondaryUiMd.
 const base::Feature kShowAllDialogsWithViewsToolkit{
-    "ShowAllDialogsWithViewsToolkit", base::FEATURE_DISABLED_BY_DEFAULT};
+    "ShowAllDialogsWithViewsToolkit", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_MACOSX)
 
 #if defined(OS_ANDROID)
@@ -446,35 +487,15 @@ const base::Feature kSiteNotificationChannels{"SiteNotificationChannels",
 const base::Feature kSimplifiedFullscreenUI{"ViewsSimplifiedFullscreenUI",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Enables or disables UI in MD Settings to view content settings grouped by
-// origin.
-const base::Feature kSiteDetails{"SiteDetails",
-                                 base::FEATURE_ENABLED_BY_DEFAULT};
-
 #if defined(OS_CHROMEOS)
 // Enables or disables the ability to add a Samba Share to the Files app
-const base::Feature kNativeSamba{"NativeSamba",
-                                 base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kNativeSmb{"NativeSmb", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif  // defined(OS_CHROMEOS)
 
 // Enables or disables the ability to use the sound content setting to mute a
 // website.
 const base::Feature kSoundContentSetting{"SoundContentSetting",
                                          base::FEATURE_ENABLED_BY_DEFAULT};
-
-#if !defined(OS_ANDROID)
-// Enables delaying the navigation of background tabs in order to improve
-// foreground tab's user experience.
-const base::Feature kStaggeredBackgroundTabOpening{
-    "StaggeredBackgroundTabOpening", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// This controls whether we are running experiment with staggered background
-// tab opening feature. For control group, this should be disabled. This depends
-// on |kStaggeredBackgroundTabOpening| above.
-const base::Feature kStaggeredBackgroundTabOpeningExperiment{
-    "StaggeredBackgroundTabOpeningExperiment",
-    base::FEATURE_ENABLED_BY_DEFAULT};
-#endif
 
 // Enables or disables the creation of (legacy) supervised users. Does not
 // affect existing supervised users.
@@ -508,20 +529,6 @@ const base::Feature kUseGoogleLocalNtp{"UseGoogleLocalNtp",
 const base::Feature kVoiceSearchOnLocalNtp{"VoiceSearchOnLocalNtp",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
-
-// Enables VR UI.
-const base::Feature kVrShell {
-  "VrShell",
-#if defined(OS_ANDROID)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#else
-      base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
-
-// Turns on experimental rendering features for VR browsing.
-const base::Feature kVrShellExperimentalRendering{
-    "VrShellExperimentalRendering", base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_CHROMEOS)
 // Enables or disables the opt-in IME menu in the language settings page.

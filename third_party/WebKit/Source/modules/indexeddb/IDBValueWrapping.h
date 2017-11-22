@@ -5,12 +5,12 @@
 #ifndef IDBValueWrapping_h
 #define IDBValueWrapping_h
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "modules/ModulesExport.h"
 #include "platform/SharedBuffer.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "public/platform/WebBlobInfo.h"
 #include "v8/include/v8.h"
@@ -121,11 +121,7 @@ class MODULES_EXPORT IDBValueWrapper {
   // storage for IndexedDB, was not designed with large values in mind. At the
   // very least, large values will slow down compaction, causing occasional I/O
   // spikes.
-  //
-  // TODO(crbug.com/756754): 128MB is the maximum IPC size, so this threshold
-  // effectively disables wrapping. Set the threshold back to 64 * 1024 after
-  // the Blob leak issue is fixed.
-  static constexpr unsigned kWrapThreshold = 128 * 1024 * 1024;
+  static constexpr unsigned kWrapThreshold = 64 * 1024;
 
   // MIME type used for Blobs that wrap IDBValues.
   static constexpr const char* kWrapMimeType =

@@ -299,7 +299,7 @@ bool RawResource::MatchPreload(const FetchParameters& params,
 
   data_consumer_handle_ =
       Platform::Current()->CreateDataConsumerHandle(std::move(consumer));
-  data_pipe_writer_ = WTF::MakeUnique<BufferingDataPipeWriter>(
+  data_pipe_writer_ = std::make_unique<BufferingDataPipeWriter>(
       std::move(producer), task_runner);
 
   if (Data()) {
@@ -340,7 +340,8 @@ static bool ShouldIgnoreHeaderForCacheReuse(AtomicString header_name) {
 static bool IsCacheableHTTPMethod(const AtomicString& method) {
   // Per http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.10,
   // these methods always invalidate the cache entry.
-  return method != "POST" && method != "PUT" && method != "DELETE";
+  return method != HTTPNames::POST && method != HTTPNames::PUT &&
+         method != "DELETE";
 }
 
 bool RawResource::CanReuse(const FetchParameters& new_fetch_parameters) const {

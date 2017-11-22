@@ -63,6 +63,12 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   void SetFrameConnectorDelegate(FrameConnectorDelegate* frame_connector);
 
+#if defined(USE_AURA)
+  // When the viz::FrameSinkId for this child frame is created and registered
+  // remotely, it can be set here.
+  void SetFrameSinkId(const viz::FrameSinkId& frame_sink_id);
+#endif  // defined(USE_AURA)
+
   // This functions registers single-use callbacks that want to be notified when
   // the next frame is swapped. The callback is triggered by
   // ProcessCompositorFrame, which is the appropriate time to request pixel
@@ -118,8 +124,10 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame) override;
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   // Since the URL of content rendered by this class is not displayed in
   // the URL bar, this method does not need an implementation.
@@ -175,6 +183,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       BrowserAccessibilityDelegate* delegate,
       bool for_root_frame) override;
   void GetScreenInfo(ScreenInfo* screen_info) override;
+  void ResizeDueToAutoResize(const gfx::Size& new_size,
+                             uint64_t sequence_number) override;
 
   // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
@@ -191,6 +201,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   // viz::HostFrameSinkClient implementation.
   void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
 
   // Exposed for tests.
   bool IsChildFrameForTesting() const override;
@@ -213,6 +224,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void UpdateViewportIntersection(const gfx::Rect& viewport_intersection);
 
   void SetIsInert();
+
+  void UpdateRenderThrottlingStatus();
 
   bool has_frame() { return has_frame_; }
 
@@ -238,8 +251,10 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // parent was already set then it also unregisters hierarchy.
   void SetParentFrameSinkId(const viz::FrameSinkId& parent_frame_sink_id);
 
-  void ProcessCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                              viz::CompositorFrame frame);
+  void ProcessCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list);
 
   void SendSurfaceInfoToEmbedder();
 
@@ -310,6 +325,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // The surface client ID of the parent RenderWidgetHostView.  0 if none.
   viz::FrameSinkId parent_frame_sink_id_;
 
+  const bool enable_viz_;
   bool has_frame_ = false;
   viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink_ =
       nullptr;
@@ -319,6 +335,9 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   std::unique_ptr<TouchSelectionControllerClientChildFrame>
       selection_controller_client_;
+
+  // True if there is currently a scroll sequence being bubbled to our parent.
+  bool is_scroll_sequence_bubbling_ = false;
 
   // Used to prevent bubbling of subsequent GestureScrollUpdates in a scroll
   // gesture if the child consumed the first GSU.

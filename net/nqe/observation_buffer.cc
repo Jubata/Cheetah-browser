@@ -12,6 +12,7 @@
 #include "base/macros.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
+#include "net/nqe/network_quality_estimator_params.h"
 #include "net/nqe/weighted_observation.h"
 
 namespace net {
@@ -20,37 +21,46 @@ namespace nqe {
 
 namespace internal {
 
-ObservationBuffer::ObservationBuffer(double weight_multiplier_per_second,
-                                     double weight_multiplier_per_signal_level)
-    : weight_multiplier_per_second_(weight_multiplier_per_second),
+ObservationBuffer::ObservationBuffer(
+    const NetworkQualityEstimatorParams* params,
+    base::TickClock* tick_clock,
+    double weight_multiplier_per_second,
+    double weight_multiplier_per_signal_level)
+    : params_(params),
+      weight_multiplier_per_second_(weight_multiplier_per_second),
       weight_multiplier_per_signal_level_(weight_multiplier_per_signal_level),
-      tick_clock_(new base::DefaultTickClock()) {
-  static_assert(kMaximumObservationsBufferSize > 0U,
-                "Minimum size of observation buffer must be > 0");
+      tick_clock_(tick_clock) {
+  DCHECK_LT(0u, params_->observation_buffer_size());
   DCHECK_LE(0.0, weight_multiplier_per_second_);
   DCHECK_GE(1.0, weight_multiplier_per_second_);
   DCHECK_LE(0.0, weight_multiplier_per_signal_level_);
   DCHECK_GE(1.0, weight_multiplier_per_signal_level_);
+  DCHECK(params_);
+  DCHECK(tick_clock_);
 }
 
 ObservationBuffer::~ObservationBuffer() {}
 
 void ObservationBuffer::AddObservation(const Observation& observation) {
-  DCHECK_LE(observations_.size(), kMaximumObservationsBufferSize);
+  DCHECK_LE(observations_.size(), params_->observation_buffer_size());
+
+  // Observations must be in the non-decreasing order of the timestamps.
+  DCHECK(observations_.empty() ||
+         observation.timestamp() >= observations_.back().timestamp());
+
   // Evict the oldest element if the buffer is already full.
-  if (observations_.size() == kMaximumObservationsBufferSize)
+  if (observations_.size() == params_->observation_buffer_size())
     observations_.pop_front();
 
   observations_.push_back(observation);
-  DCHECK_LE(observations_.size(), kMaximumObservationsBufferSize);
+  DCHECK_LE(observations_.size(), params_->observation_buffer_size());
 }
 
 base::Optional<int32_t> ObservationBuffer::GetPercentile(
     base::TimeTicks begin_timestamp,
     const base::Optional<int32_t>& current_signal_strength,
     int percentile,
-    const std::vector<NetworkQualityObservationSource>&
-        disallowed_observation_sources) const {
+    size_t* observations_count) const {
   // Stores weighted observations in increasing order by value.
   std::vector<WeightedObservation> weighted_observations;
 
@@ -58,8 +68,13 @@ base::Optional<int32_t> ObservationBuffer::GetPercentile(
   double total_weight = 0.0;
 
   ComputeWeightedObservations(begin_timestamp, current_signal_strength,
-                              &weighted_observations, &total_weight,
-                              disallowed_observation_sources);
+                              &weighted_observations, &total_weight);
+
+  if (observations_count) {
+    // |observations_count| may be null.
+    *observations_count = weighted_observations.size();
+  }
+
   if (weighted_observations.empty())
     return base::nullopt;
 
@@ -83,8 +98,6 @@ base::Optional<int32_t> ObservationBuffer::GetPercentile(
 void ObservationBuffer::GetPercentileForEachHostWithCounts(
     base::TimeTicks begin_timestamp,
     int percentile,
-    const std::vector<NetworkQualityObservationSource>&
-        disallowed_observation_sources,
     const base::Optional<std::set<IPHash>>& host_filter,
     std::map<IPHash, int32_t>* host_keyed_percentiles,
     std::map<IPHash, size_t>* host_keyed_counts) const {
@@ -95,7 +108,7 @@ void ObservationBuffer::GetPercentileForEachHostWithCounts(
   host_keyed_percentiles->clear();
   host_keyed_counts->clear();
 
-  // Filter the observations based on timestamp, disallowed sources and the
+  // Filter the observations based on timestamp, and the
   // presence of a valid host tag. Split the observations into a map keyed by
   // the remote host to make it easy to calculate percentiles for each host.
   std::map<IPHash, std::vector<int32_t>> host_keyed_observations;
@@ -110,16 +123,6 @@ void ObservationBuffer::GetPercentileForEachHostWithCounts(
 
     // Filter the observations recorded before |begin_timestamp|.
     if (observation.timestamp() < begin_timestamp)
-      continue;
-
-    // If the source of the observation is in the list of disallowed sources,
-    // skip that observation.
-    bool disallowed = false;
-    for (const auto& disallowed_source : disallowed_observation_sources) {
-      if (disallowed_source == observation.source())
-        disallowed = true;
-    }
-    if (disallowed)
       continue;
 
     // Skip 0 values of RTT.
@@ -148,13 +151,23 @@ void ObservationBuffer::GetPercentileForEachHostWithCounts(
   }
 }
 
+void ObservationBuffer::RemoveObservationsWithSource(
+    bool deleted_observation_sources[NETWORK_QUALITY_OBSERVATION_SOURCE_MAX]) {
+  observations_.erase(
+      std::remove_if(
+          observations_.begin(), observations_.end(),
+          [deleted_observation_sources](const Observation& observation) {
+            return deleted_observation_sources[static_cast<size_t>(
+                observation.source())];
+          }),
+      observations_.end());
+}
+
 void ObservationBuffer::ComputeWeightedObservations(
     const base::TimeTicks& begin_timestamp,
     const base::Optional<int32_t>& current_signal_strength,
     std::vector<WeightedObservation>* weighted_observations,
-    double* total_weight,
-    const std::vector<NetworkQualityObservationSource>&
-        disallowed_observation_sources) const {
+    double* total_weight) const {
   DCHECK_GE(Capacity(), Size());
 
   weighted_observations->clear();
@@ -164,13 +177,7 @@ void ObservationBuffer::ComputeWeightedObservations(
   for (const auto& observation : observations_) {
     if (observation.timestamp() < begin_timestamp)
       continue;
-    bool disallowed = false;
-    for (const auto& disallowed_source : disallowed_observation_sources) {
-      if (disallowed_source == observation.source())
-        disallowed = true;
-    }
-    if (disallowed)
-      continue;
+
     base::TimeDelta time_since_sample_taken = now - observation.timestamp();
     double time_weight =
         pow(weight_multiplier_per_second_, time_since_sample_taken.InSeconds());
@@ -204,6 +211,10 @@ void ObservationBuffer::ComputeWeightedObservations(
   // since the former contains only the observations later than
   // |begin_timestamp|.
   DCHECK_GE(observations_.size(), weighted_observations->size());
+}
+
+size_t ObservationBuffer::Capacity() const {
+  return params_->observation_buffer_size();
 }
 
 }  // namespace internal

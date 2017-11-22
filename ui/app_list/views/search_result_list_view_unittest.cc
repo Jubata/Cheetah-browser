@@ -9,12 +9,12 @@
 #include <map>
 #include <memory>
 
+#include "ash/app_list/model/app_list_model.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/app_list/app_list_features.h"
-#include "ui/app_list/app_list_model.h"
 #include "ui/app_list/test/app_list_test_view_delegate.h"
 #include "ui/app_list/test/test_search_result.h"
 #include "ui/app_list/views/search_result_view.h"
@@ -126,7 +126,8 @@ class SearchResultListViewTest : public views::ViewsTestBase {
   DISALLOW_COPY_AND_ASSIGN(SearchResultListViewTest);
 };
 
-TEST_F(SearchResultListViewTest, Basic) {
+// TODO(crbug.com/766807): Remove the test once the new focus model is stable.
+TEST_F(SearchResultListViewTest, DISABLED_Basic) {
   SetUpSearchResults();
 
   const int results = GetResultCount();
@@ -164,7 +165,8 @@ TEST_F(SearchResultListViewTest, Basic) {
   EXPECT_EQ(results - 1, GetSelectedIndex());
 }
 
-TEST_F(SearchResultListViewTest, AutoLaunch) {
+// TODO(crbug.com/781407) Re-enable the test once voice search is back.
+TEST_F(SearchResultListViewTest, DISABLED_AutoLaunch) {
   SetLongAutoLaunchTimeout();
   SetUpSearchResults();
 
@@ -179,7 +181,8 @@ TEST_F(SearchResultListViewTest, AutoLaunch) {
   EXPECT_EQ(base::TimeDelta(), GetAutoLaunchTimeout());
 }
 
-TEST_F(SearchResultListViewTest, CancelAutoLaunch) {
+// TODO(crbug.com/781407) Re-enable the test once voice search is back.
+TEST_F(SearchResultListViewTest, DISABLED_CancelAutoLaunch) {
   SetLongAutoLaunchTimeout();
   SetUpSearchResults();
 

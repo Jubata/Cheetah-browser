@@ -24,6 +24,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_test_utils.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
@@ -1397,8 +1398,18 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, MAYBE_AutofillAfterTranslate) {
 // TODO(groby): Remove once the bubble is enabled by default everywhere.
 // http://crbug.com/507442
 #if defined(OS_MACOSX)
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      ::switches::kEnableTranslateNewUX);
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kEnableTranslateNewUX)) {
+    // On MacViews kEnableTranslateNewUX will engage the MacViews bubble UI
+    // which isn't ready and isn't used yet. The Cocoa browser still uses an
+    // InfoBar. See http://crbug.com/781134. So only continue when testing the
+    // Cocoa UI.
+    if (base::FeatureList::IsEnabled(features::kShowAllDialogsWithViewsToolkit))
+      return;
+
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        ::switches::kEnableTranslateNewUX);
+  }
 #endif
   ASSERT_TRUE(TranslateService::IsTranslateBubbleEnabled());
 
@@ -1500,25 +1511,38 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, MAYBE_ComparePhoneNumbers) {
 
   GURL url = embedded_test_server()->GetURL("/autofill/form_phones.html");
   ui_test_utils::NavigateToURL(browser(), url);
-  PopulateForm("NAME_FIRST");
+  PopulateForm("NAME_FIRST1");
 
-  ExpectFieldValue("NAME_FIRST", "Bob");
-  ExpectFieldValue("NAME_LAST", "Smith");
+  ExpectFieldValue("NAME_FIRST1", "Bob");
+  ExpectFieldValue("NAME_LAST1", "Smith");
   ExpectFieldValue("ADDRESS_HOME_LINE1", "1234 H St.");
   ExpectFieldValue("ADDRESS_HOME_CITY", "San Jose");
   ExpectFieldValue("ADDRESS_HOME_STATE", "CA");
   ExpectFieldValue("ADDRESS_HOME_ZIP", "95110");
   ExpectFieldValue("PHONE_HOME_WHOLE_NUMBER", "14085554567");
+
+  PopulateForm("NAME_FIRST2");
+  ExpectFieldValue("NAME_FIRST2", "Bob");
+  ExpectFieldValue("NAME_LAST2", "Smith");
   ExpectFieldValue("PHONE_HOME_CITY_CODE-1", "408");
-  ExpectFieldValue("PHONE_HOME_CITY_CODE-2", "408");
   ExpectFieldValue("PHONE_HOME_NUMBER", "5554567");
+
+  PopulateForm("NAME_FIRST3");
+  ExpectFieldValue("NAME_FIRST3", "Bob");
+  ExpectFieldValue("NAME_LAST3", "Smith");
+  ExpectFieldValue("PHONE_HOME_CITY_CODE-2", "408");
   ExpectFieldValue("PHONE_HOME_NUMBER_3-1", "555");
-  ExpectFieldValue("PHONE_HOME_NUMBER_3-2", "555");
   ExpectFieldValue("PHONE_HOME_NUMBER_4-1", "4567");
-  ExpectFieldValue("PHONE_HOME_NUMBER_4-2", "4567");
   ExpectFieldValue("PHONE_HOME_EXT-1", std::string());
-  ExpectFieldValue("PHONE_HOME_EXT-2", std::string());
+
+  PopulateForm("NAME_FIRST4");
+  ExpectFieldValue("NAME_FIRST4", "Bob");
+  ExpectFieldValue("NAME_LAST4", "Smith");
   ExpectFieldValue("PHONE_HOME_COUNTRY_CODE-1", "1");
+  ExpectFieldValue("PHONE_HOME_CITY_CODE-3", "408");
+  ExpectFieldValue("PHONE_HOME_NUMBER_3-2", "555");
+  ExpectFieldValue("PHONE_HOME_NUMBER_4-2", "4567");
+  ExpectFieldValue("PHONE_HOME_EXT-2", std::string());
 }
 
 // Test that Autofill does not fill in read-only fields.

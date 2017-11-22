@@ -27,6 +27,7 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ToV8ForCore.h"
 #include "bindings/core/v8/serialization/SerializedScriptValueFactory.h"
@@ -45,10 +46,8 @@
 #include "platform/SharedBuffer.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/WebBlobInfo.h"
 #include "public/platform/WebData.h"
-#include "public/platform/WebVector.h"
 #include "public/platform/modules/indexeddb/WebIDBKey.h"
 #include "public/platform/modules/indexeddb/WebIDBKeyRange.h"
 #include "v8/include/v8.h"
@@ -57,7 +56,6 @@ using blink::WebBlobInfo;
 using blink::WebIDBCallbacks;
 using blink::WebIDBCursor;
 using blink::WebIDBDatabase;
-using blink::WebVector;
 
 namespace blink {
 
@@ -775,7 +773,7 @@ IDBIndex* IDBObjectStore::createIndex(ScriptState* script_state,
   ++metadata_->max_index_id;
 
   scoped_refptr<IDBIndexMetadata> index_metadata =
-      WTF::AdoptRef(new IDBIndexMetadata(
+      base::AdoptRef(new IDBIndexMetadata(
           name, index_id, key_path, options.unique(), options.multiEntry()));
   IDBIndex* index = IDBIndex::Create(index_metadata, this, transaction_.Get());
   index_map_.Set(name, index);

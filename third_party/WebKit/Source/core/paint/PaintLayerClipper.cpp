@@ -237,13 +237,11 @@ LayoutRect PaintLayerClipper::LocalClipRect(
     const auto* clip_root_layer_transform =
         clipping_root_layer.GetLayoutObject()
             .FirstFragment()
-            .GetRarePaintData()
-            ->LocalBorderBoxProperties()
+            .LocalBorderBoxProperties()
             ->Transform();
     const auto* layer_transform = layer_.GetLayoutObject()
                                       .FirstFragment()
-                                      .GetRarePaintData()
-                                      ->LocalBorderBoxProperties()
+                                      .LocalBorderBoxProperties()
                                       ->Transform();
     FloatRect clipped_rect_in_local_space(premapped_rect);
     GeometryMapper::SourceToDestinationRect(clip_root_layer_transform,
@@ -299,7 +297,7 @@ void PaintLayerClipper::CalculateRectsWithGeometryMapper(
       layer_.ConvertToLayerCoords(context.root_layer, offset);
     }
   }
-  layer_bounds = LayoutRect(offset, LayoutSize(layer_.Size()));
+  layer_bounds = LayoutRect(offset, LayoutSize(layer_.PixelSnappedSize()));
 
   CalculateBackgroundClipRectWithGeometryMapper(context, fragment_data,
                                                 background_rect);
@@ -327,13 +325,10 @@ void PaintLayerClipper::CalculateRects(
     const LayoutPoint* offset_from_root) const {
   if (use_geometry_mapper_) {
     DCHECK(fragment_data);
-    auto* rare_data = fragment_data->GetRarePaintData();
-    auto* local_borderbox =
-        rare_data ? rare_data->LocalBorderBoxProperties() : nullptr;
-    DCHECK(rare_data && local_borderbox);
-    // TODO(chrishtr): find the root cause of not having a fragment and fix
-    // it.
-    if (!rare_data || !local_borderbox)
+    auto* local_borderbox = fragment_data->LocalBorderBoxProperties();
+    DCHECK(local_borderbox);
+    // TODO(chrishtr): find the root cause of not having a fragment and fix it.
+    if (!local_borderbox)
       return;
     CalculateRectsWithGeometryMapper(context, *fragment_data, paint_dirty_rect,
                                      layer_bounds, background_rect,
@@ -360,7 +355,7 @@ void PaintLayerClipper::CalculateRects(
     offset = *offset_from_root;
   else
     layer_.ConvertToLayerCoords(context.root_layer, offset);
-  layer_bounds = LayoutRect(offset, LayoutSize(layer_.Size()));
+  layer_bounds = LayoutRect(offset, LayoutSize(layer_.PixelSnappedSize()));
 
   // Update the clip rects that will be passed to child layers.
   if (ShouldClipOverflow(context)) {
@@ -504,18 +499,15 @@ void PaintLayerClipper::InitializeCommonClipRectState(
     PropertyTreeState& source_property_tree_state,
     PropertyTreeState& destination_property_tree_state) const {
   DCHECK(use_geometry_mapper_);
-  DCHECK(fragment_data.GetRarePaintData()->LocalBorderBoxProperties());
-  source_property_tree_state =
-      *fragment_data.GetRarePaintData()->LocalBorderBoxProperties();
+  DCHECK(fragment_data.LocalBorderBoxProperties());
+  source_property_tree_state = *fragment_data.LocalBorderBoxProperties();
 
   DCHECK(context.root_layer->GetLayoutObject()
              .FirstFragment()
-             .GetRarePaintData()
-             ->LocalBorderBoxProperties());
+             .LocalBorderBoxProperties());
   destination_property_tree_state = *context.root_layer->GetLayoutObject()
                                          .FirstFragment()
-                                         .GetRarePaintData()
-                                         ->LocalBorderBoxProperties();
+                                         .LocalBorderBoxProperties();
 
   auto* ancestor_properties =
       context.root_layer->GetLayoutObject().FirstFragment().PaintProperties();
@@ -571,13 +563,10 @@ void PaintLayerClipper::CalculateBackgroundClipRect(
     ClipRect& output) const {
   if (use_geometry_mapper_) {
     const auto& fragment_data = layer_.GetLayoutObject().FirstFragment();
-    auto* rare_data = fragment_data.GetRarePaintData();
-    auto* local_borderbox =
-        rare_data ? rare_data->LocalBorderBoxProperties() : nullptr;
-    DCHECK(rare_data && local_borderbox);
-    // TODO(chrishtr): find the root cause of not having a fragment and fix
-    // it.
-    if (!rare_data || !local_borderbox)
+    const auto* local_borderbox = fragment_data.LocalBorderBoxProperties();
+    DCHECK(local_borderbox);
+    // TODO(chrishtr): find the root cause of not having a fragment and fix it.
+    if (!local_borderbox)
       return;
     CalculateBackgroundClipRectWithGeometryMapper(context, fragment_data,
                                                   output);

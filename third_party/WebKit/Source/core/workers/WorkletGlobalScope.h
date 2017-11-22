@@ -6,6 +6,7 @@
 #define WorkletGlobalScope_h
 
 #include <memory>
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/SecurityContext.h"
@@ -13,7 +14,6 @@
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
 #include "core/workers/WorkletModuleResponsesMapProxy.h"
 #include "platform/WebTaskRunner.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
@@ -21,7 +21,6 @@
 
 namespace blink {
 
-class EventQueue;
 class Modulator;
 class WorkletModuleResponsesMap;
 class WorkletPendingTasks;
@@ -29,9 +28,8 @@ class WorkerReportingProxy;
 struct GlobalScopeCreationParams;
 
 class CORE_EXPORT WorkletGlobalScope
-    : public ScriptWrappable,
+    : public WorkerOrWorkletGlobalScope,
       public SecurityContext,
-      public WorkerOrWorkletGlobalScope,
       public ActiveScriptWrappable<WorkletGlobalScope> {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(WorkletGlobalScope);
@@ -41,28 +39,15 @@ class CORE_EXPORT WorkletGlobalScope
 
   bool IsWorkletGlobalScope() const final { return true; }
 
-  // WorkerOrWorkletGlobalScope
-  ScriptWrappable* GetScriptWrappable() const final {
-    return const_cast<WorkletGlobalScope*>(this);
-  }
-
   void EvaluateClassicScript(
       const KURL& script_url,
       String source_code,
       std::unique_ptr<Vector<char>> cached_meta_data) final;
 
-  // Always returns false here as worklets don't have a #close() method on
-  // the global.
-  bool IsClosing() const final { return false; }
-
-  // ScriptWrappable
-  v8::Local<v8::Object> Wrap(v8::Isolate*,
-                             v8::Local<v8::Object> creation_context) final;
-  v8::Local<v8::Object> AssociateWithWrapper(
-      v8::Isolate*,
-      const WrapperTypeInfo*,
-      v8::Local<v8::Object> wrapper) final;
-  bool HasPendingActivity() const override;
+  // Always returns false here as PaintWorkletGlobalScope and
+  // AnimationWorkletGlobalScope don't have a #close() method on the global.
+  // Note that AudioWorkletGlobal overrides this behavior.
+  bool IsClosing() const { return false; }
 
   ExecutionContext* GetExecutionContext() const;
 
@@ -72,10 +57,6 @@ class CORE_EXPORT WorkletGlobalScope
   KURL CompleteURL(const String&) const final;
   String UserAgent() const final { return user_agent_; }
   SecurityContext& GetSecurityContext() final { return *this; }
-  EventQueue* GetEventQueue() const final {
-    NOTREACHED();
-    return nullptr;
-  }  // WorkletGlobalScopes don't have an event queue.
   bool IsSecureContext(String& error_message) const final;
 
   using SecurityContext::GetSecurityOrigin;

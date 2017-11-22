@@ -39,6 +39,7 @@
 #import "ios/chrome/browser/ui/icons/chrome_icon.h"
 #import "ios/chrome/browser/ui/material_components/utils.h"
 #import "ios/chrome/browser/ui/rtl_geometry.h"
+#import "ios/chrome/browser/ui/signin_interaction/public/signin_presenter.h"
 #import "ios/chrome/browser/ui/ui_util.h"
 #import "ios/chrome/browser/ui/uikit_ui_util.h"
 #import "ios/chrome/browser/ui/url_loader.h"
@@ -77,6 +78,7 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
     BookmarkPromoControllerDelegate,
     BookmarkTableViewDelegate,
     ContextBarDelegate,
+    SigninPresenter,
     UIGestureRecognizerDelegate>
 
 // The app bar for the bookmarks.
@@ -139,10 +141,10 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
 
     // It is important to initialize the promo controller with the browser state
     // passed in, as it could be incognito.
-    _bookmarkPromoController =
-        [[BookmarkPromoController alloc] initWithBrowserState:browserState
-                                                     delegate:self
-                                                   dispatcher:self.dispatcher];
+    _bookmarkPromoController = [[BookmarkPromoController alloc]
+        initWithBrowserState:browserState
+                    delegate:self
+                   presenter:self /* id<SigninPresenter> */];
   }
   return self;
 }
@@ -168,9 +170,6 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
 - (void)viewWillAppear:(BOOL)animated {
   [super viewWillAppear:animated];
   if (base::FeatureList::IsEnabled(kBookmarkNewGeneration)) {
-    if (self.isReconstructingFromCache) {
-      [self setupUIStackCacheIfApplicable];
-    }
     // Set the delegate here to make sure it is working when navigating in the
     // ViewController hierarchy (as each view controller is setting itself as
     // delegate).
@@ -464,7 +463,7 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
   if (nodes.size() == 0) {
     // if nothing to select, exit edit mode.
     if (![self.bookmarksTableView hasBookmarksOrFolders]) {
-      [self setContextBarState:BookmarksContextBarDefault];
+      [self setTableViewEditing:NO];
       return;
     }
     [self setContextBarState:BookmarksContextBarBeginSelection];
@@ -807,7 +806,7 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
 }
 
 - (void)bookmarkCollectionViewShowSignIn:(BookmarkCollectionView*)view {
-  [self.bookmarkPromoController showSignIn];
+  [self.bookmarkPromoController showSignInFromViewController:self];
 }
 
 - (void)bookmarkCollectionViewDismissPromo:(BookmarkCollectionView*)view {
@@ -900,6 +899,14 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
   if (![self isViewLoaded])
     return;
 
+  // Bookmark Model is loaded after presenting Bookmarks,  we need to check
+  // again here if restoring of cache position is needed.  It is to prevent
+  // crbug.com/765503.
+  if (base::FeatureList::IsEnabled(kBookmarkNewGeneration) &&
+      bookmark_utils_ios::GetBookmarkUIPositionCache(_bookmarks)) {
+    self.isReconstructingFromCache = YES;
+  }
+
   DCHECK(self.waitForModelView);
   __weak BookmarkHomeViewController* weakSelf = self;
   [self.waitForModelView stopWaitingWithCompletion:^{
@@ -978,10 +985,10 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
       UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
   // Create folder view.
-  BookmarkCollectionView* view =
-      [[BookmarkCollectionView alloc] initWithBrowserState:self.browserState
-                                                     frame:CGRectZero
-                                                dispatcher:self.dispatcher];
+  BookmarkCollectionView* view = [[BookmarkCollectionView alloc]
+      initWithBrowserState:self.browserState
+                     frame:CGRectZero
+                 presenter:self /* id<SigninPresenter> */];
   self.folderView = view;
   [self.folderView setEditing:self.editing animated:NO];
   self.folderView.autoresizingMask =
@@ -993,12 +1000,12 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
 - (void)loadBookmarkViewsForNewUI {
   // TODO(crbug.com/695749): Polish UI according to mocks.
   self.automaticallyAdjustsScrollViewInsets = NO;
-  self.bookmarksTableView =
-      [[BookmarkTableView alloc] initWithBrowserState:self.browserState
-                                             delegate:self
-                                             rootNode:_rootNode
-                                                frame:self.view.bounds
-                                           dispatcher:self.dispatcher];
+  self.bookmarksTableView = [[BookmarkTableView alloc]
+      initWithBrowserState:self.browserState
+                  delegate:self
+                  rootNode:_rootNode
+                     frame:self.view.bounds
+                 presenter:self /* id<SigninPresenter> */];
   [self.bookmarksTableView
       setAutoresizingMask:UIViewAutoresizingFlexibleWidth |
                           UIViewAutoresizingFlexibleHeight];
@@ -1010,6 +1017,9 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
 
   if (_rootNode != self.bookmarks->root_node()) {
     [self setupContextBar];
+  }
+  if (self.isReconstructingFromCache) {
+    [self setupUIStackCacheIfApplicable];
   }
 }
 
@@ -1565,6 +1575,12 @@ std::vector<GURL> GetUrlsToOpen(const std::vector<const BookmarkNode*>& nodes) {
   DCHECK(gestureRecognizer ==
          self.navigationController.interactivePopGestureRecognizer);
   return self.navigationController.viewControllers.count > 1;
+}
+
+#pragma mark - SigninPresenter
+
+- (void)showSignin:(ShowSigninCommand*)command {
+  [self.dispatcher showSignin:command baseViewController:self];
 }
 
 @end

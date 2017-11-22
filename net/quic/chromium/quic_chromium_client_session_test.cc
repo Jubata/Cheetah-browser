@@ -121,8 +121,8 @@ class QuicChromiumClientSessionTest
                                                    base::Bind(&base::RandInt),
                                                    &net_log_, NetLogSource());
     socket->Connect(kIpEndPoint);
-    QuicChromiumPacketWriter* writer =
-        new net::QuicChromiumPacketWriter(socket.get());
+    QuicChromiumPacketWriter* writer = new net::QuicChromiumPacketWriter(
+        socket.get(), base::ThreadTaskRunnerHandle::Get().get());
     QuicConnection* connection = new QuicConnection(
         0, QuicSocketAddress(QuicSocketAddressImpl(kIpEndPoint)), &helper_,
         &alarm_factory_, writer, true, Perspective::IS_CLIENT,
@@ -133,7 +133,9 @@ class QuicChromiumClientSessionTest
         &transport_security_state_,
         base::WrapUnique(static_cast<QuicServerInfo*>(nullptr)), server_id_,
         /*require_confirmation=*/false, /*migrate_session_early*/ false,
-        /*migrate_session_on_network_change*/ false, kQuicYieldAfterPacketsRead,
+        /*migrate_session_on_network_change*/ false,
+        /*migrate_session_on_network_change_v2*/ false,
+        kQuicYieldAfterPacketsRead,
         QuicTime::Delta::FromMilliseconds(kQuicYieldAfterDurationMilliseconds),
         /*cert_verify_flags=*/0, DefaultQuicConfig(), &crypto_config_,
         "CONNECTION_UNKNOWN", base::TimeTicks::Now(), base::TimeTicks::Now(),
@@ -163,7 +165,8 @@ class QuicChromiumClientSessionTest
       DatagramClientSocket* socket,
       QuicChromiumClientSession* session) const {
     std::unique_ptr<QuicChromiumPacketWriter> writer(
-        new QuicChromiumPacketWriter(socket));
+        new QuicChromiumPacketWriter(
+            socket, base::ThreadTaskRunnerHandle::Get().get()));
     writer->set_delegate(session);
     return writer.release();
   }

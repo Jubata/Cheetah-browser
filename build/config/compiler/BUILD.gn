@@ -223,11 +223,10 @@ config("compiler") {
     # Linker warnings.
     if (fatal_linker_warnings && !(is_chromeos && current_cpu == "arm") &&
         !(is_android && use_order_profiling) && !is_mac && !is_ios &&
-        current_os != "aix" && !(is_linux && is_official_build)) {
+        current_os != "aix") {
       # TODO(jochen): Enable this on chromeos on arm. http://crbug.com/356580
       # TODO(lizeb,pasko): Fix link errors when linking with order_profiling=1
       # crbug.com/485542
-      # TODO(hans): Fix link warnings in official Linux builds crbug.com/774742
       ldflags += [ "-Wl,--fatal-warnings" ]
     }
   }
@@ -514,7 +513,7 @@ config("compiler") {
   # example by disabling the optimize configuration.
   # TODO(pcc): Make this conditional on is_official_build rather than on gn
   # flags for specific features.
-  if (!is_debug && use_thin_lto && !is_nacl) {
+  if (!is_debug && use_thin_lto && current_toolchain == default_toolchain) {
     assert(use_lld || target_os == "chromeos",
            "gold plugin only supported with ChromeOS")
 
@@ -646,17 +645,19 @@ config("compiler_cpu_abi") {
         ldflags += [ "--target=aarch64-linux-gnu" ]
       }
     } else if (current_cpu == "mipsel" && !is_nacl) {
-      if (is_clang) {
-        if (is_android) {
-          cflags += [ "--target=mipsel-linux-android" ]
-          ldflags += [ "--target=mipsel-linux-android" ]
+      if (custom_toolchain == "") {
+        if (is_clang) {
+          if (is_android) {
+            cflags += [ "--target=mipsel-linux-android" ]
+            ldflags += [ "--target=mipsel-linux-android" ]
+          } else {
+            cflags += [ "--target=mipsel-linux-gnu" ]
+            ldflags += [ "--target=mipsel-linux-gnu" ]
+          }
         } else {
-          cflags += [ "--target=mipsel-linux-gnu" ]
-          ldflags += [ "--target=mipsel-linux-gnu" ]
+          cflags += [ "-EL" ]
+          ldflags += [ "-EL" ]
         }
-      } else {
-        cflags += [ "-EL" ]
-        ldflags += [ "-EL" ]
       }
 
       if (mips_arch_variant == "r6") {
@@ -737,12 +738,14 @@ config("compiler_cpu_abi") {
 
       cflags += [ "-m${mips_float_abi}-float" ]
     } else if (current_cpu == "mips" && !is_nacl) {
-      if (is_clang) {
-        cflags += [ "--target=mips-linux-gnu" ]
-        ldflags += [ "--target=mips-linux-gnu" ]
-      } else {
-        cflags += [ "-EB" ]
-        ldflags += [ "-EB" ]
+      if (custom_toolchain == "") {
+        if (is_clang) {
+          cflags += [ "--target=mips-linux-gnu" ]
+          ldflags += [ "--target=mips-linux-gnu" ]
+        } else {
+          cflags += [ "-EB" ]
+          ldflags += [ "-EB" ]
+        }
       }
 
       if (mips_arch_variant == "r6") {
@@ -779,23 +782,25 @@ config("compiler_cpu_abi") {
 
       cflags += [ "-m${mips_float_abi}-float" ]
     } else if (current_cpu == "mips64el") {
-      if (is_clang) {
-        if (is_android) {
-          cflags += [ "--target=mips64el-linux-android" ]
-          ldflags += [ "--target=mips64el-linux-android" ]
+      if (custom_toolchain == "") {
+        if (is_clang) {
+          if (is_android) {
+            cflags += [ "--target=mips64el-linux-android" ]
+            ldflags += [ "--target=mips64el-linux-android" ]
+          } else {
+            cflags += [ "--target=mips64el-linux-gnuabi64" ]
+            ldflags += [ "--target=mips64el-linux-gnuabi64" ]
+          }
         } else {
-          cflags += [ "--target=mips64el-linux-gnuabi64" ]
-          ldflags += [ "--target=mips64el-linux-gnuabi64" ]
+          cflags += [
+            "-EL",
+            "-mabi=64",
+          ]
+          ldflags += [
+            "-EL",
+            "-mabi=64",
+          ]
         }
-      } else {
-        cflags += [
-          "-EL",
-          "-mabi=64",
-        ]
-        ldflags += [
-          "-EL",
-          "-mabi=64",
-        ]
       }
 
       if (mips_arch_variant == "r6") {
@@ -831,18 +836,20 @@ config("compiler_cpu_abi") {
         ]
       }
     } else if (current_cpu == "mips64") {
-      if (is_clang) {
-        cflags += [ "--target=mips64-linux-gnuabi64" ]
-        ldflags += [ "--target=mips64-linux-gnuabi64" ]
-      } else {
-        cflags += [
-          "-EB",
-          "-mabi=64",
-        ]
-        ldflags += [
-          "-EB",
-          "-mabi=64",
-        ]
+      if (custom_toolchain == "") {
+        if (is_clang) {
+          cflags += [ "--target=mips64-linux-gnuabi64" ]
+          ldflags += [ "--target=mips64-linux-gnuabi64" ]
+        } else {
+          cflags += [
+            "-EB",
+            "-mabi=64",
+          ]
+          ldflags += [
+            "-EB",
+            "-mabi=64",
+          ]
+        }
       }
 
       if (mips_arch_variant == "r6") {
@@ -1231,6 +1238,15 @@ config("default_warnings") {
       # Don't warn about "maybe" uninitialized. Clang doesn't include this
       # in -Wall but gcc does, and it gives false positives.
       cflags += [ "-Wno-maybe-uninitialized" ]
+      cflags += [ "-Wno-deprecated-declarations" ]
+
+      # GCC assumes 'this' is never nullptr and optimizes away code
+      # like "if (this == nullptr) ...": [1].  However, some Chromium
+      # code relies on these types of null pointer checks [2], so
+      # disable this optimization.
+      # [1] https://gcc.gnu.org/gcc-6/porting_to.html#this-cannot-be-null
+      # [2] https://crbug.com/784492#c13
+      cflags += [ "-fno-delete-null-pointer-checks" ]
     }
   }
 
@@ -1298,17 +1314,13 @@ config("default_warnings") {
         "-Wno-null-pointer-arithmetic",
 
         # TODO(hans): https://crbug.com/767059
-        "-Wno-tautological-unsigned-enum-zero-compare",
+        # Disable -Wtautological-constant-compare (and implicitly also
+        # -Wtautological-unsigned-enum-zero-compare), but re-enable
+        # useful sub-diagnostics in that group.
+        "-Wno-tautological-constant-compare",
+        "-Wtautological-constant-out-of-range-compare",
       ]
-      if (llvm_force_head_revision) {
-        cflags += [
-          # TODO(hans): https://crbug.com/767059
-          "-Wno-tautological-constant-compare",
-        ]
-      }
-    } else if (use_xcode_clang && xcode_version_int >= 830) {
-      # This is necessary to allow a progressive transition from using xcode 8.0
-      # to 8.3 or more recent. Remove when all bots are migrated to 8.3.
+    } else if (use_xcode_clang) {
       cflags += [
         # TODO(thakis): https://crbug.com/604888
         "-Wno-undefined-var-template",
@@ -1423,6 +1435,18 @@ config("no_chromium_code") {
   configs = [ ":default_warnings" ]
 }
 
+# noshadowing -----------------------------------------------------------------
+#
+# Allows turning -Wshadow on.
+
+config("noshadowing") {
+  # This flag has to be disabled for nacl because the nacl compiler is too
+  # strict about shadowing.
+  if (is_clang && !is_nacl) {
+    cflags = [ "-Wshadow" ]
+  }
+}
+
 # rtti ------------------------------------------------------------------------
 #
 # Allows turning Run-Time Type Identification on or off.
@@ -1444,6 +1468,31 @@ config("no_rtti") {
       cflags_cc = [ "-fno-rtti" ]
       cflags_objcc = cflags_cc
     }
+  }
+}
+
+# exceptions -------------------------------------------------------------------
+#
+# Allows turning Exceptions on or off.
+
+config("exceptions") {
+  if (is_win) {
+    # Enables exceptions in the STL.
+    defines = [ "_HAS_EXCEPTIONS=1" ]
+    cflags_cc = [ "/EHsc" ]
+  } else {
+    cflags_cc = [ "-fexceptions" ]
+    cflags_objcc = cflags_cc
+  }
+}
+
+config("no_exceptions") {
+  if (is_win) {
+    # Disables exceptions in the STL.
+    defines = [ "_HAS_EXCEPTIONS=0" ]
+  } else {
+    cflags_cc = [ "-fno-exceptions" ]
+    cflags_objcc = cflags_cc
   }
 }
 
@@ -1839,8 +1888,8 @@ config("afdo") {
 # Full symbols.
 config("symbols") {
   if (is_win) {
-    if (use_goma) {
-      # Note that this requires is_win_fastlink, enforced elsewhere.
+    if (use_goma || is_clang) {
+      # Note that with VC++ this requires is_win_fastlink, enforced elsewhere.
       cflags = [ "/Z7" ]  # Debug information in the .obj files.
     } else {
       cflags = [ "/Zi" ]  # Produce PDB file, no edit and continue.

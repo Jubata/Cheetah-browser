@@ -154,8 +154,21 @@ void PostProcessingPipelineImpl::SetPostProcessorConfig(
               [&name](PostProcessorInfo& p) { return p.name == name; });
   if (it != processors_.end()) {
     it->ptr->UpdateParameters(config);
-    LOG(INFO) << "Config string:\n"
-              << config << "\nwas delivered to postprocessor " << name;
+    LOG(INFO) << "Config string: " << config
+              << " was delivered to postprocessor " << name;
+  }
+}
+
+// Set content type.
+void PostProcessingPipelineImpl::SetContentType(AudioContentType content_type) {
+  for (auto& processor : processors_) {
+    processor.ptr->SetContentType(content_type);
+  }
+}
+
+void PostProcessingPipelineImpl::UpdatePlayoutChannel(int channel) {
+  for (auto& processor : processors_) {
+    processor.ptr->SetPlayoutChannel(channel);
   }
 }
 

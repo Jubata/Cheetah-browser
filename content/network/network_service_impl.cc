@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "content/network/network_context.h"
 #include "content/public/common/content_switches.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -20,14 +21,39 @@
 #include "net/log/net_log_util.h"
 #include "net/url_request/url_request_context_builder.h"
 
-#if defined(OS_ANDROID)
-#include "net/android/network_change_notifier_factory_android.h"
-#endif
-
 namespace content {
 
-std::unique_ptr<NetworkService> NetworkService::Create(net::NetLog* net_log) {
-  return std::make_unique<NetworkServiceImpl>(nullptr, net_log);
+namespace {
+
+std::unique_ptr<net::NetworkChangeNotifier>
+CreateNetworkChangeNotifierIfNeeded() {
+  // There is a global singleton net::NetworkChangeNotifier if NetworkService
+  // is running inside of the browser process.
+  if (!net::NetworkChangeNotifier::HasNetworkChangeNotifier()) {
+#if defined(OS_ANDROID)
+    // On Android, NetworkChangeNotifier objects are always set up in process
+    // before NetworkService is run.
+    return nullptr;
+#elif defined(OS_CHROMEOS) || defined(OS_IOS) || defined(OS_FUCHSIA)
+    // ChromeOS has its own implementation of NetworkChangeNotifier that lives
+    // outside of //net. iOS doesn't embed //content. Fuchsia doesn't have an
+    // implementation yet.
+    // TODO(xunjieli): Figure out what to do for these 3 platforms.
+    NOTIMPLEMENTED();
+    return nullptr;
+#endif
+    return base::WrapUnique(net::NetworkChangeNotifier::Create());
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+std::unique_ptr<NetworkService> NetworkService::Create(
+    mojom::NetworkServiceRequest request,
+    net::NetLog* net_log) {
+  return std::make_unique<NetworkServiceImpl>(nullptr, std::move(request),
+                                              net_log);
 }
 
 class NetworkServiceImpl::MojoNetLog : public net::NetLog {
@@ -64,6 +90,7 @@ class NetworkServiceImpl::MojoNetLog : public net::NetLog {
 
 NetworkServiceImpl::NetworkServiceImpl(
     std::unique_ptr<service_manager::BinderRegistry> registry,
+    mojom::NetworkServiceRequest request,
     net::NetLog* net_log)
     : registry_(std::move(registry)), binding_(this) {
   // |registry_| is nullptr when an in-process NetworkService is
@@ -71,32 +98,15 @@ NetworkServiceImpl::NetworkServiceImpl(
   // CreateNetworkContextWithBuilder to ease the transition to using the
   // network service.
   if (registry_) {
+    DCHECK(!request.is_pending());
     registry_->AddInterface<mojom::NetworkService>(
         base::Bind(&NetworkServiceImpl::Create, base::Unretained(this)));
+  } else {
+    Create(std::move(request));
   }
 
-  std::unique_ptr<net::NetworkChangeNotifier> network_change_notifier;
-  // There is a global singleton net::NetworkChangeNotifier if NetworkService
-  // is running inside of the browser process.
-  if (!net::NetworkChangeNotifier::HasNetworkChangeNotifier()) {
-#if defined(OS_ANDROID)
-    network_change_notifier_factory_ =
-        std::make_unique<net::NetworkChangeNotifierFactoryAndroid>();
-    network_change_notifier =
-        base::WrapUnique(network_change_notifier_factory_->CreateInstance());
-#elif defined(OS_CHROMEOS) || defined(OS_IOS) || defined(OS_FUCHSIA)
-    // ChromeOS has its own implementation of NetworkChangeNotifier that lives
-    // outside of //net. iOS doesn't embed //content. Fuchsia doesn't have an
-    // implementation yet.
-    // TODO(xunjieli): Figure out what to do for these 3 platforms.
-    NOTIMPLEMENTED();
-#else
-    network_change_notifier =
-        base::WrapUnique(net::NetworkChangeNotifier::Create());
-#endif
-  }
   network_change_manager_ = std::make_unique<NetworkChangeManager>(
-      std::move(network_change_notifier));
+      CreateNetworkChangeNotifierIfNeeded());
 
   if (net_log) {
     net_log_ = net_log;
@@ -154,6 +164,10 @@ void NetworkServiceImpl::DeregisterNetworkContext(
   network_contexts_.erase(network_context);
 }
 
+void NetworkServiceImpl::SetClient(mojom::NetworkServiceClientPtr client) {
+  client_ = std::move(client);
+}
+
 void NetworkServiceImpl::CreateNetworkContext(
     mojom::NetworkContextRequest request,
     mojom::NetworkContextParamsPtr params) {
@@ -191,7 +205,7 @@ net::NetLog* NetworkServiceImpl::net_log() const {
 }
 
 void NetworkServiceImpl::GetNetworkChangeManager(
-    mojom::NetworkChangeManagerRequest request) {
+    network::mojom::NetworkChangeManagerRequest request) {
   network_change_manager_->AddRequest(std::move(request));
 }
 

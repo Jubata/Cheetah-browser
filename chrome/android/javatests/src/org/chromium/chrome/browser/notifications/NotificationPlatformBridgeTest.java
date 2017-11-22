@@ -28,7 +28,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.ThreadUtils;
-import org.chromium.base.annotations.SuppressFBWarnings;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisabledTest;
@@ -288,6 +287,9 @@ public class NotificationPlatformBridgeTest {
         // no significance, but needs to be high enough to not cause flakiness as it's set by the
         // renderer process on notification creation.
         Assert.assertTrue(Math.abs(System.currentTimeMillis() - notification.when) < 60 * 1000);
+
+        boolean timestampIsShown = NotificationTestUtil.getExtraShownWhen(notification);
+        Assert.assertTrue("Timestamp should be shown", timestampIsShown);
 
         Assert.assertNotNull(
                 NotificationTestUtil.getLargeIconFromNotification(context, notification));
@@ -759,7 +761,6 @@ public class NotificationPlatformBridgeTest {
      * notification with the same tag to be dismissed prior to being shown.
      */
     @Test
-    @SuppressFBWarnings("DLS_DEAD_LOCAL_STORE")
     @MediumTest
     @Feature({"Browser", "Notifications"})
     public void testNotificationTagReplacement() throws Exception {

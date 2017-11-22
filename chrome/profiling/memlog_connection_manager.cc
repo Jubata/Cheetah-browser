@@ -184,10 +184,6 @@ void MemlogConnectionManager::OnConnectionCompleteThunk(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
     base::WeakPtr<MemlogConnectionManager> connection_manager,
     base::ProcessId pid) {
-  // Temporary debugging for https://crbug.com/765836.
-  LOG(ERROR) << "Memlog debugging: "
-                "MemlogConnectionManager::OnConnectionCompleteThunk for pid: "
-             << pid;
   task_runner->PostTask(
       FROM_HERE, base::BindOnce(&MemlogConnectionManager::OnConnectionComplete,
                                 connection_manager, pid));
@@ -232,6 +228,13 @@ void MemlogConnectionManager::DumpProcessesForTracing(
     mojom::ProfilingService::DumpProcessesForTracingCallback callback,
     memory_instrumentation::mojom::GlobalMemoryDumpPtr dump) {
   base::AutoLock lock(connections_lock_);
+
+  // Early out if there are no connections.
+  if (connections_.empty()) {
+    std::move(callback).Run(
+        std::vector<profiling::mojom::SharedBufferWithSizePtr>());
+    return;
+  }
 
   auto tracking = base::MakeRefCounted<DumpProcessesForTracingTracking>();
   tracking->backtrace_storage_lock =

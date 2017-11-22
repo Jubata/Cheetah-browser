@@ -108,11 +108,6 @@
     "args": ["--stable-release-mode"]
   },
   {
-    "prefix": "stable",
-    "base": "svg/transforms/stable",
-    "args": ["--stable-release-mode"]
-  },
-  {
     "prefix": "feature-policy-permissions",
     "base": "external/wpt/mediacapture-streams",
     "args": ["--enable-features=UseFeaturePolicyForPermissions",
@@ -274,13 +269,25 @@
     "args": ["--enable-slimming-paint-v2"]
   },
   {
+    "prefix": "spv175",
+    "base": "compositing",
+    "args": ["--enable-slimming-paint-v175"],
+    "references_use_default_args": true
+  },
+  {
+    "prefix": "spv175",
+    "base": "paint",
+    "args": ["--enable-slimming-paint-v175"],
+    "references_use_default_args": true
+  },
+  {
     "prefix": "scalefactor200",
     "base": "fast/hidpi/static",
     "args": ["--force-device-scale-factor=2"]
   },
   {
     "prefix": "scalefactor200",
-    "base": "external/wpt/css-paint-api/hidpi",
+    "base": "external/wpt/css/css-paint-api/hidpi",
     "args": ["--force-device-scale-factor=2"]
   },
   {
@@ -356,6 +363,11 @@
     "args": ["--enable-features=AsmJsToWebAssembly"]
   },
   {
+    "prefix": "pwa-full-code-cache",
+    "base": "http/tests/devtools/service-workers/",
+    "args": ["--enable-features=PWAFullCodeCache"]
+  },
+  {
     "prefix": "service-worker-script-streaming",
     "base": "external/wpt/service-workers",
     "args": ["--enable-features=ServiceWorkerScriptStreaming"]
@@ -424,6 +436,11 @@
     "prefix": "layout_ng",
     "base": "overflow",
     "args": ["--enable-blink-features=LayoutNG"]
+  },
+  {
+    "prefix": "layout_ng_paint",
+    "base": "fast/inline",
+    "args": ["--enable-blink-features=LayoutNG,LayoutNGPaintFragments"]
   },
   {
     "prefix": "feature-policy",
@@ -579,5 +596,20 @@
     "prefix": "mouseevent_fractional",
     "base": "fast/events",
     "args": ["--enable-blink-features=FractionalMouseEvent"]
+  },
+  {
+    "prefix": "incremental-shadow-dom",
+    "base": "external/wpt/shadow-dom",
+    "args": ["--enable-blink-features=IncrementalShadowDOM"]
+  },
+  {
+    "prefix": "incremental-shadow-dom",
+    "base": "fast/dom/shadow",
+    "args": ["--enable-blink-features=IncrementalShadowDOM"]
+  },
+  {
+    "prefix": "incremental-shadow-dom",
+    "base": "shadow-dom",
+    "args": ["--enable-blink-features=IncrementalShadowDOM"]
   }
 ]

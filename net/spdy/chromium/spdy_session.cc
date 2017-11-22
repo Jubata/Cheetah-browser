@@ -18,6 +18,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -76,6 +77,56 @@ const uint32_t kDefaultInitialMaxFrameSize = 16384;
 
 // The maximum size of header list that the server is allowed to send.
 const uint32_t kSpdyMaxHeaderListSize = 256 * 1024;
+
+// Values of Vary response header on pushed streams.  This is logged to
+// Net.PushedStreamVaryResponseHeader, entries must not be changed.
+enum PushedStreamVaryResponseHeaderValues {
+  // There is no Vary header.
+  kNoVaryHeader = 0,
+  // The value of Vary is empty.
+  kVaryIsEmpty = 1,
+  // The value of Vary is "*".
+  kVaryIsStar = 2,
+  // The value of Vary is "accept-encoding" (case insensitive).
+  kVaryIsAcceptEncoding = 3,
+  // The value of Vary contains "accept-encoding" (case insensitive) and some
+  // other field names as well.
+  kVaryHasAcceptEncoding = 4,
+  // The value of Vary does not contain "accept-encoding", is not empty, and is
+  // not "*".
+  kVaryHasNoAcceptEncoding = 5,
+  // The number of entries above.
+  kNumberOfVaryEntries = 6
+};
+
+// String literals for parsing the Vary header in a pushed response.
+const char kVary[] = "vary";
+const char kStar[] = "*";
+const char kAcceptEncoding[] = "accept-encoding";
+
+enum PushedStreamVaryResponseHeaderValues ParseVaryInPushedResponse(
+    const SpdyHeaderBlock& headers) {
+  SpdyHeaderBlock::iterator it = headers.find(kVary);
+  if (it == headers.end())
+    return kNoVaryHeader;
+  base::StringPiece value(it->second);
+  if (value.empty())
+    return kVaryIsEmpty;
+  if (value == kStar)
+    return kVaryIsStar;
+  std::string lowercase_value = ToLowerASCII(value);
+  if (lowercase_value == kAcceptEncoding)
+    return kVaryIsAcceptEncoding;
+  // Both comma and newline delimiters occur in the wild.
+  for (const auto& substr :
+       SplitString(lowercase_value, ",\n", base::TRIM_WHITESPACE,
+                   base::SPLIT_WANT_NONEMPTY)) {
+    if (substr == kAcceptEncoding)
+      return kVaryHasAcceptEncoding;
+  }
+
+  return kVaryHasNoAcceptEncoding;
+}
 
 bool IsSpdySettingAtDefaultInitialValue(SpdySettingsIds setting_id,
                                         uint32_t value) {
@@ -618,54 +669,6 @@ void SpdyStreamRequest::Reset() {
   callback_.Reset();
 }
 
-SpdySession::UnclaimedPushedStreamContainer::UnclaimedPushedStreamContainer(
-    SpdySession* spdy_session)
-    : spdy_session_(spdy_session) {}
-SpdySession::UnclaimedPushedStreamContainer::~UnclaimedPushedStreamContainer() {
-}
-
-size_t SpdySession::UnclaimedPushedStreamContainer::erase(const GURL& url) {
-  const_iterator it = find(url);
-  if (it != end()) {
-    streams_.erase(it);
-    return 1;
-  }
-  return 0;
-}
-
-SpdySession::UnclaimedPushedStreamContainer::iterator
-SpdySession::UnclaimedPushedStreamContainer::erase(const_iterator it) {
-  DCHECK(spdy_session_->pool_);
-  DCHECK(it != end());
-  // Only allow cross-origin push for secure resources.
-  if (it->first.SchemeIsCryptographic()) {
-    spdy_session_->pool_->push_promise_index()->UnregisterUnclaimedPushedStream(
-        it->first, spdy_session_);
-  }
-  return streams_.erase(it);
-}
-
-bool SpdySession::UnclaimedPushedStreamContainer::insert(
-    const GURL& url,
-    SpdyStreamId stream_id,
-    const base::TimeTicks& creation_time) {
-  DCHECK(spdy_session_->pool_);
-  // Only allow cross-origin push for https resources.
-  if (url.SchemeIsCryptographic()) {
-    spdy_session_->pool_->push_promise_index()->RegisterUnclaimedPushedStream(
-        url, spdy_session_->GetWeakPtr());
-  }
-  auto result = streams_.insert(std::make_pair(
-      url, SpdySession::UnclaimedPushedStreamContainer::PushedStreamInfo(
-               stream_id, creation_time)));
-  return result.second;
-}
-
-size_t SpdySession::UnclaimedPushedStreamContainer::EstimateMemoryUsage()
-    const {
-  return SpdyEstimateMemoryUsage(streams_);
-}
-
 // static
 bool SpdySession::CanPool(TransportSecurityState* transport_security_state,
                           const SSLInfo& ssl_info,
@@ -764,7 +767,7 @@ SpdySession::SpdySession(
       streams_abandoned_count_(0),
       pings_in_flight_(0),
       next_ping_id_(1),
-      last_activity_time_(time_func()),
+      last_read_time_(time_func()),
       last_compressed_frame_len_(0),
       check_ping_status_pending_(false),
       session_send_window_size_(0),
@@ -863,10 +866,8 @@ void SpdySession::CancelPush(const GURL& url) {
 
   SpdyStreamId stream_id = unclaimed_it->second.stream_id;
 
-  if (active_streams_.find(stream_id) == active_streams_.end()) {
-    ResetStream(stream_id, ERROR_CODE_CANCEL, "Cancelled push stream.");
-  }
-  unclaimed_pushed_streams_.erase(unclaimed_it);
+  DCHECK(active_streams_.find(stream_id) != active_streams_.end());
+  ResetStream(stream_id, ERROR_CODE_CANCEL, "Cancelled push stream.");
 }
 
 void SpdySession::InitializeWithSocket(
@@ -1378,6 +1379,58 @@ size_t SpdySession::DumpMemoryStats(StreamSocket::SocketMemoryStats* stats,
          SpdyEstimateMemoryUsage(priority_dependency_state_);
 }
 
+SpdySession::UnclaimedPushedStreamContainer::UnclaimedPushedStreamContainer(
+    SpdySession* spdy_session)
+    : spdy_session_(spdy_session) {}
+SpdySession::UnclaimedPushedStreamContainer::~UnclaimedPushedStreamContainer() {
+}
+
+size_t SpdySession::UnclaimedPushedStreamContainer::erase(const GURL& url) {
+  const_iterator it = find(url);
+  if (it != end()) {
+    erase(it);
+    return 1;
+  }
+  return 0;
+}
+
+SpdySession::UnclaimedPushedStreamContainer::iterator
+SpdySession::UnclaimedPushedStreamContainer::erase(const_iterator it) {
+  DCHECK(spdy_session_->pool_);
+  DCHECK(it != end());
+  // Only allow cross-origin push for secure resources.
+  if (it->first.SchemeIsCryptographic()) {
+    spdy_session_->pool_->push_promise_index()->UnregisterUnclaimedPushedStream(
+        it->first, spdy_session_);
+  }
+  return streams_.erase(it);
+}
+
+bool SpdySession::UnclaimedPushedStreamContainer::insert(
+    const GURL& url,
+    SpdyStreamId stream_id,
+    const base::TimeTicks& creation_time) {
+  DCHECK(spdy_session_->pool_);
+  auto result = streams_.insert(std::make_pair(
+      url, SpdySession::UnclaimedPushedStreamContainer::PushedStreamInfo(
+               stream_id, creation_time)));
+  if (!result.second) {
+    // Only one pushed stream is allowed for each URL.
+    return false;
+  }
+  // Only allow cross-origin push for https resources.
+  if (url.SchemeIsCryptographic()) {
+    spdy_session_->pool_->push_promise_index()->RegisterUnclaimedPushedStream(
+        url, spdy_session_->GetWeakPtr());
+  }
+  return true;
+}
+
+size_t SpdySession::UnclaimedPushedStreamContainer::EstimateMemoryUsage()
+    const {
+  return SpdyEstimateMemoryUsage(streams_);
+}
+
 // {,Try}CreateStream() can be called with |in_io_loop_| set if a stream is
 // being created in response to another being closed due to received data.
 
@@ -1881,7 +1934,7 @@ int SpdySession::DoReadComplete(int result) {
   }
   CHECK_LE(result, kReadBufferSize);
 
-  last_activity_time_ = time_func_();
+  last_read_time_ = time_func_();
 
   DCHECK(buffered_spdy_framer_.get());
   char* data = read_buffer_->data();
@@ -2031,8 +2084,6 @@ int SpdySession::DoWriteComplete(int result) {
   CHECK(in_io_loop_);
   DCHECK_NE(result, ERR_IO_PENDING);
   DCHECK_GT(in_flight_write_->GetRemainingSize(), 0u);
-
-  last_activity_time_ = time_func_();
 
   if (result < 0) {
     DCHECK_NE(result, ERR_IO_PENDING);
@@ -2208,7 +2259,7 @@ void SpdySession::SendPrefacePingIfNoneInFlight() {
 
   base::TimeTicks now = time_func_();
   // If there is no activity in the session, then send a preface-PING.
-  if ((now - last_activity_time_) > connection_at_risk_of_loss_time_)
+  if ((now - last_read_time_) > connection_at_risk_of_loss_time_)
     SendPrefacePing();
 }
 
@@ -2279,9 +2330,9 @@ void SpdySession::CheckPingStatus(base::TimeTicks last_check_time) {
   DCHECK(check_ping_status_pending_);
 
   base::TimeTicks now = time_func_();
-  base::TimeDelta delay = hung_interval_ - (now - last_activity_time_);
+  base::TimeDelta delay = hung_interval_ - (now - last_read_time_);
 
-  if (delay.InMilliseconds() < 0 || last_activity_time_ < last_check_time) {
+  if (delay.InMilliseconds() < 0 || last_read_time_ < last_check_time) {
     DoDrainSession(ERR_SPDY_PING_FAILED, "Failed ping.");
     return;
   }
@@ -2387,9 +2438,6 @@ SpdyStream* SpdySession::GetActivePushStream(const GURL& url) {
   net_log_.AddEvent(NetLogEventType::HTTP2_STREAM_ADOPTED_PUSH_STREAM,
                     base::Bind(&NetLogSpdyAdoptedPushStreamCallback,
                                stream->stream_id(), &url));
-  // A stream is in reserved remote state until response headers arrive.
-  UMA_HISTOGRAM_BOOLEAN("Net.PushedStreamAlreadyHasResponseHeaders",
-                        !stream->IsReservedRemote());
   return stream;
 }
 
@@ -2423,6 +2471,14 @@ void SpdySession::RecordProtocolErrorHistogram(
     UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionErrorDetails_Google2", details,
                               NUM_SPDY_PROTOCOL_ERROR_DETAILS);
   }
+}
+
+// static
+void SpdySession::RecordPushedStreamVaryResponseHeaderHistogram(
+    const SpdyHeaderBlock& headers) {
+  UMA_HISTOGRAM_ENUMERATION("Net.PushedStreamVaryResponseHeader",
+                            ParseVaryInPushedResponse(headers),
+                            kNumberOfVaryEntries);
 }
 
 void SpdySession::DcheckGoingAway() const {
@@ -2904,6 +2960,9 @@ void SpdySession::OnHeaders(SpdyStreamId stream_id,
 
   SpdyStream* stream = it->second;
   CHECK_EQ(stream->stream_id(), stream_id);
+
+  if (stream->type() == SPDY_PUSH_STREAM)
+    RecordPushedStreamVaryResponseHeaderHistogram(headers);
 
   stream->AddRawReceivedBytes(last_compressed_frame_len_);
   last_compressed_frame_len_ = 0;

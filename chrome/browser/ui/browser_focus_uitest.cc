@@ -326,6 +326,7 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, DISABLED_TabsRememberFocus) {
 
 // Tabs remember focus with find-in-page box.
 IN_PROC_BROWSER_TEST_F(BrowserFocusTest, TabsRememberFocusFindInPage) {
+  ASSERT_TRUE(ui_test_utils::BringBrowserWindowToFront(browser()));
   const GURL url = embedded_test_server()->GetURL(kSimplePage);
   ui_test_utils::NavigateToURL(browser(), url);
 
@@ -663,8 +664,8 @@ IN_PROC_BROWSER_TEST_F(BrowserFocusTest, NavigateFromOmniboxIntoNewTab) {
   EXPECT_FALSE(IsViewFocused(VIEW_ID_OMNIBOX));
 }
 
-// Flaky on Windows and Mac (http://crbug.com/665296).
-#if defined(OS_WIN) || defined(OS_MACOSX)
+// Flaky on Mac (http://crbug.com/665296).
+#if defined(OS_MACOSX)
 #define MAYBE_FocusOnNavigate DISABLED_FocusOnNavigate
 #else
 #define MAYBE_FocusOnNavigate FocusOnNavigate

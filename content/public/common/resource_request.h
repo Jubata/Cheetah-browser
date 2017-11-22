@@ -20,8 +20,8 @@
 #include "net/base/request_priority.h"
 #include "net/http/http_request_headers.h"
 #include "services/network/public/interfaces/fetch_api.mojom.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
-#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
@@ -59,8 +59,8 @@ struct CONTENT_EXPORT ResourceRequest {
   blink::WebReferrerPolicy referrer_policy = blink::kWebReferrerPolicyAlways;
 
   // The frame's visibility state.
-  blink::WebPageVisibilityState visibility_state =
-      blink::kWebPageVisibilityStateVisible;
+  blink::mojom::PageVisibilityState visibility_state =
+      blink::mojom::PageVisibilityState::kVisible;
 
   // Additional HTTP request headers.
   net::HttpRequestHeaders headers;
@@ -74,6 +74,8 @@ struct CONTENT_EXPORT ResourceRequest {
 
   // What this resource load is for (main frame, sub-frame, sub-resource,
   // object).
+  // TODO(qinmin): this is used for legacy code path. With network service, it
+  // shouldn't know about resource type.
   ResourceType resource_type = RESOURCE_TYPE_MAIN_FRAME;
 
   // The priority of this request determined by Blink.
@@ -88,6 +90,16 @@ struct CONTENT_EXPORT ResourceRequest {
 
   // True if corresponding AppCache group should be resetted.
   bool should_reset_appcache = false;
+
+  // https://wicg.github.io/cors-rfc1918/#external-request
+  // TODO(toyoshim): The browser should know better than renderers do.
+  // This is used to plumb Blink decided information for legacy code path, but
+  // eventually we should remove this.
+  bool is_external_request = false;
+
+  // A policy to decide if CORS-preflight fetch should be performed.
+  network::mojom::CORSPreflightPolicy cors_preflight_policy =
+      network::mojom::CORSPreflightPolicy::kConsiderPreflight;
 
   // Indicates which frame (or worker context) the request is being loaded into,
   // or kInvalidServiceWorkerProviderId.

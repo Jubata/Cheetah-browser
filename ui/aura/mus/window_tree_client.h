@@ -118,6 +118,12 @@ class AURA_EXPORT WindowTreeClient
   // See mojom for details on |automatically_create_display_roots|.
   void ConnectAsWindowManager(bool automatically_create_display_roots = true);
 
+  // Connects to mus such that a single WindowTreeHost is created. This blocks
+  // until the WindowTreeHost is obtained and calls
+  // WindowTreeClientDelegate::OnEmbed() with the WindowTreeHost. This entry
+  // point is mostly useful for testing and examples.
+  void ConnectViaWindowTreeHostFactory();
+
   void DisableDragDropClient() { install_drag_drop_client_ = false; }
 
   service_manager::Connector* connector() { return connector_; }
@@ -184,6 +190,8 @@ class AURA_EXPORT WindowTreeClient
 
   void AddTestObserver(WindowTreeClientTestObserver* observer);
   void RemoveTestObserver(WindowTreeClientTestObserver* observer);
+
+  ui::Gpu* gpu() { return gpu_.get(); }
 
  private:
   friend class InFlightBoundsChange;
@@ -448,6 +456,9 @@ class AURA_EXPORT WindowTreeClient
 
   // Overridden from WindowManager:
   void OnConnect() override;
+  void WmOnAcceleratedWidgetForDisplay(
+      int64_t display,
+      gpu::SurfaceHandle surface_handle) override;
   void WmNewDisplayAdded(
       const display::Display& display,
       ui::mojom::WindowDataPtr root_data,
@@ -467,7 +478,7 @@ class AURA_EXPORT WindowTreeClient
   void WmSetCanFocus(Id window_id, bool can_focus) override;
   void WmCreateTopLevelWindow(
       uint32_t change_id,
-      ClientSpecificId requesting_client_id,
+      const viz::FrameSinkId& frame_sink_id,
       const std::unordered_map<std::string, std::vector<uint8_t>>&
           transport_properties) override;
   void WmClientJankinessChanged(ClientSpecificId client_id,

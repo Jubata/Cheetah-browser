@@ -18,7 +18,7 @@
 #include "services/service_manager/public/cpp/service_test.h"
 #include "services/ui/public/interfaces/constants.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
-#include "services/ui/public/interfaces/window_tree_host.mojom.h"
+#include "services/ui/public/interfaces/window_tree_host_factory.mojom.h"
 #include "services/ui/ws/ids.h"
 #include "services/ui/ws/test_change_tracker.h"
 #include "services/ui/ws/window_server_service_test_base.h"
@@ -181,7 +181,7 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
       return;
 
     ASSERT_TRUE(wait_state_.get() == nullptr);
-    wait_state_ = base::MakeUnique<WaitState>();
+    wait_state_ = std::make_unique<WaitState>();
     wait_state_->change_count = count;
     wait_state_->run_loop.Run();
     wait_state_.reset();
@@ -193,14 +193,14 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
   void WaitForOnEmbed() {
     if (tree_)
       return;
-    embed_run_loop_ = base::MakeUnique<base::RunLoop>();
+    embed_run_loop_ = std::make_unique<base::RunLoop>();
     embed_run_loop_->Run();
     embed_run_loop_.reset();
   }
 
   bool WaitForChangeCompleted(uint32_t id) {
     waiting_change_id_ = id;
-    change_completed_run_loop_ = base::MakeUnique<base::RunLoop>();
+    change_completed_run_loop_ = std::make_unique<base::RunLoop>();
     change_completed_run_loop_->Run();
     return on_change_completed_result_;
   }
@@ -232,11 +232,9 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
   }
 
   // Waits for all messages to be received by |ws|. This is done by attempting
-  // to create a bogus window. When we get the response we know all messages
-  // have been processed.
-  bool WaitForAllMessages() {
-    return NewWindowWithCompleteId(kInvalidClientId) == 0;
-  }
+  // to set opacity on an embed/invalid window. 1.0f is the default opacity
+  // value. When we get the response we know all messages have been processed.
+  bool WaitForAllMessages() { return !SetWindowOpacity(0, 1.0f); }
 
   Id NewWindow(ClientSpecificId window_id) {
     return NewWindowWithCompleteId(window_id);
@@ -470,13 +468,16 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
   void GetWindowManager(mojo::AssociatedInterfaceRequest<mojom::WindowManager>
                             internal) override {
     window_manager_binding_ =
-        base::MakeUnique<mojo::AssociatedBinding<mojom::WindowManager>>(
+        std::make_unique<mojo::AssociatedBinding<mojom::WindowManager>>(
             this, std::move(internal));
     tree_->GetWindowManagerClient(MakeRequest(&window_manager_client_));
   }
 
   // mojom::WindowManager:
   void OnConnect() override {}
+  void WmOnAcceleratedWidgetForDisplay(
+      int64_t display,
+      gpu::SurfaceHandle surface_handle) override {}
   void WmNewDisplayAdded(
       const display::Display& display,
       mojom::WindowDataPtr root_data,
@@ -504,7 +505,7 @@ class TestWindowTreeClient : public mojom::WindowTreeClient,
   void WmSetCanFocus(uint32_t window_id, bool can_focus) override {}
   void WmCreateTopLevelWindow(
       uint32_t change_id,
-      ClientSpecificId requesting_client_id,
+      const viz::FrameSinkId& frame_sink_id,
       const std::unordered_map<std::string, std::vector<uint8_t>>& properties)
       override {
     NOTIMPLEMENTED();
@@ -589,7 +590,7 @@ class WindowTreeClientFactory {
   std::unique_ptr<TestWindowTreeClient> WaitForInstance() {
     if (!client_impl_.get()) {
       DCHECK(!run_loop_);
-      run_loop_ = base::MakeUnique<base::RunLoop>();
+      run_loop_ = std::make_unique<base::RunLoop>();
       run_loop_->Run();
       run_loop_.reset();
     }
@@ -598,7 +599,7 @@ class WindowTreeClientFactory {
 
   void BindWindowTreeClientRequest(
       mojom::WindowTreeClientRequest request) {
-    client_impl_ = base::MakeUnique<TestWindowTreeClient>();
+    client_impl_ = std::make_unique<TestWindowTreeClient>();
     client_impl_->Bind(std::move(request));
     if (run_loop_.get())
       run_loop_->Quit();
@@ -716,7 +717,7 @@ class WindowTreeClientTest : public WindowServerServiceTestBase {
   }
 
   void SetUp() override {
-    client_factory_ = base::MakeUnique<WindowTreeClientFactory>();
+    client_factory_ = std::make_unique<WindowTreeClientFactory>();
     registry_.AddInterface(
         base::Bind(&WindowTreeClientFactory::BindWindowTreeClientRequest,
                    base::Unretained(client_factory_.get())));
@@ -727,7 +728,7 @@ class WindowTreeClientTest : public WindowServerServiceTestBase {
     connector()->BindInterface(ui::mojom::kServiceName, &factory);
 
     mojom::WindowTreeClientPtr tree_client_ptr;
-    wt_client1_ = base::MakeUnique<TestWindowTreeClient>();
+    wt_client1_ = std::make_unique<TestWindowTreeClient>();
     wt_client1_->Bind(MakeRequest(&tree_client_ptr));
 
     factory->CreateWindowTreeHost(MakeRequest(&host_),
@@ -1580,7 +1581,10 @@ TEST_F(WindowTreeClientTest, EmbedWithSameWindowId2) {
   // Create a window in the third client and parent it to the root.
   Id window_3_1 = wt_client3()->NewWindow(1);
   ASSERT_TRUE(window_3_1);
-  ASSERT_TRUE(wt_client3()->AddWindow(window_1_1, window_3_1));
+  // After EstablishThirdClient, window_1_1 should have a ClientWindowId of
+  // (client_id_2, 0).
+  Id embedded_window_1_1_wt3 = BuildWindowId(client_id_2(), 0);
+  ASSERT_TRUE(wt_client3()->AddWindow(embedded_window_1_1_wt3, window_3_1));
 
   // wt1 created window_1_1 but not window_3_1.
   Id window11_in_wt1 = LoWord(window_1_1);
@@ -1601,15 +1605,18 @@ TEST_F(WindowTreeClientTest, EmbedWithSameWindowId2) {
     // We should get a new client for the new embedding.
     std::unique_ptr<TestWindowTreeClient> client4(
         EstablishClientViaEmbed(wt1(), window_1_1));
+    Id embedded_window_1_1_wt4 = BuildWindowId(client_id_3(), 0);
     ASSERT_TRUE(client4.get());
-    EXPECT_EQ("[" + WindowParentToString(window_1_1, kNullParentId) + "]",
+    EXPECT_EQ("[" +
+                  WindowParentToString(embedded_window_1_1_wt4, kNullParentId) +
+                  "]",
               ChangeWindowDescription(*client4->tracker()->changes()));
 
     // And 3 should get an unembed and delete.
     wt_client3_->WaitForChangeCount(2);
-    EXPECT_EQ("OnUnembed window=" + IdToString(window_1_1),
+    EXPECT_EQ("OnUnembed window=" + IdToString(embedded_window_1_1_wt3),
               ChangesToDescription1(*changes3())[0]);
-    EXPECT_EQ("WindowDeleted window=" + IdToString(window_1_1),
+    EXPECT_EQ("WindowDeleted window=" + IdToString(embedded_window_1_1_wt3),
               ChangesToDescription1(*changes3())[1]);
   }
 
@@ -2397,8 +2404,8 @@ TEST_F(WindowTreeClientTest, SurfaceIdPropagation) {
   viz::FrameSinkId frame_sink_id =
       changes1()->back().surface_id.frame_sink_id();
   // FrameSinkId is based on window's ClientWindowId.
-  EXPECT_NE(0u, frame_sink_id.client_id());
-  EXPECT_EQ(LoWord(window_1_100), frame_sink_id.sink_id());
+  EXPECT_EQ(static_cast<size_t>(client_id_2()), frame_sink_id.client_id());
+  EXPECT_EQ(0u, frame_sink_id.sink_id());
   changes1()->clear();
 
   // The first window created in the second client gets a server id of

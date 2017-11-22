@@ -91,6 +91,7 @@ cr.define('cr.login', function() {
     'menuGuestMode',             // Enables "Guest mode" menu item
     'menuKeyboardOptions',       // Enables "Keyboard options" menu item
     'menuEnterpriseEnrollment',  // Enables "Enterprise enrollment" menu item.
+    'lsbReleaseBoard',           // Chrome OS Release board name
 
     // The email fields allow for the following possibilities:
     //
@@ -328,6 +329,9 @@ cr.define('cr.login', function() {
           mi += 'ee,';
         if (mi.length)
           url = appendParam(url, 'mi', mi);
+
+        if (data.lsbReleaseBoard)
+          url = appendParam(url, 'chromeos_board', data.lsbReleaseBoard);
       }
     } else {
       url = appendParam(url, 'continue', this.continueUrl_);
@@ -428,8 +432,10 @@ cr.define('cr.login', function() {
    * @private
    */
   Authenticator.prototype.onFocus_ = function(e) {
-    if (this.authMode == AuthMode.DESKTOP)
+    if (this.authMode == AuthMode.DESKTOP &&
+        document.activeElement == document.body) {
       this.webview_.focus();
+    }
   };
 
   /**

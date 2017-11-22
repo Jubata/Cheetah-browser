@@ -184,11 +184,6 @@ ui::TextEditCommand GetCommandForKeyEvent(const ui::KeyEvent& event) {
   }
 }
 
-const gfx::FontList& GetDefaultFontList() {
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  return rb.GetFontListWithDelta(ui::kLabelFontSizeDelta);
-}
-
 // Returns the ui::TextEditCommand corresponding to the |command_id| menu
 // action. |has_selection| is true if the textfield has an active selection.
 // Keep in sync with UpdateContextMenu.
@@ -247,6 +242,12 @@ size_t Textfield::GetCaretBlinkMs() {
     return (system_value == INFINITE) ? 0 : system_value;
 #endif
   return default_value;
+}
+
+// static
+const gfx::FontList& Textfield::GetDefaultFontList() {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  return rb.GetFontListWithDelta(ui::kLabelFontSizeDelta);
 }
 
 Textfield::Textfield()
@@ -378,8 +379,7 @@ SkColor Textfield::GetTextColor() const {
   if (!use_default_text_color_)
     return text_color_;
 
-  return style::GetColor(style::CONTEXT_TEXTFIELD, GetTextStyle(),
-                         GetNativeTheme());
+  return style::GetColor(*this, style::CONTEXT_TEXTFIELD, GetTextStyle());
 }
 
 void Textfield::SetTextColor(SkColor color) {
@@ -565,6 +565,10 @@ void Textfield::ClearEditHistory() {
 
 void Textfield::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
+}
+
+void Textfield::SetGlyphSpacing(int spacing) {
+  GetRenderText()->set_glyph_spacing(spacing);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1964,7 +1968,6 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
   if (cursor_changed) {
     UpdateCursorViewPosition();
     UpdateCursorVisibility();
-    NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_SELECTION_CHANGED, true);
   }
   if (text_changed || cursor_changed) {
     OnCaretBoundsChanged();
@@ -2002,7 +2005,9 @@ void Textfield::PaintTextAndCursor(gfx::Canvas* canvas) {
   gfx::RenderText* render_text = GetRenderText();
   if (text().empty() && !GetPlaceholderText().empty()) {
     canvas->DrawStringRectWithFlags(
-        GetPlaceholderText(), GetFontList(),
+        GetPlaceholderText(),
+        placeholder_font_list_.has_value() ? placeholder_font_list_.value()
+                                           : GetFontList(),
         ui::MaterialDesignController::IsSecondaryUiMaterial()
             ? SkColorSetA(GetTextColor(), 0x83)
             : placeholder_text_color_,
@@ -2030,6 +2035,7 @@ void Textfield::OnCaretBoundsChanged() {
     GetInputMethod()->OnCaretBoundsChanged(this);
   if (touch_selection_controller_)
     touch_selection_controller_->SelectionChanged();
+  NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_SELECTION_CHANGED, true);
 }
 
 void Textfield::OnBeforeUserAction() {

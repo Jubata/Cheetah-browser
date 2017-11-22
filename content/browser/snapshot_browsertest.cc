@@ -12,6 +12,7 @@
 
 #include "base/command_line.h"
 #include "base/rand_util.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -249,8 +250,15 @@ IN_PROC_BROWSER_TEST_F(SnapshotBrowserTest, SingleWindowTest) {
   }
 }
 
-// Seem to time out because they're too slow on Windows Debug: crbug.com/771119
-#if defined(OS_WIN) && !defined(NDEBUG)
+// Timing out either all the time, or infrequently, apparently because
+// they're too slow, on the following configurations:
+//   Windows Debug
+//   Linux Chromium OS ASAN LSAN Tests (1)
+//   Linux TSAN Tests
+// See crbug.com/771119
+#if (defined(OS_WIN) && !defined(NDEBUG)) ||                \
+    (defined(OS_CHROMEOS) && defined(ADDRESS_SANITIZER)) || \
+    (defined(OS_LINUX) && defined(THREAD_SANITIZER))
 #define MAYBE_SyncMultiWindowTest DISABLED_SyncMultiWindowTest
 #define MAYBE_AsyncMultiWindowTest DISABLED_AsyncMultiWindowTest
 #else

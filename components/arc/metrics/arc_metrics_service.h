@@ -14,7 +14,7 @@
 #include "base/timer/timer.h"
 #include "components/arc/common/metrics.mojom.h"
 #include "components/arc/common/process.mojom.h"
-#include "components/arc/instance_holder.h"
+#include "components/arc/connection_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/binding.h"
 
@@ -27,10 +27,9 @@ namespace arc {
 class ArcBridgeService;
 
 // Collects information from other ArcServices and send UMA metrics.
-class ArcMetricsService
-    : public KeyedService,
-      public InstanceHolder<mojom::MetricsInstance>::Observer,
-      public mojom::MetricsHost {
+class ArcMetricsService : public KeyedService,
+                          public ConnectionObserver<mojom::MetricsInstance>,
+                          public mojom::MetricsHost {
  public:
   // Returns singleton instance for the given BrowserContext,
   // or nullptr if the browser |context| is not allowed to use ARC.
@@ -41,13 +40,13 @@ class ArcMetricsService
                     ArcBridgeService* bridge_service);
   ~ArcMetricsService() override;
 
-  // InstanceHolder<mojom::MetricsInstance>::Observer overrides.
-  void OnInstanceReady() override;
-  void OnInstanceClosed() override;
+  // ConnectionObserver<mojom::MetricsInstance> overrides.
+  void OnConnectionReady() override;
+  void OnConnectionClosed() override;
 
-  // Implementations for InstanceHolder<mojom::ProcessInstance>::Observer.
-  void OnProcessInstanceReady();
-  void OnProcessInstanceClosed();
+  // Implementations for ConnectionObserver<mojom::ProcessInstance>.
+  void OnProcessConnectionReady();
+  void OnProcessConnectionClosed();
 
   // MetricsHost overrides.
   void ReportBootProgress(std::vector<mojom::BootProgressEventPtr> events,
@@ -55,16 +54,15 @@ class ArcMetricsService
 
  private:
   // Adapter to be able to also observe ProcessInstance events.
-  class ProcessObserver
-      : public InstanceHolder<mojom::ProcessInstance>::Observer {
+  class ProcessObserver : public ConnectionObserver<mojom::ProcessInstance> {
    public:
     explicit ProcessObserver(ArcMetricsService* arc_metrics_service);
     ~ProcessObserver() override;
 
    private:
-    // InstanceHolder<mojom::ProcessInstance>::Observer overrides.
-    void OnInstanceReady() override;
-    void OnInstanceClosed() override;
+    // ConnectionObserver<mojom::ProcessInstance> overrides.
+    void OnConnectionReady() override;
+    void OnConnectionClosed() override;
 
     ArcMetricsService* arc_metrics_service_;
 
@@ -75,7 +73,9 @@ class ArcMetricsService
   void ParseProcessList(std::vector<mojom::RunningAppProcessInfoPtr> processes);
 
   // DBus callbacks.
-  void OnArcStartTimeRetrieved(base::Optional<base::TimeTicks> arc_start_time);
+  void OnArcStartTimeRetrieved(std::vector<mojom::BootProgressEventPtr> events,
+                               mojom::BootType boot_type,
+                               base::Optional<base::TimeTicks> arc_start_time);
 
   THREAD_CHECKER(thread_checker_);
 
@@ -85,8 +85,6 @@ class ArcMetricsService
 
   ProcessObserver process_observer_;
   base::RepeatingTimer timer_;
-
-  base::TimeTicks arc_start_time_;
 
   // Always keep this the last member of this class to make sure it's the
   // first thing to be destructed.

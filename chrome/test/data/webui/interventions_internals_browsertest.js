@@ -44,25 +44,38 @@ InterventionsInternalsUITest.prototype = {
      */
     class TestPageHandler extends TestBrowserProxy {
       constructor() {
-        super(['getPreviewsEnabled']);
+        super(['getPreviewsEnabled', 'getPreviewsFlagsDetails']);
 
         /** @private {!Map} */
-        this.statuses_ = new Map();
+        this.previewsModeStatuses_ = new Map();
+        this.previewsFlagsStatuses_ = new Map();
       }
 
       /**
-       * Setup testing map.
+       * Setup testing map for getPreviewsEnabled.
        * @param {!Map} map The testing status map.
        */
-      setTestingMap(map) {
-        this.statuses_ = map;
+      setTestingPreviewsModeMap(map) {
+        this.previewsModeStatuses_ = map;
+      }
+
+      setTestingPreviewsFlagsMap(map) {
+        this.previewsFlagsStatuses_ = map;
       }
 
       /** @override **/
       getPreviewsEnabled() {
         this.methodCalled('getPreviewsEnabled');
         return Promise.resolve({
-          statuses: this.statuses_,
+          statuses: this.previewsModeStatuses_,
+        });
+      }
+
+      /** @override **/
+      getPreviewsFlagsDetails() {
+        this.methodCalled('getPreviewsFlagsDetails');
+        return Promise.resolve({
+          flags: this.previewsFlagsStatuses_,
         });
       }
     }
@@ -85,7 +98,7 @@ InterventionsInternalsUITest.prototype = {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
-      }
+      };
 
       let timeString = date.toLocaleDateString('en-US', options);
       return dateString + ' ' + date.getHours() + ':' + date.getMinutes() +
@@ -98,16 +111,12 @@ InterventionsInternalsUITest.prototype = {
   },
 };
 
-TEST_F('InterventionsInternalsUITest', 'DisplayCorrectStatuses', function() {
+TEST_F('InterventionsInternalsUITest', 'GetPreviewsEnabled', function() {
   let setupFnResolver = this.setupFnResolver;
 
   test('DisplayCorrectStatuses', () => {
     // Setup testPageHandler behavior.
     let testMap = new Map();
-    testMap.set('params1', {
-      description: 'Params 1',
-      enabled: true,
-    });
     testMap.set('params2', {
       description: 'Params 2',
       enabled: false,
@@ -116,8 +125,12 @@ TEST_F('InterventionsInternalsUITest', 'DisplayCorrectStatuses', function() {
       description: 'Param 3',
       enabled: false,
     });
+    testMap.set('params1', {
+      description: 'Params 1',
+      enabled: true,
+    });
 
-    window.testPageHandler.setTestingMap(testMap);
+    window.testPageHandler.setTestingPreviewsModeMap(testMap);
     this.setupFnResolver.resolve();
 
     return setupFnResolver.promise
@@ -131,6 +144,62 @@ TEST_F('InterventionsInternalsUITest', 'DisplayCorrectStatuses', function() {
             let actual = document.querySelector('#' + key).textContent;
             expectEquals(expected, actual);
           });
+
+          // Test correct order of statuses displayed on page.
+          let statuses = document.querySelectorAll('.previews-status-value');
+          for (let i = 1; i < statuses.length; i++) {
+            expectGE(statuses[i].textContent, statuses[i - 1].textContent);
+          }
+        });
+  });
+
+  mocha.run();
+});
+
+TEST_F('InterventionsInternalsUITest', 'GetPreviewsFlagsDetails', function() {
+  let setupFnResolver = this.setupFnResolver;
+
+  test('DisplayCorrectStatuses', () => {
+    // Setup testPageHandler behavior.
+    let testMap = new Map();
+    testMap.set('params2', {
+      description: 'Params 2',
+      link: 'Link 2',
+      value: 'Value 2',
+    });
+    testMap.set('params3', {
+      description: 'Param 3',
+      link: 'Link 3',
+      value: 'Value 3',
+    });
+    testMap.set('params1', {
+      description: 'Params 1',
+      link: 'Link 1',
+      value: 'Value 1',
+    });
+
+    window.testPageHandler.setTestingPreviewsFlagsMap(testMap);
+    this.setupFnResolver.resolve();
+
+    return setupFnResolver.promise
+        .then(() => {
+          return window.testPageHandler.whenCalled('getPreviewsFlagsDetails');
+        })
+        .then(() => {
+          testMap.forEach((value, key) => {
+            let actualDescription =
+                document.querySelector('#' + key + 'Description');
+            let actualValue = document.querySelector('#' + key + 'Value');
+            expectEquals(value.description, actualDescription.textContent);
+            expectEquals(value.link, actualDescription.getAttribute('href'));
+            expectEquals(value.value, actualValue.textContent);
+          });
+
+          // Test correct order of flags displayed on page.
+          let flags = document.querySelectorAll('.previews-status-value');
+          for (let i = 1; i < flags.length; i++) {
+            expectGE(flags[i].textContent, flags[i - 1].textContent);
+          }
         });
   });
 
@@ -180,9 +249,54 @@ TEST_F('InterventionsInternalsUITest', 'LogNewMessage', function() {
       expectEquals(log.type, row.querySelector('.log-type').textContent);
       expectEquals(
           log.description, row.querySelector('.log-description').textContent);
-      expectEquals(log.url.url, row.querySelector('.log-url').textContent);
+      expectEquals(
+          log.url.url, row.querySelector('.log-url-value').textContent);
     });
 
+  });
+
+  mocha.run();
+});
+
+TEST_F('InterventionsInternalsUITest', 'LogNewMessageWithLongUrl', function() {
+  test('LogMessageIsPostedCorrectly', () => {
+    let pageImpl = new InterventionsInternalPageImpl(null);
+    let log = {
+      type: 'Some type',
+      url: {url: ''},
+      description: 'Some description',
+      time: 758675653000,  // Jan 15 1994 23:14:13 UTC
+    };
+    // Creating long url.
+    for (let i = 0; i <= 2 * URL_THRESHOLD; i++) {
+      log.url.url += 'a';
+    }
+    let expectedUrl = log.url.url.substring(0, URL_THRESHOLD - 3) + '...';
+
+    pageImpl.logNewMessage(log);
+    expectEquals(
+        expectedUrl, document.querySelector('div.log-url-value').textContent);
+  });
+
+  mocha.run();
+});
+
+TEST_F('InterventionsInternalsUITest', 'LogNewMessageWithNoUrl', function() {
+  test('LogMessageIsPostedCorrectly', () => {
+    let pageImpl = new InterventionsInternalPageImpl(null);
+    let log = {
+      type: 'Some type',
+      url: {url: ''},
+      description: 'Some description',
+      time: 758675653000,  // Jan 15 1994 23:14:13 UTC
+    };
+    pageImpl.logNewMessage(log);
+    let actual = $('message-logs-table').rows[1];
+    let expectedNoColumns = 3;
+    expectEquals(expectedNoColumns, actual.querySelectorAll('td').length);
+    assert(
+        !actual.querySelector('.log-url'),
+        'There should not be a log-url column for empty URL');
   });
 
   mocha.run();
@@ -282,6 +396,23 @@ TEST_F('InterventionsInternalsUITest', 'OnECTChanged', function() {
       let actual = $('nqe-type').textContent;
       expectEquals(type, actual);
     });
+  });
+
+  mocha.run();
+});
+
+TEST_F('InterventionsInternalsUITest', 'OnBlacklistIgnoreChange', function() {
+  test('OnBlacklistIgnoreChangeDisable', () => {
+    let pageImpl = new InterventionsInternalPageImpl(null);
+    pageImpl.onIgnoreBlacklistDecisionStatusChanged(true /* ignored */);
+    expectEquals('Enable Blacklist', $('ignore-blacklist-button').textContent);
+    expectEquals(
+        'Blacklist decisions are ignored.',
+        $('blacklist-ignored-status').textContent);
+
+    pageImpl.onIgnoreBlacklistDecisionStatusChanged(false /* ignored */);
+    expectEquals('Ignore Blacklist', $('ignore-blacklist-button').textContent);
+    expectEquals('', $('blacklist-ignored-status').textContent);
   });
 
   mocha.run();

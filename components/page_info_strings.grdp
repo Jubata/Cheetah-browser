@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <grit-part>
   <!-- Security summary strings -->
-  <!-- TODO(crbug.com/716305): Rename remaining IDS_PAGE_INFO_* strings to IDS_PAGE_INFO_* -->
   <message name="IDS_PAGE_INFO_SECURE_SUMMARY" desc="A short summary phrase at the top of the Page Info bubble (which shows when you click the lock icon) that indicates that the connection to the current website is secure.">
     Secure connection
   </message>
@@ -55,14 +54,15 @@
     The identity of this website has not been verified.
   </message>
 
-  <!-- Strings below are not used on iOS. -->
-  <if expr="not is_ios">
-
+  <if expr="chromeos">
     <!-- Administrator-provided certificate notifications -->
-    <!-- TODO(crbug.com/717802): Only include this on Chrome OS. -->
     <message name="IDS_CERT_POLICY_PROVIDED_CERT_MESSAGE" desc="Text that is displayed in the Page Info popup when using an administrator-provided certificate">
       You have accessed content using an administrator-provided certificate. Data you provide to <ph name="DOMAIN">$1<ex>www.google.com</ex></ph> can be intercepted by your administrator.
     </message>
+  </if>
+
+  <!-- Strings below are not used on iOS. -->
+  <if expr="not is_ios">
 
     <!-- Certificate exception decision UI (after clicking through an SSL certificate error) -->
     <!-- TODO(crbug.com/502473): Support revoking certificate overrides on iOS Page Info. -->
@@ -160,6 +160,15 @@
       <message name="IDS_PAGE_INFO_CERTIFICATE_INVALID_LINK" desc="This appears in the Page Info bubble when a HTTPS site is loaded with an invalid certificate, e.g. https://wrong.host.badssl.com/. Text of the link that launches the Certificate Viewer.">
         Invalid
       </message>
+      <message name="IDS_PAGE_INFO_CERTIFICATE_BUTTON_TEXT" desc="Title of the certificate button in the Page Info bubble, shown when a HTTPS site is loaded. Clicking this button will show the certificate viewer.">
+        Certificate <ph name="CERTIFICATE_VALIDITY">$1<ex>(Invalid)</ex></ph>
+      </message>
+      <message name="IDS_PAGE_INFO_CERTIFICATE_VALID_PARENTHESIZED" desc="Button text used as part of IDS_PAGE_INFO_CERTIFICATE_BUTTON_TEXT when the Page Information bubble has been opened for a site with a valid certificate.">
+        (Valid)
+      </message>
+      <message name="IDS_PAGE_INFO_CERTIFICATE_INVALID_PARENTHESIZED" desc="Button text used as part of IDS_PAGE_INFO_CERTIFICATE_BUTTON_TEXT when the Page Information bubble has been opened for a site with an invalid certificate.">
+        (Invalid)
+      </message>
       <message name="IDS_PAGE_INFO_CERTIFICATE_VALID_LINK_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_CERTIFICATE_VALID_LINK.">
         Show certificate (issued by <ph name="ISSUER">$1<ex>Let's Encrypt X3</ex></ph>)
       </message>
@@ -175,6 +184,12 @@
       </message>
       <message name="IDS_PAGE_INFO_NUM_COOKIES" desc="The label of the counts for allowed cookies that are in use on the page.">
         {NUM_COOKIES, plural, =1 {1 in use} other {# in use}}
+      </message>
+      <message name="IDS_PAGE_INFO_COOKIES_BUTTON_TEXT" desc="The label on a button in the Page Information Window that, when clicked, opens a dialog where cookies can be managed by the user.">
+          Cookies <ph name="NUM_COOKIES">$1<ex>(4 in use)</ex></ph>
+      </message>
+      <message name="IDS_PAGE_INFO_NUM_COOKIES_PARENTHESIZED" desc="The label of the counts for allowed cookies that are in use on the page. This text will be used in IDS_PAGE_INFO_COOKIES_BUTTON_TEXT.">
+        ({NUM_COOKIES, plural, =1 {1 in use} other {# in use}})
       </message>
       <message name="IDS_PAGE_INFO_COOKIES_TOOLTIP" desc="The text of the tooltip on IDS_PAGE_INFO_NUM_COOKIES.">
         Show cookies
@@ -220,6 +235,9 @@
     </message>
     <message name="IDS_PAGE_INFO_TYPE_SOUND" desc="The label used for the sound permission controls in the Page Info popup.">
       Sound
+    </message>
+    <message name="IDS_PAGE_INFO_TYPE_CLIPBOARD" desc="The label used for the clipboard permission controls in the Page Info popup.">
+      Clipboard
     </message>
     <!-- TODO(crbug.com/716303): A few permissions are missing here. -->
 

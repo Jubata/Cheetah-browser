@@ -6,11 +6,12 @@
 #ifndef FontFaceSet_h
 #define FontFaceSet_h
 
+#include "base/macros.h"
 #include "bindings/core/v8/Iterable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/css/FontFace.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "core/dom/events/EventListener.h"
 #include "core/dom/events/EventTarget.h"
 #include "platform/AsyncMethodRunner.h"
@@ -30,15 +31,14 @@ class FontFaceCache;
 using FontFaceSetIterable = SetlikeIterable<Member<FontFace>>;
 
 class CORE_EXPORT FontFaceSet : public EventTargetWithInlineData,
-                                public SuspendableObject,
+                                public PausableObject,
                                 public FontFaceSetIterable,
                                 public FontFace::LoadFontCallback {
   DEFINE_WRAPPERTYPEINFO();
-  WTF_MAKE_NONCOPYABLE(FontFaceSet);
 
  public:
   FontFaceSet(ExecutionContext& context)
-      : SuspendableObject(&context),
+      : PausableObject(&context),
         is_loading_(false),
         should_fire_loading_event_(false),
         ready_(new ReadyProperty(GetExecutionContext(),
@@ -58,7 +58,7 @@ class CORE_EXPORT FontFaceSet : public EventTargetWithInlineData,
   virtual ScriptPromise ready(ScriptState*) = 0;
 
   ExecutionContext* GetExecutionContext() const {
-    return SuspendableObject::GetExecutionContext();
+    return PausableObject::GetExecutionContext();
   }
 
   const AtomicString& InterfaceName() const {
@@ -72,9 +72,9 @@ class CORE_EXPORT FontFaceSet : public EventTargetWithInlineData,
 
   void AddFontFacesToFontFaceCache(FontFaceCache*);
 
-  // SuspendableObject
-  void Suspend() override;
-  void Resume() override;
+  // PausableObject
+  void Pause() override;
+  void Unpause() override;
   void ContextDestroyed(ExecutionContext*) override;
 
   size_t size() const;
@@ -89,7 +89,7 @@ class CORE_EXPORT FontFaceSet : public EventTargetWithInlineData,
   virtual bool ResolveFontStyle(const String&, Font&) = 0;
   virtual bool InActiveContext() const = 0;
   virtual FontSelector* GetFontSelector() const = 0;
-  virtual const HeapListHashSet<Member<FontFace>>& CSSConnectedFontFaceList()
+  virtual const HeapLinkedHashSet<Member<FontFace>>& CSSConnectedFontFaceList()
       const = 0;
   bool IsCSSConnectedFontFace(FontFace* font_face) const {
     return CSSConnectedFontFaceList().Contains(font_face);
@@ -109,7 +109,7 @@ class CORE_EXPORT FontFaceSet : public EventTargetWithInlineData,
 
   bool is_loading_;
   bool should_fire_loading_event_;
-  HeapListHashSet<Member<FontFace>> non_css_connected_faces_;
+  HeapLinkedHashSet<Member<FontFace>> non_css_connected_faces_;
   HeapHashSet<Member<FontFace>> loading_fonts_;
   FontFaceArray loaded_fonts_;
   FontFaceArray failed_fonts_;
@@ -176,6 +176,7 @@ class CORE_EXPORT FontFaceSet : public EventTargetWithInlineData,
 
   void HandlePendingEventsAndPromises();
   void FireLoadingEvent();
+  DISALLOW_COPY_AND_ASSIGN(FontFaceSet);
 };
 
 }  // namespace blink

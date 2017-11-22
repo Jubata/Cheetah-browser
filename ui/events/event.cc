@@ -4,12 +4,6 @@
 
 #include "ui/events/event.h"
 
-#if defined(USE_X11)
-#include <X11/extensions/XInput2.h>
-#include <X11/keysym.h>
-#include <X11/Xlib.h>
-#endif
-
 #include <cmath>
 #include <cstring>
 #include <utility>
@@ -33,6 +27,7 @@
 
 #if defined(USE_X11)
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"  // nogncheck
+#include "ui/gfx/x/x11.h"                                   // nogncheck
 #elif defined(USE_OZONE)
 #include "ui/events/ozone/layout/keyboard_layout_engine.h"  // nogncheck
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"  // nogncheck
@@ -1118,6 +1113,7 @@ bool KeyEvent::IsRepeated(const KeyEvent& event) {
   }
 
   CHECK_EQ(ui::ET_KEY_PRESSED, event.type());
+
   if (!(*last_key_event)) {
     *last_key_event = new KeyEvent(event);
     return false;
@@ -1125,16 +1121,36 @@ bool KeyEvent::IsRepeated(const KeyEvent& event) {
     // The KeyEvent is created from the same native event.
     return ((*last_key_event)->flags() & ui::EF_IS_REPEAT) != 0;
   }
-  if (event.key_code() == (*last_key_event)->key_code() &&
-      event.flags() == ((*last_key_event)->flags() & ~ui::EF_IS_REPEAT) &&
-      (event.time_stamp() - (*last_key_event)->time_stamp()).InMilliseconds() <
-          kMaxAutoRepeatTimeMs) {
+
+  DCHECK(*last_key_event);
+  bool is_repeat = false;
+
+#if defined(OS_WIN)
+  if (event.HasNativeEvent()) {
+    // Bit 30 of lParam represents the "previous key state". If set, the key
+    // was already down, therefore this is an auto-repeat.
+    is_repeat = (event.native_event().lParam & 0x40000000) != 0;
+  } else
+#endif
+  {
+    // Note that this is only reach for non-native events under Windows.
+    if (event.key_code() == (*last_key_event)->key_code() &&
+        event.flags() == ((*last_key_event)->flags() & ~ui::EF_IS_REPEAT) &&
+        (event.time_stamp() - (*last_key_event)->time_stamp())
+                .InMilliseconds() < kMaxAutoRepeatTimeMs) {
+      is_repeat = true;
+    }
+  }
+
+  if (is_repeat) {
     (*last_key_event)->set_time_stamp(event.time_stamp());
     (*last_key_event)->set_flags((*last_key_event)->flags() | ui::EF_IS_REPEAT);
     return true;
   }
+
   delete *last_key_event;
   *last_key_event = new KeyEvent(event);
+
   return false;
 }
 
@@ -1158,10 +1174,13 @@ KeyEvent::KeyEvent(const base::NativeEvent& native_event, int event_flags)
 #endif
 #if defined(OS_WIN)
   // Only Windows has native character events.
-  if (is_char_)
+  if (is_char_) {
     key_ = DomKey::FromCharacter(native_event.wParam);
-  else
-    key_ = PlatformKeyMap::DomKeyFromKeyboardCode(key_code(), flags());
+  } else {
+    int adjusted_flags = flags();
+    key_ = PlatformKeyMap::DomKeyFromKeyboardCode(key_code(), &adjusted_flags);
+    set_flags(adjusted_flags);
+  }
 #endif
 }
 

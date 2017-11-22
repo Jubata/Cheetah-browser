@@ -77,8 +77,9 @@ bool SVGImageElement::CurrentFrameHasSingleSecurityOrigin() const {
   if (LayoutSVGImage* layout_svg_image = ToLayoutSVGImage(GetLayoutObject())) {
     LayoutImageResource* layout_image_resource =
         layout_svg_image->ImageResource();
-    if (layout_image_resource->HasImage()) {
-      if (Image* image = layout_image_resource->CachedImage()->GetImage())
+    ImageResourceContent* image_content = layout_image_resource->CachedImage();
+    if (image_content) {
+      if (Image* image = image_content->GetImage())
         return image->CurrentFrameHasSingleSecurityOrigin();
     }
   }
@@ -93,7 +94,7 @@ ScriptPromise SVGImageElement::decode(ScriptState* script_state,
 void SVGImageElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == width_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),

@@ -13,11 +13,14 @@ namespace web {
 class WebState;
 
 // Test observer to check that the WebStateObserver methods are called as
-// expected.
+// expected. Can only observe a single WebState.
+// TODO(crbug.com/775684): fix this to allow observing multiple WebStates.
 class TestWebStateObserver : public WebStateObserver {
  public:
   TestWebStateObserver(WebState* web_state);
   ~TestWebStateObserver() override;
+
+  WebState* web_state() { return web_state_; }
 
   // Arguments passed to |WasShown|.
   web::TestWasShownInfo* was_shown_info() { return was_shown_info_.get(); }
@@ -37,10 +40,6 @@ class TestWebStateObserver : public WebStateObserver {
   }
   // Arguments passed to |PageLoaded|.
   web::TestLoadPageInfo* load_page_info() { return load_page_info_.get(); }
-  // Arguments passed to |InterstitialDismissed|.
-  web::TestDismissInterstitialInfo* dismiss_interstitial_info() {
-    return dismiss_interstitial_info_.get();
-  }
   // Arguments passed to |LoadProgressChanged|.
   web::TestChangeLoadingProgressInfo* change_loading_progress_info() {
     return change_loading_progress_info_.get();
@@ -104,7 +103,6 @@ class TestWebStateObserver : public WebStateObserver {
                                const LoadCommittedDetails&) override;
   void PageLoaded(WebState* web_state,
                   PageLoadCompletionStatus load_completion_status) override;
-  void InterstitialDismissed(WebState* web_state) override;
   void LoadProgressChanged(WebState* web_state, double progress) override;
   void NavigationItemsPruned(WebState* web_state,
                              size_t pruned_item_count) override;
@@ -120,11 +118,7 @@ class TestWebStateObserver : public WebStateObserver {
                          const std::string& form_name,
                          bool user_initiated) override;
   void FormActivityRegistered(WebState* web_state,
-                              const std::string& form_name,
-                              const std::string& field_name,
-                              const std::string& type,
-                              const std::string& value,
-                              bool input_missing) override;
+                              const FormActivityParams& params) override;
   void FaviconUrlUpdated(WebState* web_state,
                          const std::vector<FaviconURL>& candidates) override;
   void RenderProcessGone(WebState* web_state) override;
@@ -132,11 +126,14 @@ class TestWebStateObserver : public WebStateObserver {
   void DidStartLoading(WebState* web_state) override;
   void DidStopLoading(WebState* web_state) override;
 
+  // The WebState this instance is observing. Will be null after
+  // WebStateDestroyed has been called.
+  web::WebState* web_state_ = nullptr;
+
   std::unique_ptr<web::TestWasShownInfo> was_shown_info_;
   std::unique_ptr<web::TestWasHiddenInfo> was_hidden_info_;
   std::unique_ptr<web::TestCommitNavigationInfo> commit_navigation_info_;
   std::unique_ptr<web::TestLoadPageInfo> load_page_info_;
-  std::unique_ptr<web::TestDismissInterstitialInfo> dismiss_interstitial_info_;
   std::unique_ptr<web::TestChangeLoadingProgressInfo>
       change_loading_progress_info_;
   std::unique_ptr<web::TestNavigationItemsPrunedInfo>

@@ -16,7 +16,6 @@
 
 namespace aura {
 class Window;
-class WindowDelegate;
 }  // namespace aura
 
 namespace gfx {
@@ -36,8 +35,7 @@ class SurfaceTreeHost : public SurfaceDelegate,
                         public viz::BeginFrameObserverBase,
                         public ui::ContextFactoryObserver {
  public:
-  SurfaceTreeHost(const std::string& window_name,
-                  aura::WindowDelegate* window_delegate);
+  explicit SurfaceTreeHost(const std::string& window_name);
   ~SurfaceTreeHost() override;
 
   // Sets a root surface of a surface tree. This surface tree will be hosted in
@@ -106,6 +104,8 @@ class SurfaceTreeHost : public SurfaceDelegate,
   void SubmitCompositorFrame();
 
  private:
+  void UpdateHostWindowBounds();
+
   Surface* root_surface_ = nullptr;
   std::unique_ptr<aura::Window> host_window_;
   std::unique_ptr<LayerTreeFrameSinkHolder> layer_tree_frame_sink_holder_;

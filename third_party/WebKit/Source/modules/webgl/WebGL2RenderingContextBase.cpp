@@ -143,9 +143,11 @@ const GLenum kSupportedInternalFormatsStorage[] = {
 WebGL2RenderingContextBase::WebGL2RenderingContextBase(
     CanvasRenderingContextHost* host,
     std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
+    bool using_gpu_compositing,
     const CanvasContextCreationAttributes& requested_attributes)
     : WebGLRenderingContextBase(host,
                                 std::move(context_provider),
+                                using_gpu_compositing,
                                 requested_attributes,
                                 2) {
   supported_internal_formats_storage_.insert(
@@ -460,6 +462,12 @@ void WebGL2RenderingContextBase::framebufferTextureLayer(GLenum target,
   if (!framebuffer_binding || !framebuffer_binding->Object()) {
     SynthesizeGLError(GL_INVALID_OPERATION, "framebufferTextureLayer",
                       "no framebuffer bound");
+    return;
+  }
+  // Don't allow modifications to opaque framebuffer attachements.
+  if (framebuffer_binding && framebuffer_binding->Opaque()) {
+    SynthesizeGLError(GL_INVALID_OPERATION, "framebufferTextureLayer",
+                      "opaque framebuffer bound");
     return;
   }
   framebuffer_binding->SetAttachmentForBoundFramebuffer(
@@ -4762,6 +4770,12 @@ void WebGL2RenderingContextBase::bindFramebuffer(GLenum target,
 
 void WebGL2RenderingContextBase::deleteFramebuffer(
     WebGLFramebuffer* framebuffer) {
+  // Don't allow the application to delete an opaque framebuffer.
+  if (framebuffer && framebuffer->Opaque()) {
+    SynthesizeGLError(GL_INVALID_OPERATION, "deleteFramebuffer",
+                      "cannot delete an opaque framebuffer");
+    return;
+  }
   if (!DeleteObject(framebuffer))
     return;
   GLenum target = 0;

@@ -18,31 +18,40 @@ namespace chromecast {
 namespace media {
 
 FilterGroup::FilterGroup(int num_channels,
+                         GroupType type,
                          bool mix_to_mono,
                          const std::string& name,
                          std::unique_ptr<PostProcessingPipeline> pipeline,
                          const std::unordered_set<std::string>& device_ids,
                          const std::vector<FilterGroup*>& mixed_inputs)
     : num_channels_(num_channels),
+      type_(type),
       mix_to_mono_(mix_to_mono),
       playout_channel_(kChannelAll),
       name_(name),
       device_ids_(device_ids),
       mixed_inputs_(mixed_inputs),
       output_samples_per_second_(0),
+      frames_zeroed_(0),
+      last_volume_(0.0),
+      delay_frames_(0),
+      loudest_content_type_(AudioContentType::kMedia),
       post_processing_pipeline_(std::move(pipeline)) {
-  for (auto* const m : mixed_inputs)
+  for (auto* const m : mixed_inputs) {
     DCHECK_EQ(m->GetOutputChannelCount(), num_channels);
+  }
   // Don't need mono mixer if input is single channel.
-  if (num_channels == 1)
+  if (num_channels == 1) {
     mix_to_mono_ = false;
+  }
 }
 
 FilterGroup::~FilterGroup() = default;
 
 void FilterGroup::Initialize(int output_samples_per_second) {
   output_samples_per_second_ = output_samples_per_second;
-  post_processing_pipeline_->SetSampleRate(output_samples_per_second);
+  CHECK(post_processing_pipeline_->SetSampleRate(output_samples_per_second));
+  post_processing_pipeline_->SetContentType(loudest_content_type_);
 }
 
 bool FilterGroup::CanProcessInput(StreamMixer::InputQueue* input) {
@@ -59,10 +68,15 @@ float FilterGroup::MixAndFilter(int chunk_size) {
   ResizeBuffersIfNecessary(chunk_size);
 
   float volume = 0.0f;
+  AudioContentType loudest_content_type = loudest_content_type_;
 
   // Recursively mix inputs.
   for (auto* filter_group : mixed_inputs_) {
-    volume = std::max(volume, filter_group->MixAndFilter(chunk_size));
+    float tmp = filter_group->MixAndFilter(chunk_size);
+    if (tmp > volume) {
+      volume = tmp;
+      loudest_content_type = filter_group->loudest_content_type();
+    }
   }
 
   // |volume| can only be 0 if no |mixed_inputs_| have data.
@@ -92,7 +106,11 @@ float FilterGroup::MixAndFilter(int chunk_size) {
       input->VolumeScaleAccumulate(c != 0, temp_->channel(c), chunk_size,
                                    mixed_->channel(c));
     }
-    volume = std::max(volume, input->InstantaneousVolume());
+    float tmp = input->InstantaneousVolume();
+    if (tmp > volume) {
+      volume = tmp;
+      loudest_content_type = input->content_type();
+    }
   }
 
   mixed_->ToInterleaved<::media::FloatSampleTypeTraits<float>>(chunk_size,
@@ -106,20 +124,9 @@ float FilterGroup::MixAndFilter(int chunk_size) {
     }
   }
 
-  bool is_silence = (volume == 0.0f);
-
-  // Allow paused streams to "ring out" at the last valid volume.
-  // If the stream volume is actually 0, this doesn't matter, since the
-  // data is 0's anyway.
-  if (!is_silence) {
-    last_volume_ = volume;
-  }
-
-  delay_frames_ = post_processing_pipeline_->ProcessFrames(
-      interleaved(), chunk_size, last_volume_, is_silence);
-
-  // Copy the active channel to all channels.
-  if (playout_channel_ != kChannelAll) {
+  // Copy the active channel to all channels. Only used in the "linearize"
+  // instance.
+  if (playout_channel_ != kChannelAll && type_ == GroupType::kLinearize) {
     DCHECK_GE(playout_channel_, 0);
     DCHECK_LT(playout_channel_, num_channels_);
 
@@ -130,8 +137,23 @@ float FilterGroup::MixAndFilter(int chunk_size) {
     }
   }
 
-  // Mono mixing after all processing if needed.
-  if (mix_to_mono_) {
+  // Allow paused streams to "ring out" at the last valid volume.
+  // If the stream volume is actually 0, this doesn't matter, since the
+  // data is 0's anyway.
+  bool is_silence = (volume == 0.0f);
+  if (!is_silence) {
+    last_volume_ = volume;
+    if (loudest_content_type != loudest_content_type_) {
+      loudest_content_type_ = loudest_content_type;
+      post_processing_pipeline_->SetContentType(loudest_content_type_);
+    }
+  }
+
+  delay_frames_ = post_processing_pipeline_->ProcessFrames(
+      interleaved(), chunk_size, last_volume_, is_silence);
+
+  // Mono mixing if needed. Only used in the "Mix" instance.
+  if (mix_to_mono_ && type_ == GroupType::kFinalMix) {
     for (int frame = 0; frame < chunk_size; ++frame) {
       float sum = 0;
       for (int c = 0; c < num_channels_; ++c)
@@ -177,13 +199,13 @@ void FilterGroup::SetMixToMono(bool mix_to_mono) {
 }
 
 void FilterGroup::UpdatePlayoutChannel(int playout_channel) {
-  LOG(INFO) << __FUNCTION__ << " channel=" << playout_channel;
   if (playout_channel >= num_channels_) {
     LOG(ERROR) << "only " << num_channels_ << " present, wanted channel #"
                << playout_channel;
     return;
   }
   playout_channel_ = playout_channel;
+  post_processing_pipeline_->UpdatePlayoutChannel(playout_channel_);
 }
 
 }  // namespace media

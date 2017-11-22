@@ -39,6 +39,8 @@ class ThumbnailTabHelper
                const content::NotificationDetails& details) override;
 
   // content::WebContentsObserver overrides.
+  void RenderViewHostChanged(content::RenderViewHost* old_host,
+                             content::RenderViewHost* new_host) override;
   void RenderViewDeleted(content::RenderViewHost* render_view_host) override;
   void DidStartNavigation(
       content::NavigationHandle* navigation_handle) override;
@@ -46,15 +48,15 @@ class ThumbnailTabHelper
       content::NavigationHandle* navigation_handle) override;
   void DocumentAvailableInMainFrame() override;
   void DocumentOnLoadCompletedInMainFrame() override;
+  void DidFirstVisuallyNonEmptyPaint() override;
   void DidStartLoading() override;
   void NavigationStopped() override;
 
+  void StartWatchingRenderViewHost(content::RenderViewHost* render_view_host);
+  void StopWatchingRenderViewHost(content::RenderViewHost* render_view_host);
+
   // Update the thumbnail of the given tab contents if necessary.
   void UpdateThumbnailIfNecessary();
-
-  // Initiate asynchronous generation of a thumbnail from the web contents.
-  void AsyncProcessThumbnail(
-      scoped_refptr<thumbnails::ThumbnailService> thumbnail_service);
 
   // Create a thumbnail from the web contents bitmap.
   void ProcessCapturedBitmap(
@@ -68,7 +70,7 @@ class ThumbnailTabHelper
   void CleanUpFromThumbnailGeneration();
 
   // Called when a render view host was created for a WebContents.
-  void RenderViewHostCreated(content::RenderViewHost* renderer);
+  void RenderViewHostCreated(content::RenderViewHost* render_view_host);
 
   // Indicates that the given widget has changed is visibility.
   void WidgetHidden(content::RenderWidgetHost* widget);
@@ -76,6 +78,10 @@ class ThumbnailTabHelper
   const bool capture_on_navigating_away_;
 
   content::NotificationRegistrar registrar_;
+
+  bool did_navigation_finish_;
+  bool has_received_document_since_navigation_finished_;
+  bool has_painted_since_document_received_;
 
   ui::PageTransition page_transition_;
   bool load_interrupted_;

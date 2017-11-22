@@ -10,12 +10,12 @@
 #include <string>
 
 #include "base/macros.h"
-#include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/network/network_change_manager.h"
 #include "content/public/common/network_service.mojom.h"
 #include "content/public/network/network_service.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "services/network/public/interfaces/network_change_manager.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/service.h"
 
@@ -24,9 +24,6 @@ class NetLog;
 class LoggingNetworkChangeObserver;
 class URLRequestContext;
 class URLRequestContextBuilder;
-#if defined(OS_ANDROID)
-class NetworkChangeNotifierFactoryAndroid;
-#endif
 }  // namespace net
 
 namespace content {
@@ -42,6 +39,7 @@ class CONTENT_EXPORT NetworkServiceImpl : public service_manager::Service,
   // TODO(https://crbug.com/767450): Once the NetworkService can always create
   // its own NetLog in production, remove the |net_log| argument.
   NetworkServiceImpl(std::unique_ptr<service_manager::BinderRegistry> registry,
+                     mojom::NetworkServiceRequest request = nullptr,
                      net::NetLog* net_log = nullptr);
 
   ~NetworkServiceImpl() override;
@@ -60,16 +58,18 @@ class CONTENT_EXPORT NetworkServiceImpl : public service_manager::Service,
   void DeregisterNetworkContext(NetworkContext* network_context);
 
   // mojom::NetworkService implementation:
+  void SetClient(mojom::NetworkServiceClientPtr client) override;
   void CreateNetworkContext(mojom::NetworkContextRequest request,
                             mojom::NetworkContextParamsPtr params) override;
   void DisableQuic() override;
   void SetRawHeadersAccess(uint32_t process_id, bool allow) override;
   void GetNetworkChangeManager(
-      mojom::NetworkChangeManagerRequest request) override;
+      network::mojom::NetworkChangeManagerRequest request) override;
 
   bool quic_disabled() const { return quic_disabled_; }
   bool HasRawHeadersAccess(uint32_t process_id) const;
 
+  mojom::NetworkServiceClient* client() { return client_.get(); }
   net::NetLog* net_log() const;
 
  private:
@@ -89,15 +89,13 @@ class CONTENT_EXPORT NetworkServiceImpl : public service_manager::Service,
   // its own NetLog.
   net::NetLog* net_log_;
 
+  mojom::NetworkServiceClientPtr client_;
+
   // Observer that logs network changes to the NetLog. Must be below the NetLog
   // and the NetworkChangeNotifier (Once this class creates it), so it's
   // destroyed before them.
   std::unique_ptr<net::LoggingNetworkChangeObserver> network_change_observer_;
 
-#if defined(OS_ANDROID)
-  std::unique_ptr<net::NetworkChangeNotifierFactoryAndroid>
-      network_change_notifier_factory_;
-#endif
   std::unique_ptr<NetworkChangeManager> network_change_manager_;
 
   std::unique_ptr<service_manager::BinderRegistry> registry_;

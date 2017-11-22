@@ -13,7 +13,6 @@
 #include "device/u2f/u2f_command_type.h"
 #include "device/u2f/u2f_message.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "net/base/io_buffer.h"
 
 namespace device {
 
@@ -177,12 +176,8 @@ void U2fHidDevice::WriteMessage(std::unique_ptr<U2fMessage> message,
     return;
   }
 
-  scoped_refptr<net::IOBufferWithSize> io_buffer = message->PopNextPacket();
-  std::vector<uint8_t> buffer(io_buffer->data(),
-                              io_buffer->data() + io_buffer->size());
-
   connection_->Write(
-      kReportId, buffer,
+      kReportId, message->PopNextPacket(),
       base::BindOnce(&U2fHidDevice::PacketWritten, weak_factory_.GetWeakPtr(),
                      std::move(message), true, std::move(callback)));
 }
@@ -220,11 +215,8 @@ void U2fHidDevice::OnRead(U2fHidMessageCallback callback,
   }
 
   DCHECK(buf);
-  std::vector<uint8_t> read_buffer;
-  read_buffer.push_back(report_id);
-  read_buffer.insert(read_buffer.end(), buf->begin(), buf->end());
   std::unique_ptr<U2fMessage> read_message =
-      U2fMessage::CreateFromSerializedData(read_buffer);
+      U2fMessage::CreateFromSerializedData(*buf);
 
   if (!read_message) {
     std::move(callback).Run(false, nullptr);
@@ -262,10 +254,7 @@ void U2fHidDevice::OnReadContinuation(
   }
 
   DCHECK(buf);
-  std::vector<uint8_t> read_buffer;
-  read_buffer.push_back(report_id);
-  read_buffer.insert(read_buffer.end(), buf->begin(), buf->end());
-  message->AddContinuationPacket(read_buffer);
+  message->AddContinuationPacket(*buf);
   if (message->MessageComplete()) {
     std::move(callback).Run(success, std::move(message));
     return;

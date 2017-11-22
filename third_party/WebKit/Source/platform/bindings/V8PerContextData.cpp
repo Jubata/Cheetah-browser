@@ -33,7 +33,7 @@
 #include <stdlib.h>
 #include <memory>
 #include "platform/InstanceCounters.h"
-#include "platform/bindings/ConditionalFeatures.h"
+#include "platform/bindings/OriginTrialFeatures.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/bindings/V8Binding.h"
 #include "platform/bindings/V8ObjectConstructor.h"
@@ -46,7 +46,7 @@ V8PerContextData::V8PerContextData(v8::Local<v8::Context> context)
     : isolate_(context->GetIsolate()),
       wrapper_boilerplates_(isolate_),
       constructor_map_(isolate_),
-      context_holder_(WTF::MakeUnique<gin::ContextHolder>(isolate_)),
+      context_holder_(std::make_unique<gin::ContextHolder>(isolate_)),
       context_(isolate_, context),
       activity_logger_(nullptr) {
   context_holder_->SetContext(context);
@@ -128,13 +128,12 @@ v8::Local<v8::Function> V8PerContextData::ConstructorForTypeSlowCase(
       prototype_object->SetAlignedPointerInInternalField(
           kV8PrototypeTypeIndex, const_cast<WrapperTypeInfo*>(type));
     }
-    type->PreparePrototypeAndInterfaceObject(current_context, world,
-                                             prototype_object, interface_object,
-                                             interface_template);
+    type->InstallConditionalFeatures(current_context, world,
+                                     v8::Local<v8::Object>(), prototype_object,
+                                     interface_object, interface_template);
   }
 
-  // Origin Trials
-  InstallConditionalFeatures(type, ScriptState::From(current_context),
+  InstallOriginTrialFeatures(type, ScriptState::From(current_context),
                              prototype_object, interface_object);
   constructor_map_.Set(type, interface_object);
   return interface_object;

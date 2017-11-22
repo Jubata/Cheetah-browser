@@ -50,6 +50,86 @@
           "ignore_task_failure": false,
           "io_timeout": 3600
         }
+      },
+      {
+        "args": [
+          "loading.desktop",
+          "-v",
+          "--upload-results",
+          "--output-format=histograms",
+          "--output-format=json-test-results",
+          "--browser=release",
+          "--xvfb",
+          "--also-run-disabled-tests"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "loading.desktop",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 3600
+        }
+      },
+      {
+        "args": [
+          "loading.desktop",
+          "-v",
+          "--upload-results",
+          "--output-format=histograms",
+          "--output-format=json-test-results",
+          "--browser=reference",
+          "--xvfb",
+          "--also-run-disabled-tests"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "loading.desktop.reference",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 3600
+        }
+      }
+    ]
+  },
+  "Linux ChromeOS Perf (mus-viz)": {
+    "isolated_scripts": [
+      {
+        "args": [
+          "smoothness.top_25_smooth",
+          "-v",
+          "--upload-results",
+          "--output-format=chartjson",
+          "--browser=exact",
+          "--browser-executable=./chrome"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "smoothness.top_25_smooth",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "id": "build34-a1",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 3600
+        }
       }
     ]
   },
@@ -94,6 +174,12 @@
           "--browser=release"
         ],
         "isolate_name": "telemetry_perf_tests_new",
+        "merge": {
+          "args": [
+            "--verbose"
+          ],
+          "script": "//tools/perf/core/merge_script.py"
+        },
         "name": "benchmarks for bot 1",
         "override_compile_targets": [
           "telemetry_perf_tests_new"
@@ -904,14 +990,14 @@
       },
       {
         "args": [
-          "dromaeo.domcoreattr",
+          "dromaeo",
           "-v",
           "--upload-results",
           "--browser=release_x64",
           "--output-format=chartjson"
         ],
         "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoreattr",
+        "name": "dromaeo",
         "override_compile_targets": [
           "telemetry_perf_tests"
         ],
@@ -934,7 +1020,7 @@
       },
       {
         "args": [
-          "dromaeo.domcoreattr",
+          "dromaeo",
           "-v",
           "--upload-results",
           "--browser=reference",
@@ -943,7 +1029,7 @@
           "--output-trace-tag=_ref"
         ],
         "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoreattr.reference",
+        "name": "dromaeo.reference",
         "override_compile_targets": [
           "telemetry_perf_tests"
         ],
@@ -953,192 +1039,6 @@
             {
               "gpu": "8086:22b1",
               "id": "build47-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoremodify",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoremodify",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build142-b1",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoremodify",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoremodify.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build142-b1",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcorequery",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcorequery",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build144-b1",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcorequery",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcorequery.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build144-b1",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoretraverse",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoretraverse",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build150-b1",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoretraverse",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoretraverse.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build150-b1",
               "os": "Windows-10-10586",
               "pool": "Chrome-perf-fyi"
             }
@@ -1218,7 +1118,7 @@
           "-v",
           "--upload-results",
           "--browser=release_x64",
-          "--output-format=chartjson"
+          "--output-format=histograms"
         ],
         "isolate_name": "telemetry_perf_tests",
         "name": "dummy_benchmark.noisy_benchmark_1",
@@ -1248,7 +1148,7 @@
           "-v",
           "--upload-results",
           "--browser=reference",
-          "--output-format=chartjson",
+          "--output-format=histograms",
           "--max-failures=5",
           "--output-trace-tag=_ref"
         ],
@@ -1280,7 +1180,7 @@
           "-v",
           "--upload-results",
           "--browser=release_x64",
-          "--output-format=chartjson"
+          "--output-format=histograms"
         ],
         "isolate_name": "telemetry_perf_tests",
         "name": "dummy_benchmark.stable_benchmark_1",
@@ -1310,7 +1210,7 @@
           "-v",
           "--upload-results",
           "--browser=reference",
-          "--output-format=chartjson",
+          "--output-format=histograms",
           "--max-failures=5",
           "--output-trace-tag=_ref"
         ],
@@ -3351,6 +3251,68 @@
       },
       {
         "args": [
+          "speedometer-future",
+          "-v",
+          "--upload-results",
+          "--browser=release_x64",
+          "--output-format=chartjson"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer-future",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "8086:22b1",
+              "id": "build138-b1",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
+          "speedometer-future",
+          "-v",
+          "--upload-results",
+          "--browser=reference",
+          "--output-format=chartjson",
+          "--max-failures=5",
+          "--output-trace-tag=_ref"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer-future.reference",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "8086:22b1",
+              "id": "build138-b1",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": true,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
           "speedometer",
           "-v",
           "--upload-results",
@@ -3407,6 +3369,68 @@
           "expiration": 36000,
           "hard_timeout": 10800,
           "ignore_task_failure": false,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
+          "speedometer2-future",
+          "-v",
+          "--upload-results",
+          "--browser=release_x64",
+          "--output-format=chartjson"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer2-future",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "8086:22b1",
+              "id": "build138-b1",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
+          "speedometer2-future",
+          "-v",
+          "--upload-results",
+          "--browser=reference",
+          "--output-format=chartjson",
+          "--max-failures=5",
+          "--output-trace-tag=_ref"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer2-future.reference",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "8086:22b1",
+              "id": "build138-b1",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": true,
           "io_timeout": 600,
           "upload_test_results": true
         }
@@ -3986,68 +4010,6 @@
           "expiration": 36000,
           "hard_timeout": 10800,
           "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "v8.runtimestats.browsing_desktop",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "v8.runtimestats.browsing_desktop",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build146-b1",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "v8.runtimestats.browsing_desktop",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "v8.runtimestats.browsing_desktop.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "8086:22b1",
-              "id": "build146-b1",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
           "io_timeout": 600,
           "upload_test_results": true
         }
@@ -4864,14 +4826,14 @@
       },
       {
         "args": [
-          "dromaeo.domcoreattr",
+          "dromaeo",
           "-v",
           "--upload-results",
           "--browser=release_x64",
           "--output-format=chartjson"
         ],
         "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoreattr",
+        "name": "dromaeo",
         "override_compile_targets": [
           "telemetry_perf_tests"
         ],
@@ -4894,7 +4856,7 @@
       },
       {
         "args": [
-          "dromaeo.domcoreattr",
+          "dromaeo",
           "-v",
           "--upload-results",
           "--browser=reference",
@@ -4903,7 +4865,7 @@
           "--output-trace-tag=_ref"
         ],
         "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoreattr.reference",
+        "name": "dromaeo.reference",
         "override_compile_targets": [
           "telemetry_perf_tests"
         ],
@@ -4913,192 +4875,6 @@
             {
               "gpu": "1002:9874",
               "id": "build220-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoremodify",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoremodify",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build206-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoremodify",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoremodify.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build206-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcorequery",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcorequery",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build208-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcorequery",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcorequery.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build208-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoretraverse",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoretraverse",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build214-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "dromaeo.domcoretraverse",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "dromaeo.domcoretraverse.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build214-b4",
               "os": "Windows-10-10586",
               "pool": "Chrome-perf-fyi"
             }
@@ -5178,7 +4954,7 @@
           "-v",
           "--upload-results",
           "--browser=release_x64",
-          "--output-format=chartjson"
+          "--output-format=histograms"
         ],
         "isolate_name": "telemetry_perf_tests",
         "name": "dummy_benchmark.noisy_benchmark_1",
@@ -5208,7 +4984,7 @@
           "-v",
           "--upload-results",
           "--browser=reference",
-          "--output-format=chartjson",
+          "--output-format=histograms",
           "--max-failures=5",
           "--output-trace-tag=_ref"
         ],
@@ -5240,7 +5016,7 @@
           "-v",
           "--upload-results",
           "--browser=release_x64",
-          "--output-format=chartjson"
+          "--output-format=histograms"
         ],
         "isolate_name": "telemetry_perf_tests",
         "name": "dummy_benchmark.stable_benchmark_1",
@@ -5270,7 +5046,7 @@
           "-v",
           "--upload-results",
           "--browser=reference",
-          "--output-format=chartjson",
+          "--output-format=histograms",
           "--max-failures=5",
           "--output-trace-tag=_ref"
         ],
@@ -7248,6 +7024,68 @@
       },
       {
         "args": [
+          "speedometer-future",
+          "-v",
+          "--upload-results",
+          "--browser=release_x64",
+          "--output-format=chartjson"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer-future",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "1002:9874",
+              "id": "build202-b4",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
+          "speedometer-future",
+          "-v",
+          "--upload-results",
+          "--browser=reference",
+          "--output-format=chartjson",
+          "--max-failures=5",
+          "--output-trace-tag=_ref"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer-future.reference",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "1002:9874",
+              "id": "build202-b4",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": true,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
           "speedometer",
           "-v",
           "--upload-results",
@@ -7304,6 +7142,68 @@
           "expiration": 36000,
           "hard_timeout": 10800,
           "ignore_task_failure": false,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
+          "speedometer2-future",
+          "-v",
+          "--upload-results",
+          "--browser=release_x64",
+          "--output-format=chartjson"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer2-future",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "1002:9874",
+              "id": "build202-b4",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": false,
+          "io_timeout": 600,
+          "upload_test_results": true
+        }
+      },
+      {
+        "args": [
+          "speedometer2-future",
+          "-v",
+          "--upload-results",
+          "--browser=reference",
+          "--output-format=chartjson",
+          "--max-failures=5",
+          "--output-trace-tag=_ref"
+        ],
+        "isolate_name": "telemetry_perf_tests",
+        "name": "speedometer2-future.reference",
+        "override_compile_targets": [
+          "telemetry_perf_tests"
+        ],
+        "swarming": {
+          "can_use_on_swarming_builders": true,
+          "dimension_sets": [
+            {
+              "gpu": "1002:9874",
+              "id": "build202-b4",
+              "os": "Windows-10-10586",
+              "pool": "Chrome-perf-fyi"
+            }
+          ],
+          "expiration": 36000,
+          "hard_timeout": 10800,
+          "ignore_task_failure": true,
           "io_timeout": 600,
           "upload_test_results": true
         }
@@ -7862,68 +7762,6 @@
           "expiration": 36000,
           "hard_timeout": 10800,
           "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "v8.runtimestats.browsing_desktop",
-          "-v",
-          "--upload-results",
-          "--browser=release_x64",
-          "--output-format=chartjson"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "v8.runtimestats.browsing_desktop",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build210-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": false,
-          "io_timeout": 600,
-          "upload_test_results": true
-        }
-      },
-      {
-        "args": [
-          "v8.runtimestats.browsing_desktop",
-          "-v",
-          "--upload-results",
-          "--browser=reference",
-          "--output-format=chartjson",
-          "--max-failures=5",
-          "--output-trace-tag=_ref"
-        ],
-        "isolate_name": "telemetry_perf_tests",
-        "name": "v8.runtimestats.browsing_desktop.reference",
-        "override_compile_targets": [
-          "telemetry_perf_tests"
-        ],
-        "swarming": {
-          "can_use_on_swarming_builders": true,
-          "dimension_sets": [
-            {
-              "gpu": "1002:9874",
-              "id": "build210-b4",
-              "os": "Windows-10-10586",
-              "pool": "Chrome-perf-fyi"
-            }
-          ],
-          "expiration": 36000,
-          "hard_timeout": 10800,
-          "ignore_task_failure": true,
           "io_timeout": 600,
           "upload_test_results": true
         }

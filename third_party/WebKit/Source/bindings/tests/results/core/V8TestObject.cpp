@@ -10,6 +10,7 @@
 // clang-format off
 #include "V8TestObject.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/BindingSecurity.h"
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionState.h"
@@ -75,7 +76,6 @@
 #include "platform/bindings/V8PrivateProperty.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/wtf/GetPtr.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -90,13 +90,12 @@ const WrapperTypeInfo V8TestObject::wrapperTypeInfo = {
     V8TestObject::domTemplate,
     V8TestObject::Trace,
     V8TestObject::TraceWrappers,
-    V8TestObject::preparePrototypeAndInterfaceObject,
+    V8TestObject::InstallConditionalFeatures,
     "TestObject",
     nullptr,
     WrapperTypeInfo::kWrapperTypeObjectPrototype,
     WrapperTypeInfo::kObjectClassId,
     WrapperTypeInfo::kNotInheritFromActiveScriptWrappable,
-    WrapperTypeInfo::kIndependent,
 };
 #if defined(COMPONENT_BUILD) && defined(WIN32) && defined(__clang__)
 #pragma clang diagnostic pop
@@ -5579,12 +5578,13 @@ static void voidMethodTestCallbackInterfaceArgMethod(const v8::FunctionCallbackI
     return;
   }
 
-  TestCallbackInterface* testCallbackInterfaceArg;
-  if (info.Length() <= 0 || !info[0]->IsFunction()) {
+  V8TestCallbackInterface* testCallbackInterfaceArg;
+  if (info[0]->IsFunction()) {
+    testCallbackInterfaceArg = V8TestCallbackInterface::Create(info[0].As<v8::Object>());
+  } else {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("voidMethodTestCallbackInterfaceArg", "TestObject", "The callback provided as parameter 1 is not a function."));
     return;
   }
-  testCallbackInterfaceArg = V8TestCallbackInterface::Create(v8::Local<v8::Function>::Cast(info[0]), ScriptState::Current(info.GetIsolate()));
 
   impl->voidMethodTestCallbackInterfaceArg(testCallbackInterfaceArg);
 }
@@ -5592,15 +5592,14 @@ static void voidMethodTestCallbackInterfaceArgMethod(const v8::FunctionCallbackI
 static void voidMethodOptionalTestCallbackInterfaceArgMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
-  TestCallbackInterface* optionalTestCallbackInterfaceArg;
-  if (!IsUndefinedOrNull(info[0])) {
-    if (!info[0]->IsFunction()) {
-      V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("voidMethodOptionalTestCallbackInterfaceArg", "TestObject", "The callback provided as parameter 1 is not a function."));
-      return;
-    }
-    optionalTestCallbackInterfaceArg = V8TestCallbackInterface::Create(v8::Local<v8::Function>::Cast(info[0]), ScriptState::Current(info.GetIsolate()));
-  } else {
+  V8TestCallbackInterface* optionalTestCallbackInterfaceArg;
+  if (info[0]->IsFunction()) {
+    optionalTestCallbackInterfaceArg = V8TestCallbackInterface::Create(info[0].As<v8::Object>());
+  } else if (info[0]->IsNullOrUndefined()) {
     optionalTestCallbackInterfaceArg = nullptr;
+  } else {
+    V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("voidMethodOptionalTestCallbackInterfaceArg", "TestObject", "The callback provided as parameter 1 is not a function."));
+    return;
   }
 
   impl->voidMethodOptionalTestCallbackInterfaceArg(optionalTestCallbackInterfaceArg);
@@ -5614,12 +5613,15 @@ static void voidMethodTestCallbackInterfaceOrNullArgMethod(const v8::FunctionCal
     return;
   }
 
-  TestCallbackInterface* testCallbackInterfaceArg;
-  if (info.Length() <= 0 || !(info[0]->IsFunction() || info[0]->IsNull())) {
+  V8TestCallbackInterface* testCallbackInterfaceArg;
+  if (info[0]->IsFunction()) {
+    testCallbackInterfaceArg = V8TestCallbackInterface::Create(info[0].As<v8::Object>());
+  } else if (0 < info.Length() && info[0]->IsNullOrUndefined()) {
+    testCallbackInterfaceArg = nullptr;
+  } else {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("voidMethodTestCallbackInterfaceOrNullArg", "TestObject", "The callback provided as parameter 1 is not a function."));
     return;
   }
-  testCallbackInterfaceArg = info[0]->IsNull() ? nullptr : V8TestCallbackInterface::Create(v8::Local<v8::Function>::Cast(info[0]), ScriptState::Current(info.GetIsolate()));
 
   impl->voidMethodTestCallbackInterfaceOrNullArg(testCallbackInterfaceArg);
 }
@@ -5744,7 +5746,7 @@ static void passPermissiveDictionaryMethodMethod(const v8::FunctionCallbackInfo<
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
   TestDictionary arg;
-  V8TestDictionary::ToImpl(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), arg, exceptionState);
+  V8TestDictionary::ToImpl(info.GetIsolate(), info[0], arg, exceptionState);
   if (exceptionState.HadException())
     return;
 
@@ -5987,7 +5989,7 @@ static void voidMethodOptionalStringArgMethod(const v8::FunctionCallbackInfo<v8:
     impl->voidMethodOptionalStringArg();
     return;
   }
-  optionalStringArg = (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+  optionalStringArg = info[0];
   if (!optionalStringArg.Prepare())
     return;
 
@@ -6008,7 +6010,7 @@ static void voidMethodOptionalTestInterfaceEmptyArgMethod(const v8::FunctionCall
     impl->voidMethodOptionalTestInterfaceEmptyArg();
     return;
   }
-  optionalTestInterfaceEmptyArg = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+  optionalTestInterfaceEmptyArg = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), info[0]);
   if (!optionalTestInterfaceEmptyArg) {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("voidMethodOptionalTestInterfaceEmptyArg", "TestObject", "parameter 1 is not of type 'TestInterfaceEmpty'."));
     return;
@@ -6033,7 +6035,7 @@ static void voidMethodOptionalLongArgMethod(const v8::FunctionCallbackInfo<v8::V
     impl->voidMethodOptionalLongArg();
     return;
   }
-  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[0], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6056,7 +6058,7 @@ static void stringMethodOptionalLongArgMethod(const v8::FunctionCallbackInfo<v8:
     V8SetReturnValueString(info, impl->stringMethodOptionalLongArg(), info.GetIsolate());
     return;
   }
-  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[0], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6079,7 +6081,7 @@ static void testInterfaceEmptyMethodOptionalLongArgMethod(const v8::FunctionCall
     V8SetReturnValue(info, impl->testInterfaceEmptyMethodOptionalLongArg());
     return;
   }
-  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[0], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6102,7 +6104,7 @@ static void longMethodOptionalLongArgMethod(const v8::FunctionCallbackInfo<v8::V
     V8SetReturnValueInt(info, impl->longMethodOptionalLongArg());
     return;
   }
-  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[0], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6135,7 +6137,7 @@ static void voidMethodLongArgOptionalLongArgMethod(const v8::FunctionCallbackInf
     impl->voidMethodLongArgOptionalLongArg(longArg);
     return;
   }
-  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[1], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6169,7 +6171,7 @@ static void voidMethodLongArgOptionalLongArgOptionalLongArgMethod(const v8::Func
     impl->voidMethodLongArgOptionalLongArgOptionalLongArg(longArg);
     return;
   }
-  optionalLongArg1 = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg1 = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[1], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6177,7 +6179,7 @@ static void voidMethodLongArgOptionalLongArgOptionalLongArgMethod(const v8::Func
     impl->voidMethodLongArgOptionalLongArgOptionalLongArg(longArg, optionalLongArg1);
     return;
   }
-  optionalLongArg2 = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (2 < info.Length() ? info[2] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg2 = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[2], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6210,7 +6212,7 @@ static void voidMethodLongArgOptionalTestInterfaceEmptyArgMethod(const v8::Funct
     impl->voidMethodLongArgOptionalTestInterfaceEmptyArg(longArg);
     return;
   }
-  optionalTestInterfaceEmpty = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+  optionalTestInterfaceEmpty = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), info[1]);
   if (!optionalTestInterfaceEmpty) {
     exceptionState.ThrowTypeError("parameter 2 is not of type 'TestInterfaceEmpty'.");
     return;
@@ -6247,7 +6249,7 @@ static void voidMethodTestInterfaceEmptyArgOptionalLongArgMethod(const v8::Funct
     impl->voidMethodTestInterfaceEmptyArgOptionalLongArg(optionalTestInterfaceEmpty);
     return;
   }
-  longArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  longArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[1], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6260,11 +6262,11 @@ static void voidMethodOptionalDictionaryArgMethod(const v8::FunctionCallbackInfo
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
   Dictionary optionalDictionaryArg;
-  if (0 < info.Length() && !info[0]->IsNullOrUndefined() && !info[0]->IsObject()) {
+  if (!info[0]->IsNullOrUndefined() && !info[0]->IsObject()) {
     exceptionState.ThrowTypeError("parameter 1 ('optionalDictionaryArg') is not an object.");
     return;
   }
-  optionalDictionaryArg = NativeValueTraits<Dictionary>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+  optionalDictionaryArg = NativeValueTraits<Dictionary>::NativeValue(info.GetIsolate(), info[0], exceptionState);
   if (exceptionState.HadException())
     return;
 
@@ -6278,7 +6280,7 @@ static void voidMethodDefaultByteStringArgMethod(const v8::FunctionCallbackInfo<
 
   V8StringResource<> defaultByteStringArg;
   if (!info[0]->IsUndefined()) {
-    defaultByteStringArg = NativeValueTraits<IDLByteString>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+    defaultByteStringArg = NativeValueTraits<IDLByteString>::NativeValue(info.GetIsolate(), info[0], exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6293,7 +6295,7 @@ static void voidMethodDefaultStringArgMethod(const v8::FunctionCallbackInfo<v8::
 
   V8StringResource<> defaultStringArg;
   if (!info[0]->IsUndefined()) {
-    defaultStringArg = (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+    defaultStringArg = info[0];
     if (!defaultStringArg.Prepare())
       return;
   } else {
@@ -6312,21 +6314,21 @@ static void voidMethodDefaultIntegerArgsMethod(const v8::FunctionCallbackInfo<v8
   int64_t defaultLongLongArg;
   uint32_t defaultUnsignedArg;
   if (!info[0]->IsUndefined()) {
-    defaultLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+    defaultLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[0], exceptionState, kNormalConversion);
     if (exceptionState.HadException())
       return;
   } else {
     defaultLongArg = 10;
   }
   if (!info[1]->IsUndefined()) {
-    defaultLongLongArg = NativeValueTraits<IDLLongLong>::NativeValue(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+    defaultLongLongArg = NativeValueTraits<IDLLongLong>::NativeValue(info.GetIsolate(), info[1], exceptionState, kNormalConversion);
     if (exceptionState.HadException())
       return;
   } else {
     defaultLongLongArg = -10;
   }
   if (!info[2]->IsUndefined()) {
-    defaultUnsignedArg = NativeValueTraits<IDLUnsignedLong>::NativeValue(info.GetIsolate(), (2 < info.Length() ? info[2] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+    defaultUnsignedArg = NativeValueTraits<IDLUnsignedLong>::NativeValue(info.GetIsolate(), info[2], exceptionState, kNormalConversion);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6343,7 +6345,7 @@ static void voidMethodDefaultDoubleArgMethod(const v8::FunctionCallbackInfo<v8::
 
   double defaultDoubleArg;
   if (!info[0]->IsUndefined()) {
-    defaultDoubleArg = NativeValueTraits<IDLDouble>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+    defaultDoubleArg = NativeValueTraits<IDLDouble>::NativeValue(info.GetIsolate(), info[0], exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6360,7 +6362,7 @@ static void voidMethodDefaultTrueBooleanArgMethod(const v8::FunctionCallbackInfo
 
   bool defaultBooleanArg;
   if (!info[0]->IsUndefined()) {
-    defaultBooleanArg = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+    defaultBooleanArg = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), info[0], exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6377,7 +6379,7 @@ static void voidMethodDefaultFalseBooleanArgMethod(const v8::FunctionCallbackInf
 
   bool defaultBooleanArg;
   if (!info[0]->IsUndefined()) {
-    defaultBooleanArg = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+    defaultBooleanArg = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), info[0], exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6394,7 +6396,7 @@ static void voidMethodDefaultNullableByteStringArgMethod(const v8::FunctionCallb
 
   V8StringResource<kTreatNullAndUndefinedAsNullString> defaultStringArg;
   if (!info[0]->IsUndefined()) {
-    defaultStringArg = NativeValueTraits<IDLByteString>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+    defaultStringArg = NativeValueTraits<IDLByteString>::NativeValue(info.GetIsolate(), info[0], exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6409,7 +6411,7 @@ static void voidMethodDefaultNullableStringArgMethod(const v8::FunctionCallbackI
 
   V8StringResource<kTreatNullAndUndefinedAsNullString> defaultStringArg;
   if (!info[0]->IsUndefined()) {
-    defaultStringArg = (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+    defaultStringArg = info[0];
     if (!defaultStringArg.Prepare())
       return;
   } else {
@@ -6424,7 +6426,7 @@ static void voidMethodDefaultNullableTestInterfaceArgMethod(const v8::FunctionCa
 
   TestInterfaceImplementation* defaultTestInterfaceArg;
   if (!info[0]->IsUndefined()) {
-    defaultTestInterfaceArg = V8TestInterface::ToImplWithTypeCheck(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+    defaultTestInterfaceArg = V8TestInterface::ToImplWithTypeCheck(info.GetIsolate(), info[0]);
     if (!defaultTestInterfaceArg && !IsUndefinedOrNull(info[0])) {
       V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("voidMethodDefaultNullableTestInterfaceArg", "TestObject", "parameter 1 is not of type 'TestInterface'."));
       return;
@@ -6445,21 +6447,21 @@ static void voidMethodDefaultDoubleOrStringArgsMethod(const v8::FunctionCallback
   DoubleOrString defaultStringArg;
   DoubleOrString defaultNullArg;
   if (!info[0]->IsUndefined()) {
-    V8DoubleOrString::ToImpl(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), defaultLongArg, UnionTypeConversionMode::kNotNullable, exceptionState);
+    V8DoubleOrString::ToImpl(info.GetIsolate(), info[0], defaultLongArg, UnionTypeConversionMode::kNotNullable, exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
     defaultLongArg.SetDouble(10);
   }
   if (!info[1]->IsUndefined()) {
-    V8DoubleOrStringOrNull::ToImpl(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), defaultStringArg, UnionTypeConversionMode::kNullable, exceptionState);
+    V8DoubleOrStringOrNull::ToImpl(info.GetIsolate(), info[1], defaultStringArg, UnionTypeConversionMode::kNullable, exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
     defaultStringArg.SetString("foo");
   }
   if (!info[2]->IsUndefined()) {
-    V8DoubleOrString::ToImpl(info.GetIsolate(), (2 < info.Length() ? info[2] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), defaultNullArg, UnionTypeConversionMode::kNullable, exceptionState);
+    V8DoubleOrString::ToImpl(info.GetIsolate(), info[2], defaultNullArg, UnionTypeConversionMode::kNullable, exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6476,7 +6478,7 @@ static void voidMethodDefaultStringSequenceArgMethod(const v8::FunctionCallbackI
 
   Vector<String> defaultStringSequenceArg;
   if (!info[0]->IsUndefined()) {
-    defaultStringSequenceArg = NativeValueTraits<IDLSequence<IDLString>>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+    defaultStringSequenceArg = NativeValueTraits<IDLSequence<IDLString>>::NativeValue(info.GetIsolate(), info[0], exceptionState);
     if (exceptionState.HadException())
       return;
   } else {
@@ -6680,7 +6682,7 @@ static void overloadedMethodB2Method(const v8::FunctionCallbackInfo<v8::Value>& 
     impl->overloadedMethodB(stringArg);
     return;
   }
-  longArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  longArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[1], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -6905,7 +6907,7 @@ static void overloadedMethodF1Method(const v8::FunctionCallbackInfo<v8::Value>& 
     impl->overloadedMethodF();
     return;
   }
-  stringArg = (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+  stringArg = info[0];
   if (!stringArg.Prepare())
     return;
 
@@ -6981,7 +6983,7 @@ static void overloadedMethodG2Method(const v8::FunctionCallbackInfo<v8::Value>& 
 
   TestInterfaceEmpty* testInterfaceEmptyOrNullArg;
   if (!info[0]->IsUndefined()) {
-    testInterfaceEmptyOrNullArg = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+    testInterfaceEmptyOrNullArg = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), info[0]);
     if (!testInterfaceEmptyOrNullArg && !IsUndefinedOrNull(info[0])) {
       V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("overloadedMethodG", "TestObject", "parameter 1 is not of type 'TestInterfaceEmpty'."));
       return;
@@ -7201,7 +7203,7 @@ static void overloadedMethodK1Method(const v8::FunctionCallbackInfo<v8::Value>& 
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
   ScriptValue functionArg;
-  if (0 < info.Length() && info[0]->IsFunction()) {
+  if (info[0]->IsFunction()) {
     functionArg = ScriptValue(ScriptState::Current(info.GetIsolate()), info[0]);
   } else {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("overloadedMethodK", "TestObject", "The callback provided as parameter 1 is not a function."));
@@ -7348,12 +7350,13 @@ static void overloadedMethodN1Method(const v8::FunctionCallbackInfo<v8::Value>& 
 static void overloadedMethodN2Method(const v8::FunctionCallbackInfo<v8::Value>& info) {
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
-  TestCallbackInterface* testCallbackInterfaceArg;
-  if (info.Length() <= 0 || !info[0]->IsFunction()) {
+  V8TestCallbackInterface* testCallbackInterfaceArg;
+  if (info[0]->IsFunction()) {
+    testCallbackInterfaceArg = V8TestCallbackInterface::Create(info[0].As<v8::Object>());
+  } else {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("overloadedMethodN", "TestObject", "The callback provided as parameter 1 is not a function."));
     return;
   }
-  testCallbackInterfaceArg = V8TestCallbackInterface::Create(v8::Local<v8::Function>::Cast(info[0]), ScriptState::Current(info.GetIsolate()));
 
   impl->overloadedMethodN(testCallbackInterfaceArg);
 }
@@ -7724,7 +7727,7 @@ static void voidMethodDefaultUndefinedTestInterfaceEmptyArgMethod(const v8::Func
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
   TestInterfaceEmpty* defaultUndefinedTestInterfaceEmptyArg;
-  defaultUndefinedTestInterfaceEmptyArg = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+  defaultUndefinedTestInterfaceEmptyArg = V8TestInterfaceEmpty::ToImplWithTypeCheck(info.GetIsolate(), info[0]);
   if (!defaultUndefinedTestInterfaceEmptyArg) {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("voidMethodDefaultUndefinedTestInterfaceEmptyArg", "TestObject", "parameter 1 is not of type 'TestInterfaceEmpty'."));
     return;
@@ -7739,7 +7742,7 @@ static void voidMethodDefaultUndefinedLongArgMethod(const v8::FunctionCallbackIn
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
   int32_t defaultUndefinedLongArg;
-  defaultUndefinedLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  defaultUndefinedLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[0], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -7750,7 +7753,7 @@ static void voidMethodDefaultUndefinedStringArgMethod(const v8::FunctionCallback
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
   V8StringResource<> defaultUndefinedStringArg;
-  defaultUndefinedStringArg = (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+  defaultUndefinedStringArg = info[0];
   if (!defaultUndefinedStringArg.Prepare())
     return;
 
@@ -7874,7 +7877,7 @@ static void callWithScriptStateScriptArgumentsVoidMethodOptionalBooleanArgMethod
     impl->callWithScriptStateScriptArgumentsVoidMethodOptionalBooleanArg(scriptState, scriptArguments);
     return;
   }
-  optionalBooleanArg = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+  optionalBooleanArg = NativeValueTraits<IDLBoolean>::NativeValue(info.GetIsolate(), info[0], exceptionState);
   if (exceptionState.HadException())
     return;
 
@@ -8529,7 +8532,7 @@ static void raisesExceptionVoidMethodOptionalLongArgMethod(const v8::FunctionCal
     }
     return;
   }
-  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), (0 < info.Length() ? info[0] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState, kNormalConversion);
+  optionalLongArg = NativeValueTraits<IDLLong>::NativeValue(info.GetIsolate(), info[0], exceptionState, kNormalConversion);
   if (exceptionState.HadException())
     return;
 
@@ -8549,12 +8552,13 @@ static void raisesExceptionVoidMethodTestCallbackInterfaceArgMethod(const v8::Fu
     return;
   }
 
-  TestCallbackInterface* testCallbackInterfaceArg;
-  if (info.Length() <= 0 || !info[0]->IsFunction()) {
+  V8TestCallbackInterface* testCallbackInterfaceArg;
+  if (info[0]->IsFunction()) {
+    testCallbackInterfaceArg = V8TestCallbackInterface::Create(info[0].As<v8::Object>());
+  } else {
     exceptionState.ThrowTypeError("The callback provided as parameter 1 is not a function.");
     return;
   }
-  testCallbackInterfaceArg = V8TestCallbackInterface::Create(v8::Local<v8::Function>::Cast(info[0]), ScriptState::Current(info.GetIsolate()));
 
   impl->raisesExceptionVoidMethodTestCallbackInterfaceArg(testCallbackInterfaceArg, exceptionState);
   if (exceptionState.HadException()) {
@@ -8567,15 +8571,14 @@ static void raisesExceptionVoidMethodOptionalTestCallbackInterfaceArgMethod(cons
 
   TestObject* impl = V8TestObject::ToImpl(info.Holder());
 
-  TestCallbackInterface* optionalTestCallbackInterfaceArg;
-  if (!IsUndefinedOrNull(info[0])) {
-    if (!info[0]->IsFunction()) {
-      exceptionState.ThrowTypeError("The callback provided as parameter 1 is not a function.");
-      return;
-    }
-    optionalTestCallbackInterfaceArg = V8TestCallbackInterface::Create(v8::Local<v8::Function>::Cast(info[0]), ScriptState::Current(info.GetIsolate()));
-  } else {
+  V8TestCallbackInterface* optionalTestCallbackInterfaceArg;
+  if (info[0]->IsFunction()) {
+    optionalTestCallbackInterfaceArg = V8TestCallbackInterface::Create(info[0].As<v8::Object>());
+  } else if (info[0]->IsNullOrUndefined()) {
     optionalTestCallbackInterfaceArg = nullptr;
+  } else {
+    exceptionState.ThrowTypeError("The callback provided as parameter 1 is not a function.");
+    return;
   }
 
   impl->raisesExceptionVoidMethodOptionalTestCallbackInterfaceArg(optionalTestCallbackInterfaceArg, exceptionState);
@@ -8891,7 +8894,7 @@ static void useToImpl4ArgumentsCheckingIfPossibleWithOptionalArgMethod(const v8:
     impl->useToImpl4ArgumentsCheckingIfPossibleWithOptionalArg(node1);
     return;
   }
-  node2 = V8Node::ToImplWithTypeCheck(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+  node2 = V8Node::ToImplWithTypeCheck(info.GetIsolate(), info[1]);
   if (!node2) {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("useToImpl4ArgumentsCheckingIfPossibleWithOptionalArg", "TestObject", "parameter 2 is not of type 'Node'."));
     return;
@@ -8941,7 +8944,7 @@ static void useToImpl4ArgumentsCheckingIfPossibleWithUndefinedArgMethod(const v8
     return;
   }
 
-  node2 = V8Node::ToImplWithTypeCheck(info.GetIsolate(), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+  node2 = V8Node::ToImplWithTypeCheck(info.GetIsolate(), info[1]);
   if (!node2) {
     V8ThrowException::ThrowTypeError(info.GetIsolate(), ExceptionMessages::FailedToExecute("useToImpl4ArgumentsCheckingIfPossibleWithUndefinedArg", "TestObject", "parameter 2 is not of type 'Node'."));
     return;
@@ -9062,14 +9065,14 @@ static void forEachMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
   ScriptValue callback;
   ScriptValue thisArg;
-  if (0 < info.Length() && info[0]->IsFunction()) {
+  if (info[0]->IsFunction()) {
     callback = ScriptValue(ScriptState::Current(info.GetIsolate()), info[0]);
   } else {
     exceptionState.ThrowTypeError("The callback provided as parameter 1 is not a function.");
     return;
   }
 
-  thisArg = ScriptValue(ScriptState::Current(info.GetIsolate()), (1 < info.Length() ? info[1] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))));
+  thisArg = ScriptValue(ScriptState::Current(info.GetIsolate()), info[1]);
 
   impl->forEachForBinding(scriptState, ScriptValue(scriptState, info.Holder()), callback, thisArg, exceptionState);
   if (exceptionState.HadException()) {
@@ -13821,25 +13824,49 @@ TestObject* NativeValueTraits<TestObject>::NativeValue(v8::Isolate* isolate, v8:
   return nativeValue;
 }
 
-void V8TestObject::preparePrototypeAndInterfaceObject(v8::Local<v8::Context> context, const DOMWrapperWorld& world, v8::Local<v8::Object> prototypeObject, v8::Local<v8::Function> interfaceObject, v8::Local<v8::FunctionTemplate> interfaceTemplate) {
+void V8TestObject::InstallConditionalFeatures(
+    v8::Local<v8::Context> context,
+    const DOMWrapperWorld& world,
+    v8::Local<v8::Object> instanceObject,
+    v8::Local<v8::Object> prototypeObject,
+    v8::Local<v8::Function> interfaceObject,
+    v8::Local<v8::FunctionTemplate> interfaceTemplate) {
+  CHECK(!interfaceTemplate.IsEmpty());
+  DCHECK((!prototypeObject.IsEmpty() && !interfaceObject.IsEmpty()) ||
+         !instanceObject.IsEmpty());
+
   v8::Isolate* isolate = context->GetIsolate();
 
-  v8::Local<v8::Name> unscopablesSymbol(v8::Symbol::GetUnscopables(isolate));
-  v8::Local<v8::Object> unscopables;
-  if (V8CallBoolean(prototypeObject->HasOwnProperty(context, unscopablesSymbol)))
-    unscopables = prototypeObject->Get(context, unscopablesSymbol).ToLocalChecked().As<v8::Object>();
-  else
-    unscopables = v8::Object::New(isolate);
-  unscopables->CreateDataProperty(context, V8AtomicString(isolate, "unscopableLongAttribute"), v8::True(isolate)).FromJust();
-  unscopables->CreateDataProperty(context, V8AtomicString(isolate, "unscopableOriginTrialEnabledLongAttribute"), v8::True(isolate)).FromJust();
-  if (RuntimeEnabledFeatures::FeatureNameEnabled()) {
-    unscopables->CreateDataProperty(context, V8AtomicString(isolate, "unscopableRuntimeEnabledLongAttribute"), v8::True(isolate)).FromJust();
+  if (!prototypeObject.IsEmpty()) {
+    v8::Local<v8::Name> unscopablesSymbol(v8::Symbol::GetUnscopables(isolate));
+    v8::Local<v8::Object> unscopables;
+    bool has_unscopables;
+    if (prototypeObject->HasOwnProperty(context, unscopablesSymbol).To(&has_unscopables) && has_unscopables) {
+      unscopables = prototypeObject->Get(context, unscopablesSymbol).ToLocalChecked().As<v8::Object>();
+    } else {
+      unscopables = v8::Object::New(isolate);
+    }
+    unscopables->CreateDataProperty(
+        context, V8AtomicString(isolate, "unscopableLongAttribute"), v8::True(isolate))
+        .FromJust();
+    unscopables->CreateDataProperty(
+        context, V8AtomicString(isolate, "unscopableOriginTrialEnabledLongAttribute"), v8::True(isolate))
+        .FromJust();
+    if (RuntimeEnabledFeatures::FeatureNameEnabled()) {
+      unscopables->CreateDataProperty(
+          context, V8AtomicString(isolate, "unscopableRuntimeEnabledLongAttribute"), v8::True(isolate))
+          .FromJust();
+    }
+    if (RuntimeEnabledFeatures::FeatureNameEnabled()) {
+      unscopables->CreateDataProperty(
+          context, V8AtomicString(isolate, "unscopableRuntimeEnabledVoidMethod"), v8::True(isolate))
+          .FromJust();
+    }
+    unscopables->CreateDataProperty(
+        context, V8AtomicString(isolate, "unscopableVoidMethod"), v8::True(isolate))
+        .FromJust();
+    prototypeObject->CreateDataProperty(context, unscopablesSymbol, unscopables).FromJust();
   }
-  if (RuntimeEnabledFeatures::FeatureNameEnabled()) {
-    unscopables->CreateDataProperty(context, V8AtomicString(isolate, "unscopableRuntimeEnabledVoidMethod"), v8::True(isolate)).FromJust();
-  }
-  unscopables->CreateDataProperty(context, V8AtomicString(isolate, "unscopableVoidMethod"), v8::True(isolate)).FromJust();
-  prototypeObject->CreateDataProperty(context, unscopablesSymbol, unscopables).FromJust();
 }
 
 }  // namespace blink

@@ -5,7 +5,7 @@
 #include "core/loader/ThreadableLoader.h"
 
 #include <memory>
-#include "core/dom/TaskRunnerHelper.h"
+#include "base/memory/scoped_refptr.h"
 #include "core/loader/DocumentThreadableLoader.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/loader/ThreadableLoadingContext.h"
@@ -28,8 +28,9 @@
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
+#include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebURLLoadTiming.h"
 #include "public/platform/WebURLLoaderMockFactory.h"
 #include "public/platform/WebURLRequest.h"
@@ -172,7 +173,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
 
   void CreateLoader(ThreadableLoaderClient* client) override {
     std::unique_ptr<WaitableEvent> completion_event =
-        WTF::MakeUnique<WaitableEvent>();
+        std::make_unique<WaitableEvent>();
     worker_loading_task_runner_->PostTask(
         BLINK_FROM_HERE,
         CrossThreadBind(&WorkerThreadableLoaderTestHelper::WorkerCreateLoader,
@@ -184,7 +185,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
 
   void StartLoader(const ResourceRequest& request) override {
     std::unique_ptr<WaitableEvent> completion_event =
-        WTF::MakeUnique<WaitableEvent>();
+        std::make_unique<WaitableEvent>();
     worker_loading_task_runner_->PostTask(
         BLINK_FROM_HERE,
         CrossThreadBind(&WorkerThreadableLoaderTestHelper::WorkerStartLoader,
@@ -221,7 +222,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
     testing::RunPendingTasks();
 
     std::unique_ptr<WaitableEvent> completion_event =
-        WTF::MakeUnique<WaitableEvent>();
+        std::make_unique<WaitableEvent>();
     worker_loading_task_runner_->PostTask(
         BLINK_FROM_HERE,
         CrossThreadBind(&WorkerThreadableLoaderTestHelper::WorkerCallCheckpoint,
@@ -231,11 +232,11 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
   }
 
   void OnSetUp() override {
-    reporting_proxy_ = WTF::MakeUnique<WorkerReportingProxy>();
+    reporting_proxy_ = std::make_unique<WorkerReportingProxy>();
     security_origin_ = GetDocument().GetSecurityOrigin();
     parent_frame_task_runners_ =
         ParentFrameTaskRunners::Create(dummy_page_holder_->GetFrame());
-    worker_thread_ = WTF::MakeUnique<WorkerThreadForTest>(
+    worker_thread_ = std::make_unique<WorkerThreadForTest>(
         ThreadableLoadingContext::Create(GetDocument()), *reporting_proxy_);
 
     worker_thread_->StartWithSourceCode(security_origin_.get(),
@@ -243,7 +244,7 @@ class WorkerThreadableLoaderTestHelper : public ThreadableLoaderTestHelper {
                                         parent_frame_task_runners_.Get());
     worker_thread_->WaitForInit();
     worker_loading_task_runner_ =
-        TaskRunnerHelper::Get(TaskType::kUnspecedLoading, worker_thread_.get());
+        worker_thread_->GetTaskRunner(TaskType::kUnspecedLoading);
   }
 
   void OnServeRequests() override { testing::RunPendingTasks(); }
@@ -650,9 +651,13 @@ TEST_P(ThreadableLoaderTest, DidFailInStart) {
   CreateLoader();
   CallCheckpoint(1);
 
+  String error_message = String::Format(
+      "Failed to load '%s': Cross origin requests are not allowed by request "
+      "mode.",
+      ErrorURL().GetString().Utf8().data());
   EXPECT_CALL(*Client(), DidFail(ResourceError::CancelledDueToAccessCheckError(
                              ErrorURL(), ResourceRequestBlockedReason::kOther,
-                             "Cross origin requests are not supported.")));
+                             error_message)));
   EXPECT_CALL(GetCheckpoint(), Call(2));
 
   StartLoader(ErrorURL(), network::mojom::FetchRequestMode::kSameOrigin);

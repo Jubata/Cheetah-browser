@@ -214,20 +214,6 @@ void CompositeEditCommand::ApplyCommandToComposite(
   commands_.push_back(command);
 }
 
-void CompositeEditCommand::ApplyCommandToComposite(
-    CompositeEditCommand* command,
-    const SelectionForUndoStep& selection,
-    EditingState* editing_state) {
-  command->SetParent(this);
-  if (selection != command->EndingSelection()) {
-    command->SetStartingSelection(selection);
-    command->SetEndingSelection(selection);
-  }
-  command->DoApply(editing_state);
-  if (!editing_state->IsAborted())
-    commands_.push_back(command);
-}
-
 void CompositeEditCommand::AppendCommandToUndoStep(
     CompositeEditCommand* command) {
   EnsureUndoStep()->Append(command->EnsureUndoStep());
@@ -597,6 +583,10 @@ Position CompositeEditCommand::PositionOutsideTabSpan(const Position& pos) {
 
   HTMLSpanElement* tab_span = TabSpanElement(pos.ComputeContainerNode());
   DCHECK(tab_span);
+
+  // TODO(editing-dev): Hoist this UpdateStyleAndLayoutIgnorePendingStylesheets
+  // to the callers. See crbug.com/590369 for details.
+  GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
 
   if (pos.OffsetInContainerNode() <= CaretMinOffset(pos.ComputeContainerNode()))
     return Position::InParentBeforeNode(*tab_span);

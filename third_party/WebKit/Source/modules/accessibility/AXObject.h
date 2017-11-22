@@ -69,34 +69,6 @@ enum class AOMRelationListProperty;
 
 typedef unsigned AXID;
 
-enum AccessibilityTextSource {
-  kAlternativeText,
-  kChildrenText,
-  kSummaryText,
-  kHelpText,
-  kVisibleText,
-  kTitleTagText,
-  kPlaceholderText,
-  kLabelByElementText,
-};
-
-class AccessibilityText final
-    : public GarbageCollectedFinalized<AccessibilityText> {
-  WTF_MAKE_NONCOPYABLE(AccessibilityText);
-
- public:
-  void Trace(blink::Visitor* visitor) { visitor->Trace(text_element_); }
-
- private:
-  AccessibilityText(const String& text,
-                    const AccessibilityTextSource& source,
-                    AXObject* element)
-      : text_(text), text_element_(element) {}
-
-  String text_;
-  Member<AXObject> text_element_;
-};
-
 enum AXObjectInclusion {
   kIncludeObject,
   kIgnoreObject,
@@ -114,12 +86,6 @@ enum AccessibilityOptionalBool {
   kOptionalBoolUndefined = 0,
   kOptionalBoolTrue,
   kOptionalBoolFalse
-};
-
-enum TextUnderElementMode {
-  kTextUnderElementAll,
-  kTextUnderElementAny  // If the text is unimportant, just whether or not it's
-                        // present
 };
 
 class AXSparseAttributeClient {
@@ -346,12 +312,12 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
 
   // The AXObjectCacheImpl that owns this object, and its unique ID within this
   // cache.
-  AXObjectCacheImpl& AxObjectCache() const {
+  AXObjectCacheImpl& AXObjectCache() const {
     DCHECK(ax_object_cache_);
     return *ax_object_cache_;
   }
 
-  AXID AxObjectID() const { return id_; }
+  AXID AXObjectID() const { return id_; }
 
   // Wrappers that retrieve either an Accessibility Object Model property,
   // or the equivalent ARIA attribute, in that order.
@@ -397,7 +363,6 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   bool IsCheckbox() const { return RoleValue() == kCheckBoxRole; }
   bool IsCheckboxOrRadio() const { return IsCheckbox() || IsRadioButton(); }
   bool IsColorWell() const { return RoleValue() == kColorWellRole; }
-  bool IsComboBox() const { return RoleValue() == kComboBoxRole; }
   virtual bool IsControl() const { return false; }
   virtual bool IsDataTable() const { return false; }
   virtual bool IsEmbeddedObject() const { return false; }
@@ -704,7 +669,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   // Explicitly set an object's bounding rect and offset container.
   void SetElementRect(LayoutRect r, AXObject* container) {
     explicit_element_rect_ = r;
-    explicit_container_id_ = container->AxObjectID();
+    explicit_container_id_ = container->AXObjectID();
   }
 
   // Hit testing.

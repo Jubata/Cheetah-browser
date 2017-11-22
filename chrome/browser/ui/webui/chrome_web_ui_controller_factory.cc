@@ -360,8 +360,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<OmniboxUI>;
   if (url.host_piece() == chrome::kChromeUIPasswordManagerInternalsHost)
     return &NewWebUI<PasswordManagerInternalsUI>;
-  if (url.host_piece() == chrome::kChromeUIPhysicalWebHost)
-    return &NewWebUI<PhysicalWebUI>;
   if (url.host_piece() == chrome::kChromeUIPredictorsHost)
     return &NewWebUI<PredictorsUI>;
   if (url.host() == chrome::kChromeUIQuotaInternalsHost)
@@ -482,6 +480,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(OS_ANDROID)
   if (url.host_piece() == chrome::kChromeUIOfflineInternalsHost)
     return &NewWebUI<OfflineInternalsUI>;
+  if (url.host_piece() == chrome::kChromeUIPhysicalWebHost)
+    return &NewWebUI<PhysicalWebUI>;
   if (url.host_piece() == chrome::kChromeUISnippetsInternalsHost &&
       !profile->IsOffTheRecord())
     return &NewWebUI<SnippetsInternalsUI>;
@@ -712,7 +712,7 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
       favicon_base::FaviconRawBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap;
       // Leave |bitmap_result|'s icon URL as the default of GURL().
-      bitmap_result.icon_type = favicon_base::FAVICON;
+      bitmap_result.icon_type = favicon_base::IconType::kFavicon;
       bitmap_result.pixel_size = candidate_sizes[selected_index];
       favicon_bitmap_results->push_back(bitmap_result);
     }

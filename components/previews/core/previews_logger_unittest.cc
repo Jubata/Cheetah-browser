@@ -32,7 +32,9 @@ class TestPreviewsLoggerObserver : public PreviewsLoggerObserver {
   TestPreviewsLoggerObserver()
       : host_blacklisted_called_(false),
         user_status_change_calls_(0),
-        blacklist_cleared_called_(false) {}
+        blacklist_cleared_called_(false),
+        blacklist_ignored_(false),
+        last_removed_notified_(false) {}
 
   ~TestPreviewsLoggerObserver() override {}
 
@@ -54,6 +56,10 @@ class TestPreviewsLoggerObserver : public PreviewsLoggerObserver {
     blacklist_cleared_called_ = true;
     blacklist_cleared_time_ = time;
   }
+  void OnIgnoreBlacklistDecisionStatusChanged(bool ignored) override {
+    blacklist_ignored_ = ignored;
+  }
+  void OnLastObserverRemove() override { last_removed_notified_ = true; }
 
   // Expose the passed in MessageLog for testing.
   PreviewsLogger::MessageLog* message() const { return message_.get(); }
@@ -73,6 +79,13 @@ class TestPreviewsLoggerObserver : public PreviewsLoggerObserver {
   bool user_blacklisted() const { return user_blacklisted_; }
   base::Time blacklist_cleared_time() const { return blacklist_cleared_time_; }
 
+  // Expose whether PreviewsBlackList decisions are ignored or not.
+  bool blacklist_ignored() const { return blacklist_ignored_; }
+
+  // Expose whether observer is notified that it is the last observer to be
+  // removed for testing.
+  bool last_removed_notified() { return last_removed_notified_; }
+
  private:
   // Received messages.
   std::vector<PreviewsLogger::MessageLog> messages_;
@@ -87,6 +100,12 @@ class TestPreviewsLoggerObserver : public PreviewsLoggerObserver {
   bool host_blacklisted_called_;
   size_t user_status_change_calls_;
   bool blacklist_cleared_called_;
+
+  // BlacklistPreviews decision is ignored or not.
+  bool blacklist_ignored_;
+
+  // Whether |this| is the last observer to be removed.
+  bool last_removed_notified_;
 };
 
 class PreviewsLoggerTest : public testing::Test {
@@ -112,8 +131,8 @@ class PreviewsLoggerTest : public testing::Test {
     EXPECT_EQ(expected_size, actual.size());
 
     std::vector<std::string> description_parts = base::SplitStringUsingSubstr(
-        actual[0].event_description, "preview decision made - ",
-        base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+        actual[0].event_description, "preview - ", base::TRIM_WHITESPACE,
+        base::SPLIT_WANT_NONEMPTY);
     return description_parts[1];
   }
 
@@ -144,14 +163,13 @@ TEST_F(PreviewsLoggerTest, LogPreviewDecisionMadeLogMessage) {
   EXPECT_EQ(expected_size, actual.size());
 
   std::string expected_description_a =
-      "Offline preview decision made - Blacklist failed to be created";
+      "Offline preview - Blacklist failed to be created";
   EXPECT_EQ(kPreviewsDecisionMadeEventType, actual[0].event_type);
   EXPECT_EQ(expected_description_a, actual[0].event_description);
   EXPECT_EQ(url_a, actual[0].url);
   EXPECT_EQ(time, actual[0].time);
 
-  std::string expected_description_b =
-      "LoFi preview decision made - Network not slow";
+  std::string expected_description_b = "LoFi preview - Network not slow";
   EXPECT_EQ(kPreviewsDecisionMadeEventType, actual[1].event_type);
   EXPECT_EQ(expected_description_b, actual[1].event_description);
   EXPECT_EQ(url_b, actual[1].url);
@@ -177,15 +195,13 @@ TEST_F(PreviewsLoggerTest, LogPreviewNavigationLogMessage) {
   const size_t expected_size = 2;
   EXPECT_EQ(expected_size, actual.size());
 
-  std::string expected_description_a =
-      "Offline preview navigation - user opt_out: True";
+  std::string expected_description_a = "Offline preview - user opt-out: True";
   EXPECT_EQ(kPreviewsNavigationEventType, actual[0].event_type);
   EXPECT_EQ(expected_description_a, actual[0].event_description);
   EXPECT_EQ(url_a, actual[0].url);
   EXPECT_EQ(time, actual[0].time);
 
-  std::string expected_description_b =
-      "LoFi preview navigation - user opt_out: False";
+  std::string expected_description_b = "LoFi preview - user opt-out: False";
   EXPECT_EQ(kPreviewsNavigationEventType, actual[1].event_type);
   EXPECT_EQ(expected_description_b, actual[1].event_description);
   EXPECT_EQ(url_b, actual[1].url);
@@ -394,6 +410,21 @@ TEST_F(PreviewsLoggerTest, LogPreviewDecisionDescriptionServerRules) {
   EXPECT_EQ(expected_description, actual_description);
 }
 
+TEST_F(PreviewsLoggerTest, LogPreviewDecisionDescriptionNotWhitelisedByServer) {
+  std::string actual_description = LogPreviewDecisionAndGetReasonDescription(
+      PreviewsEligibilityReason::HOST_NOT_WHITELISTED_BY_SERVER);
+  std::string expected_description = "Host not whitelisted by server rules";
+  EXPECT_EQ(expected_description, actual_description);
+}
+
+TEST_F(PreviewsLoggerTest,
+       LogPreviewDecisionDescriptionAllowedWithoutServerOptimizationHints) {
+  std::string actual_description = LogPreviewDecisionAndGetReasonDescription(
+      PreviewsEligibilityReason::ALLOWED_WITHOUT_OPTIMIZATION_HINTS);
+  std::string expected_description = "Allowed (but without server rule check)";
+  EXPECT_EQ(expected_description, actual_description);
+}
+
 TEST_F(PreviewsLoggerTest, NotifyObserversOfNewBlacklistedHost) {
   TestPreviewsLoggerObserver observers[3];
 
@@ -509,6 +540,48 @@ TEST_F(PreviewsLoggerTest, ObserverNotifiedOfUserBlacklistedStateWhenAdded) {
   EXPECT_EQ(expected_size, observer.blacklisted_hosts().size());
   EXPECT_EQ(time0, observer.blacklisted_hosts().find(host0)->second);
   EXPECT_EQ(time1, observer.blacklisted_hosts().find(host1)->second);
+}
+
+TEST_F(PreviewsLoggerTest, NotifyObserversBlacklistIgnoredUpdate) {
+  TestPreviewsLoggerObserver observers[3];
+  const size_t number_of_obs = 3;
+  for (size_t i = 0; i < number_of_obs; i++) {
+    logger_->AddAndNotifyObserver(&observers[i]);
+  }
+
+  for (size_t i = 0; i < number_of_obs; i++) {
+    EXPECT_FALSE(observers[i].blacklist_ignored());
+  }
+
+  const size_t removed_observer = 1;
+  logger_->RemoveObserver(&observers[removed_observer]);
+  logger_->OnIgnoreBlacklistDecisionStatusChanged(true /* ignored */);
+  for (size_t i = 0; i < number_of_obs; i++) {
+    if (i != removed_observer) {
+      EXPECT_TRUE(observers[i].blacklist_ignored());
+    }
+  }
+  EXPECT_FALSE(observers[removed_observer].blacklist_ignored());
+}
+
+TEST_F(PreviewsLoggerTest, ObserverNotifiedOfBlacklistIgnoreStatusOnAdd) {
+  logger_->OnIgnoreBlacklistDecisionStatusChanged(true /* ignored */);
+  TestPreviewsLoggerObserver observer;
+  EXPECT_FALSE(observer.blacklist_ignored());
+  logger_->AddAndNotifyObserver(&observer);
+  EXPECT_TRUE(observer.blacklist_ignored());
+}
+
+TEST_F(PreviewsLoggerTest, LastObserverRemovedIsNotified) {
+  TestPreviewsLoggerObserver observers[3];
+  const size_t number_of_obs = 3;
+  for (size_t i = 0; i < number_of_obs; i++) {
+    logger_->AddAndNotifyObserver(&observers[i]);
+  }
+  for (size_t i = 0; i < number_of_obs; i++) {
+    logger_->RemoveObserver(&observers[i]);
+  }
+  EXPECT_TRUE(observers[number_of_obs - 1].last_removed_notified());
 }
 
 }  // namespace

@@ -32,7 +32,6 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseClient.h"
 #include "modules/webdatabase/DatabaseContext.h"
@@ -46,6 +45,7 @@
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebDatabaseObserver.h"
 #include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebTraceLocation.h"
@@ -180,7 +180,7 @@ unsigned long long DatabaseTracker::GetMaxSizeForDatabase(
   return database_size + space_available;
 }
 
-void DatabaseTracker::CloseDatabasesImmediately(SecurityOrigin* origin,
+void DatabaseTracker::CloseDatabasesImmediately(const SecurityOrigin* origin,
                                                 const String& name) {
   String origin_string = origin->ToRawString();
   MutexLocker open_database_map_lock(open_database_map_guard_);

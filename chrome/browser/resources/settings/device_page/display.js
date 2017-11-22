@@ -80,6 +80,9 @@ Polymer({
       notify: true,
     },
 
+    /** Ids for mirroring destination displays. */
+    mirroringDestinationIds: Array,
+
     /** @private {!Array<number>} Mode index values for slider. */
     modeValues_: Array,
 
@@ -88,6 +91,14 @@ Polymer({
       type: Boolean,
       value: function() {
         return loadTimeData.getBoolean('unifiedDesktopAvailable');
+      }
+    },
+
+    /** @private */
+    multiMirroringAvailable_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.getBoolean('multiMirroringAvailable');
       }
     },
 
@@ -205,6 +216,10 @@ Polymer({
       return;
     settings.display.systemDisplayApi.getDisplayLayout(
         this.displayLayoutFetched_.bind(this, displays));
+    if (this.isMirrored_(displays))
+      this.mirroringDestinationIds = displays[0].mirroringDestinationIds;
+    else
+      this.mirroringDestinationIds = [];
   },
 
   /**
@@ -256,16 +271,17 @@ Polymer({
   },
 
   /**
-   * Returns true if the given display has touch support and is not an internal
-   * display. If the feature is not enabled via the switch, this will return
-   * false.
+   * Returns true if external touch devices are connected and the current
+   * display is not an internal display. If the feature is not enabled via the
+   * switch, this will return false.
    * @param {!chrome.system.display.DisplayUnitInfo} display Display being
    *     checked for touch support.
    * @return {boolean}
    * @private
    */
   showTouchCalibrationSetting_: function(display) {
-    return !display.isInternal && display.hasTouchSupport &&
+    return !display.isInternal &&
+        loadTimeData.getBoolean('hasExternalTouchDevice') &&
         loadTimeData.getBoolean('enableTouchCalibrationSetting');
   },
 
@@ -310,7 +326,7 @@ Polymer({
    * @private
    */
   getDisplayMirrorText_: function(displays) {
-    return this.i18n(this.isMirrored_(displays) ? 'toggleOn' : 'toggleOff');
+    return this.i18n('displayMirror', displays[0].name);
   },
 
   /**
@@ -344,7 +360,9 @@ Polymer({
    */
   showMirror_: function(unifiedDesktopMode, displays) {
     return this.isMirrored_(displays) ||
-        (!unifiedDesktopMode && displays.length == 2);
+        (!unifiedDesktopMode &&
+         ((this.multiMirroringAvailable_ && displays.length > 1) ||
+          displays.length == 2));
   },
 
   /**
@@ -565,7 +583,8 @@ Polymer({
 
     this.unifiedDesktopMode_ = !!primaryDisplay && primaryDisplay.isUnified;
 
-    this.$.displayLayout.updateDisplays(this.displays, this.layouts);
+    this.$.displayLayout.updateDisplays(
+        this.displays, this.layouts, this.mirroringDestinationIds);
   },
 
   /** @private */

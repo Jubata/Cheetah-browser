@@ -184,6 +184,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
 
   BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
+  void ResizeDueToAutoResize(const gfx::Size& new_size,
+                             uint64_t sequence_number);
+
   // WebContentsObserver implementation.
   void DidFinishNavigation(NavigationHandle* navigation_handle) override;
 
@@ -196,7 +199,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // GuestHost implementation.
   int LoadURLWithParams(
       const NavigationController::LoadURLParams& load_params) override;
-  void GuestResizeDueToAutoResize(const gfx::Size& new_size) override;
   void SizeContents(const gfx::Size& new_size) override;
   void WillDestroy() override;
 
@@ -241,8 +243,11 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // |message|.
   static bool ShouldForwardToBrowserPluginGuest(const IPC::Message& message);
 
-  void DragSourceEndedAt(int client_x, int client_y, int screen_x,
-      int screen_y, blink::WebDragOperation operation);
+  void DragSourceEndedAt(float client_x,
+                         float client_y,
+                         float screen_x,
+                         float screen_y,
+                         blink::WebDragOperation operation);
 
   // Called when the drag started by this guest ends at an OS-level.
   void EmbedderSystemDragEnded();
@@ -310,7 +315,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
                           blink::WebDragStatus drag_status,
                           const DropData& drop_data,
                           blink::WebDragOperationsMask drag_mask,
-                          const gfx::Point& location);
+                          const gfx::PointF& location);
   // Instructs the guest to execute an edit command decoded in the embedder.
   void OnExecuteEditCommand(int instance_id,
                             const std::string& command);
@@ -350,6 +355,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   void OnUpdateResizeParams(int instance_id,
                             const gfx::Rect& frame_rect,
                             const ScreenInfo& screen_info,
+                            uint64_t sequence_number,
                             const viz::LocalSurfaceId& local_surface_id);
 
   void OnTextInputStateChanged(const TextInputState& params);
@@ -433,9 +439,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
   // prior to attachment if it is created via a call to window.open and
   // maintains a JavaScript reference to its opener.
   bool has_render_view_;
-
-  // Last seen size of guest contents (by SwapCompositorFrame).
-  gfx::Size last_seen_view_size_;
 
   bool is_in_destruction_;
 

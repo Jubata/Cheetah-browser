@@ -17,17 +17,14 @@
 
 // TODO(crbug.com/753599) : Delete this file after new bookmarks ui is launched.
 
-@protocol ApplicationCommands;
 @class BookmarkCollectionView;
 class GURL;
+@protocol SigninPresenter;
 @protocol UrlLoader;
 
 namespace bookmarks {
 class BookmarkNode;
 }  // namespace bookmarks
-namespace user_prefs {
-class PrefRegistrySyncable;
-}  // namespace user_prefs
 
 @protocol BookmarkCollectionViewDelegate<NSObject>
 
@@ -94,13 +91,10 @@ class PrefRegistrySyncable;
 @interface BookmarkCollectionView
     : UIView<BookmarkHomePrimaryView, BookmarkModelBridgeObserver>
 
-// Registers the feature preferences.
-+ (void)registerBrowserStatePrefs:(user_prefs::PrefRegistrySyncable*)registry;
-
 // Designated initializer.
 - (instancetype)initWithBrowserState:(ios::ChromeBrowserState*)browserState
                                frame:(CGRect)frame
-                          dispatcher:(id<ApplicationCommands>)dispatcher;
+                           presenter:(id<SigninPresenter>)presenter;
 
 // Callback whenever the collection view is scrolled.
 - (void)collectionViewScrolled;

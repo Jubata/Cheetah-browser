@@ -126,8 +126,6 @@ source_set("common") {
     "drag_traits.h",
     "dwrite_font_proxy_messages.h",
     "edit_command.h",
-    "feature_policy/feature_policy.cc",
-    "feature_policy/feature_policy.h",
     "fileapi/file_system_messages.h",
     "fileapi/webblob_messages.h",
     "font_cache_dispatcher_win.cc",
@@ -145,8 +143,6 @@ source_set("common") {
     "frame_messages_forward.h",
     "frame_owner_properties.cc",
     "frame_owner_properties.h",
-    "frame_policy.cc",
-    "frame_policy.h",
     "frame_replication_state.cc",
     "frame_replication_state.h",
     "gin_java_bridge_messages.h",
@@ -433,8 +429,8 @@ source_set("common") {
   if (is_android && use_seccomp_bpf) {
     set_sources_assignment_filter([])
     sources += [
-      "//services/service_manager/sandbox/linux/sandbox_bpf_base_policy_linux.cc",
-      "//services/service_manager/sandbox/linux/sandbox_bpf_base_policy_linux.h",
+      "//services/service_manager/sandbox/linux/bpf_base_policy_linux.cc",
+      "//services/service_manager/sandbox/linux/bpf_base_policy_linux.h",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
   }
@@ -514,6 +510,8 @@ source_set("common") {
   if (!use_seccomp_bpf) {
     if (is_linux && current_cpu != "s390x" && current_cpu != "ppc64") {
       sources -= [
+        "sandbox_linux/bpf_base_policy_linux.cc",
+        "sandbox_linux/bpf_base_policy_linux.h",
         "sandbox_linux/bpf_cros_amd_gpu_policy_linux.cc",
         "sandbox_linux/bpf_cros_amd_gpu_policy_linux.h",
         "sandbox_linux/bpf_cros_arm_gpu_policy_linux.cc",
@@ -526,8 +524,6 @@ source_set("common") {
         "sandbox_linux/bpf_renderer_policy_linux.h",
         "sandbox_linux/bpf_utility_policy_linux.cc",
         "sandbox_linux/bpf_utility_policy_linux.h",
-        "sandbox_linux/sandbox_bpf_base_policy_linux.cc",
-        "sandbox_linux/sandbox_bpf_base_policy_linux.h",
       ]
     }
   }

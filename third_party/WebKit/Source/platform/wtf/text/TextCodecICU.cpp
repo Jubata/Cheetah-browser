@@ -472,7 +472,13 @@ static void FormatEscapedEntityCallback(const void* context,
     UnencodableReplacementArray entity;
     int entity_len =
         TextCodec::GetUnencodableReplacement(code_point, handling, entity);
-    ucnv_cbFromUWriteBytes(from_u_args, entity, entity_len, 0, err);
+    String entity_u(entity, entity_len);
+    entity_u.Ensure16Bit();
+    const UChar* entity_u_pointers[2] = {
+        entity_u.Characters16(), entity_u.Characters16() + entity_u.length(),
+    };
+    ucnv_cbFromUWriteUChars(from_u_args, entity_u_pointers,
+                            entity_u_pointers[1], 0, err);
   } else {
     UCNV_FROM_U_CALLBACK_ESCAPE(context, from_u_args, code_units, length,
                                 code_point, reason, err);
@@ -644,23 +650,6 @@ CString TextCodecICU::EncodeInternal(const TextCodecInput& input,
   UErrorCode err = U_ZERO_ERROR;
 
   switch (handling) {
-    case kQuestionMarksForUnencodables:
-      // Non-byte-based encodings (i.e. UTF-16/32) don't need substitutions
-      // since they can encode any code point, and ucnv_setSubstChars would
-      // require a multi-byte substitution anyway.
-      if (!encoding_.IsNonByteBasedEncoding())
-        ucnv_setSubstChars(converter_icu_, "?", 1, &err);
-#if !defined(USING_SYSTEM_ICU)
-      ucnv_setFromUCallBack(converter_icu_, UCNV_FROM_U_CALLBACK_SUBSTITUTE,
-                            nullptr, nullptr, nullptr, &err);
-#else
-      ucnv_setFromUCallBack(converter_icu_,
-                            needs_gbk_fallbacks_
-                                ? GbkCallbackSubstitute
-                                : UCNV_FROM_U_CALLBACK_SUBSTITUTE,
-                            0, 0, 0, &err);
-#endif
-      break;
     case kEntitiesForUnencodables:
 #if !defined(USING_SYSTEM_ICU)
       ucnv_setFromUCallBack(converter_icu_, NumericEntityCallback, nullptr,

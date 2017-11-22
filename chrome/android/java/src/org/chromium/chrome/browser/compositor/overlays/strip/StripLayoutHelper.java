@@ -23,7 +23,6 @@ import android.widget.ArrayAdapter;
 import android.widget.ListPopupWindow;
 
 import org.chromium.base.VisibleForTesting;
-import org.chromium.base.annotations.SuppressFBWarnings;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.compositor.layouts.ChromeAnimation;
 import org.chromium.chrome.browser.compositor.layouts.ChromeAnimation.Animatable;
@@ -198,7 +197,7 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
 
         // Create tab menu
         mTabMenu = new ListPopupWindow(mContext);
-        mTabMenu.setAdapter(new ArrayAdapter<String>(mContext, R.layout.bookmark_popup_item,
+        mTabMenu.setAdapter(new ArrayAdapter<String>(mContext, R.layout.list_menu_item,
                 new String[] {
                         mContext.getString(!mIncognito ? R.string.menu_close_all_tabs
                                                        : R.string.menu_close_all_incognito_tabs)}));
@@ -245,7 +244,6 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
     /**
      * @return The visually ordered list of visible {@link StripLayoutTab}s.
      */
-    @SuppressFBWarnings("EI_EXPOSE_REP")
     public StripLayoutTab[] getStripLayoutTabsToRender() {
         return mStripTabsToRender;
     }
@@ -919,11 +917,7 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
 
         // 4. Handle tab-specific content animations.
         for (int i = 0; i < mStripTabs.length; i++) {
-            StripLayoutTab tab = mStripTabs[i];
-            if (tab.isAnimating()) {
-                update = true;
-                finished &= tab.onUpdateAnimation(time, jumpToEnd);
-            }
+            if (jumpToEnd) mStripTabs[i].finishAnimation();
         }
 
         // 5. Update tab spinners.
@@ -1094,7 +1088,7 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
     private StripLayoutTab createStripTab(int id) {
         // TODO: Cache these
         StripLayoutTab tab = new StripLayoutTab(
-                mContext, id, this, mTabLoadTrackerHost, mRenderHost, mIncognito);
+                mContext, id, this, mTabLoadTrackerHost, mRenderHost, mUpdateHost, mIncognito);
         tab.setHeight(mHeight);
         pushStackerPropertiesToTab(tab);
         return tab;
@@ -1189,15 +1183,7 @@ public class StripLayoutHelper implements StripLayoutTab.StripLayoutTabDelegate 
         // 6. Figure out where to put the new tab button.
         updateNewTabButtonState();
 
-        // 7. Check if we have any animations and request an update if so.
-        for (int i = 0; i < mStripTabs.length; i++) {
-            if (mStripTabs[i].isAnimating()) {
-                mUpdateHost.requestUpdate();
-                break;
-            }
-        }
-
-        // 8. Invalidate the accessibility provider in case the visible virtual views have changed.
+        // 7. Invalidate the accessibility provider in case the visible virtual views have changed.
         mRenderHost.invalidateAccessibilityProvider();
     }
 

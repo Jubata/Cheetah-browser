@@ -15,7 +15,6 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_owner_properties.h"
-#include "content/common/frame_policy.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/stream_handle.h"
 #include "content/public/common/browser_side_navigation_policy.h"
@@ -24,11 +23,12 @@
 #include "content/public/test/browser_side_navigation_test_utils.h"
 #include "content/test/test_navigation_url_loader.h"
 #include "content/test/test_render_view_host.h"
+#include "content/test/test_render_widget_host.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
+#include "third_party/WebKit/common/frame_policy.h"
 #include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
-#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/web_bluetooth.mojom.h"
 #include "third_party/WebKit/public/web/WebTreeScopeType.h"
 #include "ui/base/page_transition_types.h"
@@ -55,17 +55,18 @@ class TestRenderFrameHost::NavigationInterceptor
   ~NavigationInterceptor() override = default;
 
   // mojom::FrameNavigationControl:
-  void CommitNavigation(const ResourceResponseHead& head,
-                        const GURL& body_url,
-                        const CommonNavigationParams& common_params,
-                        const RequestNavigationParams& request_params,
-                        mojo::ScopedDataPipeConsumerHandle body_data,
-                        base::Optional<URLLoaderFactoryBundle>
-                            subresource_loader_factories) override {
+  void CommitNavigation(
+      const ResourceResponseHead& head,
+      const GURL& body_url,
+      const CommonNavigationParams& common_params,
+      const RequestNavigationParams& request_params,
+      mojo::ScopedDataPipeConsumerHandle body_data,
+      base::Optional<URLLoaderFactoryBundle> subresource_loader_factories,
+      const base::UnguessableToken& devtools_navigation_token) override {
     frame_host_->GetProcess()->set_did_frame_commit_navigation(true);
     frame_host_->GetInternalNavigationControl()->CommitNavigation(
         head, body_url, common_params, request_params, std::move(body_data),
-        std::move(subresource_loader_factories));
+        std::move(subresource_loader_factories), devtools_navigation_token);
   }
 
  private:
@@ -111,6 +112,11 @@ MockRenderProcessHost* TestRenderFrameHost::GetProcess() {
   return static_cast<MockRenderProcessHost*>(RenderFrameHostImpl::GetProcess());
 }
 
+TestRenderWidgetHost* TestRenderFrameHost::GetRenderWidgetHost() {
+  return static_cast<TestRenderWidgetHost*>(
+      RenderFrameHostImpl::GetRenderWidgetHost());
+}
+
 void TestRenderFrameHost::AddMessageToConsole(ConsoleMessageLevel level,
                                               const std::string& message) {
   console_messages_.push_back(message);
@@ -128,10 +134,11 @@ void TestRenderFrameHost::InitializeRenderFrameIfNeeded() {
 TestRenderFrameHost* TestRenderFrameHost::AppendChild(
     const std::string& frame_name) {
   std::string frame_unique_name = base::GenerateGUID();
-  OnCreateChildFrame(
-      GetProcess()->GetNextRoutingID(), CreateStubInterfaceProviderRequest(),
-      blink::WebTreeScopeType::kDocument, frame_name, frame_unique_name,
-      base::UnguessableToken::Create(), FramePolicy(), FrameOwnerProperties());
+  OnCreateChildFrame(GetProcess()->GetNextRoutingID(),
+                     CreateStubInterfaceProviderRequest(),
+                     blink::WebTreeScopeType::kDocument, frame_name,
+                     frame_unique_name, base::UnguessableToken::Create(),
+                     blink::FramePolicy(), FrameOwnerProperties());
   return static_cast<TestRenderFrameHost*>(
       child_creation_observer_.last_created_frame());
 }
@@ -302,9 +309,9 @@ void TestRenderFrameHost::NavigateAndCommitRendererInitiated(
 }
 
 void TestRenderFrameHost::SimulateFeaturePolicyHeader(
-    blink::WebFeaturePolicyFeature feature,
+    blink::FeaturePolicyFeature feature,
     const std::vector<url::Origin>& whitelist) {
-  content::ParsedFeaturePolicyHeader header(1);
+  blink::ParsedFeaturePolicy header(1);
   header[0].feature = feature;
   header[0].matches_all_origins = false;
   header[0].origins = whitelist;
@@ -486,11 +493,22 @@ void TestRenderFrameHost::DidEnforceInsecureRequestPolicy(
 }
 
 void TestRenderFrameHost::PrepareForCommit() {
-  PrepareForCommitWithServerRedirect(GURL());
+  PrepareForCommitInternal(GURL(), net::HostPortPair());
+}
+
+void TestRenderFrameHost::PrepareForCommitWithSocketAddress(
+    const net::HostPortPair& socket_address) {
+  PrepareForCommitInternal(GURL(), socket_address);
 }
 
 void TestRenderFrameHost::PrepareForCommitWithServerRedirect(
     const GURL& redirect_url) {
+  PrepareForCommitInternal(redirect_url, net::HostPortPair());
+}
+
+void TestRenderFrameHost::PrepareForCommitInternal(
+    const GURL& redirect_url,
+    const net::HostPortPair& socket_address) {
   if (!IsBrowserSideNavigationEnabled()) {
     // Non PlzNavigate
     if (is_waiting_for_beforeunload_ack())
@@ -535,6 +553,7 @@ void TestRenderFrameHost::PrepareForCommitWithServerRedirect(
 
   // Simulate the network stack commit.
   scoped_refptr<ResourceResponse> response(new ResourceResponse);
+  response->head.socket_address = socket_address;
   // TODO(carlosk): ideally with PlzNavigate it should be possible someday to
   // fully commit the navigation at this call to CallOnResponseStarted.
   url_loader->CallOnResponseStarted(response, MakeEmptyStream(), nullptr);

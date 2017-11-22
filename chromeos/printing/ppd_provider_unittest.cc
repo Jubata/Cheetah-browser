@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <utility>
@@ -130,6 +131,13 @@ class PpdProviderTest : public ::testing::Test {
          R"([
             ["printer_c", "printer_c_ref"]
             ])"},
+        {"metadata_v2/reverse_index-en-01.json",
+         R"([
+             ["printer_a_ref", "manufacturer_a_en", "printer_a"]
+             ])"},
+        {"metadata_v2/reverse_index-en-19.json",
+         R"([
+             ])"},
         {"ppds/printer_a.ppd", kCupsFilterPpdContents},
         {"ppds/printer_b.ppd", kCupsFilter2PpdContents},
         {"ppds/printer_c.ppd", "c"},
@@ -616,10 +624,16 @@ TEST_F(PpdProviderTest, ExtractPpdFilters) {
   ASSERT_EQ(2UL, captured_resolve_ppd_.size());
   EXPECT_EQ(PpdProvider::SUCCESS, captured_resolve_ppd_[0].code);
   EXPECT_EQ(kCupsFilterPpdContents, captured_resolve_ppd_[0].ppd_contents);
+
+  std::sort(captured_resolve_ppd_[0].ppd_filters.begin(),
+            captured_resolve_ppd_[0].ppd_filters.end());
+
   EXPECT_EQ(
       std::vector<std::string>({"a_different_filter", "filter3", "my_filter"}),
       captured_resolve_ppd_[0].ppd_filters);
 
+  std::sort(captured_resolve_ppd_[1].ppd_filters.begin(),
+            captured_resolve_ppd_[1].ppd_filters.end());
   EXPECT_EQ(PpdProvider::SUCCESS, captured_resolve_ppd_[1].code);
   EXPECT_EQ(kCupsFilter2PpdContents, captured_resolve_ppd_[1].ppd_contents);
   EXPECT_EQ(

@@ -41,6 +41,7 @@
 #include "public/platform/WebAddressSpace.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/modules/fetch/fetch_api_request.mojom-shared.h"
+#include "services/network/public/interfaces/cors.mojom-blink.h"
 #include "services/network/public/interfaces/fetch_api.mojom-blink.h"
 
 namespace blink {
@@ -160,9 +161,6 @@ class PLATFORM_EXPORT ResourceRequest final {
 
   EncodedFormData* HttpBody() const;
   void SetHTTPBody(scoped_refptr<EncodedFormData>);
-
-  EncodedFormData* AttachedCredential() const;
-  void SetAttachedCredential(scoped_refptr<EncodedFormData>);
 
   bool AllowStoredCredentials() const;
   void SetAllowStoredCredentials(bool allow_credentials);
@@ -311,6 +309,13 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool IsExternalRequest() const { return is_external_request_; }
   void SetExternalRequestStateFromRequestorAddressSpace(WebAddressSpace);
 
+  network::mojom::CORSPreflightPolicy CORSPreflightPolicy() const {
+    return cors_preflight_policy_;
+  }
+  void SetCORSPreflightPolicy(network::mojom::CORSPreflightPolicy policy) {
+    cors_preflight_policy_ = policy;
+  }
+
   void OverrideLoadingIPCType(WebURLRequest::LoadingIPCType loading_ipc_type) {
     loading_ipc_type_ = loading_ipc_type;
   }
@@ -350,7 +355,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   AtomicString http_method_;
   HTTPHeaderMap http_header_fields_;
   scoped_refptr<EncodedFormData> http_body_;
-  scoped_refptr<EncodedFormData> attached_credential_;
   bool allow_stored_credentials_ : 1;
   bool report_upload_progress_ : 1;
   bool report_raw_headers_ : 1;
@@ -379,6 +383,7 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool check_for_browser_side_navigation_;
   double ui_start_time_;
   bool is_external_request_;
+  network::mojom::CORSPreflightPolicy cors_preflight_policy_;
   WebURLRequest::LoadingIPCType loading_ipc_type_;
   bool is_same_document_navigation_;
   InputToLoadPerfMetricReportPolicy input_perf_metric_report_policy_;
@@ -415,7 +420,6 @@ struct CrossThreadResourceRequestData {
   String http_method_;
   std::unique_ptr<CrossThreadHTTPHeaderMapData> http_headers_;
   scoped_refptr<EncodedFormData> http_body_;
-  scoped_refptr<EncodedFormData> attached_credential_;
   bool allow_stored_credentials_;
   bool report_upload_progress_;
   bool has_user_gesture_;
@@ -441,6 +445,7 @@ struct CrossThreadResourceRequestData {
   bool check_for_browser_side_navigation_;
   double ui_start_time_;
   bool is_external_request_;
+  network::mojom::CORSPreflightPolicy cors_preflight_policy_;
   WebURLRequest::LoadingIPCType loading_ipc_type_;
   InputToLoadPerfMetricReportPolicy input_perf_metric_report_policy_;
   ResourceRequest::RedirectStatus redirect_status_;

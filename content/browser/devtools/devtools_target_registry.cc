@@ -46,9 +46,27 @@ std::unique_ptr<const DevToolsTargetRegistry::TargetInfo> BuildTargetInfo(
 
 }  // namespace
 
-class DevToolsTargetRegistry::Impl {
+class DevToolsTargetRegistry::Impl : public DevToolsTargetRegistry::Resolver {
  public:
   using TargetInfo = DevToolsTargetRegistry::TargetInfo;
+
+  const DevToolsTargetRegistry::TargetInfo* GetInfoByFrameTreeNodeId(
+      int frame_node_id) override {
+    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+    auto it = target_info_by_ftn_id_.find(frame_node_id);
+    return it != target_info_by_ftn_id_.end() ? it->second : nullptr;
+  }
+
+  const DevToolsTargetRegistry::TargetInfo* GetInfoByRenderFramePair(
+      int child_id,
+      int routing_id) override {
+    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+
+    auto it = target_info_by_render_frame_pair_.find(
+        std::make_pair(child_id, routing_id));
+    return it != target_info_by_render_frame_pair_.end() ? it->second.get()
+                                                         : nullptr;
+  }
 
   void Add(std::unique_ptr<const TargetInfo> info) {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -87,7 +105,8 @@ class DevToolsTargetRegistry::Impl {
       Add(std::move(new_info));
   }
 
-  Impl() { DETACH_FROM_THREAD(thread_checker_); }
+  Impl() : weak_factory_(this) { DETACH_FROM_THREAD(thread_checker_); }
+  ~Impl() override = default;
 
  private:
   friend class DevToolsTargetRegistry;
@@ -96,6 +115,8 @@ class DevToolsTargetRegistry::Impl {
       target_info_by_render_frame_pair_;
   base::flat_map<int, const TargetInfo*> target_info_by_ftn_id_;
   THREAD_CHECKER(thread_checker_);
+
+  base::WeakPtrFactory<DevToolsTargetRegistry::Impl> weak_factory_;
 };
 
 class DevToolsTargetRegistry::ContentsObserver : public ObserverBase,
@@ -113,16 +134,15 @@ class DevToolsTargetRegistry::ContentsObserver : public ObserverBase,
     std::unique_ptr<const TargetInfo> new_target = BuildTargetInfo(new_host);
     registry_->impl_task_runner_->PostTask(
         FROM_HERE,
-        base::BindOnce(&DevToolsTargetRegistry::Impl::Update,
-                       base::Unretained(registry_->impl_.get()),
+        base::BindOnce(&DevToolsTargetRegistry::Impl::Update, registry_->impl_,
                        std::move(old_target), std::move(new_target)));
   }
 
   void FrameDeleted(RenderFrameHost* render_frame_host) override {
     registry_->impl_task_runner_->PostTask(
-        FROM_HERE, base::BindOnce(&DevToolsTargetRegistry::Impl::Update,
-                                  base::Unretained(registry_->impl_.get()),
-                                  BuildTargetInfo(render_frame_host), nullptr));
+        FROM_HERE,
+        base::BindOnce(&DevToolsTargetRegistry::Impl::Update, registry_->impl_,
+                       BuildTargetInfo(render_frame_host), nullptr));
   }
 
   void WebContentsDestroyed() override {
@@ -153,10 +173,18 @@ DevToolsTargetRegistry::RegisterWebContents(WebContents* web_contents) {
     infos.push_back(BuildTargetInfo(render_frame_host));
 
   impl_task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&DevToolsTargetRegistry::Impl::AddAll,
-                     base::Unretained(impl_.get()), std::move(infos)));
+      FROM_HERE, base::BindOnce(&DevToolsTargetRegistry::Impl::AddAll, impl_,
+                                std::move(infos)));
   return observer;
+}
+
+std::unique_ptr<DevToolsTargetRegistry::Resolver>
+DevToolsTargetRegistry::CreateResolver() {
+  DCHECK(!impl_);
+
+  auto impl = std::make_unique<Impl>();
+  impl_ = impl->weak_factory_.GetWeakPtr();
+  return std::move(impl);
 }
 
 void DevToolsTargetRegistry::UnregisterWebContents(WebContents* web_contents) {
@@ -170,34 +198,13 @@ void DevToolsTargetRegistry::UnregisterWebContents(WebContents* web_contents) {
     infos.push_back(BuildTargetInfo(render_frame_host));
 
   impl_task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&DevToolsTargetRegistry::Impl::RemoveAll,
-                     base::Unretained(impl_.get()), std::move(infos)));
-}
-
-const DevToolsTargetRegistry::TargetInfo*
-DevToolsTargetRegistry::GetInfoByFrameTreeNodeId(int frame_node_id) {
-  DCHECK_CALLED_ON_VALID_THREAD(impl_->thread_checker_);
-
-  auto it = impl_->target_info_by_ftn_id_.find(frame_node_id);
-  return it != impl_->target_info_by_ftn_id_.end() ? it->second : nullptr;
-}
-
-const DevToolsTargetRegistry::TargetInfo*
-DevToolsTargetRegistry::GetInfoByRenderFramePair(int child_id, int routing_id) {
-  DCHECK_CALLED_ON_VALID_THREAD(impl_->thread_checker_);
-
-  auto it = impl_->target_info_by_render_frame_pair_.find(
-      std::make_pair(child_id, routing_id));
-  return it != impl_->target_info_by_render_frame_pair_.end() ? it->second.get()
-                                                              : nullptr;
+      FROM_HERE, base::BindOnce(&DevToolsTargetRegistry::Impl::RemoveAll, impl_,
+                                std::move(infos)));
 }
 
 DevToolsTargetRegistry::DevToolsTargetRegistry(
     scoped_refptr<base::SequencedTaskRunner> impl_task_runner)
-    : impl_task_runner_(impl_task_runner),
-      impl_(new DevToolsTargetRegistry::Impl(),
-            base::OnTaskRunnerDeleter(impl_task_runner)) {}
+    : impl_task_runner_(impl_task_runner) {}
 
 DevToolsTargetRegistry::~DevToolsTargetRegistry() = default;
 

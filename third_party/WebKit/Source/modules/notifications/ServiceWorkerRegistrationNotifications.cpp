@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <utility>
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
@@ -21,7 +22,6 @@
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/modules/notifications/WebNotificationData.h"
@@ -126,7 +126,7 @@ ScriptPromise ServiceWorkerRegistrationNotifications::getNotifications(
           resolver);
 
   WebNotificationManager* notification_manager =
-      Platform::Current()->GetNotificationManager();
+      Platform::Current()->GetWebNotificationManager();
   DCHECK(notification_manager);
 
   notification_manager->GetNotifications(
@@ -188,7 +188,7 @@ void ServiceWorkerRegistrationNotifications::DidLoadResources(
   DCHECK(loaders_.Contains(loader));
 
   WebNotificationManager* notification_manager =
-      Platform::Current()->GetNotificationManager();
+      Platform::Current()->GetWebNotificationManager();
   DCHECK(notification_manager);
 
   notification_manager->ShowPersistent(

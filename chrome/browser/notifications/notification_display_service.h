@@ -35,13 +35,15 @@ class NotificationDisplayService : public KeyedService {
   using DisplayedNotificationsCallback =
       base::Callback<void(std::unique_ptr<std::set<std::string>>,
                           bool /* supports_synchronization */)>;
+
+  static NotificationDisplayService* GetForProfile(Profile* profile);
+
   explicit NotificationDisplayService(Profile* profile);
   ~NotificationDisplayService() override;
 
   // Displays the |notification| identified by |notification_id|.
   virtual void Display(
       NotificationCommon::Type notification_type,
-      const std::string& notification_id,
       const message_center::Notification& notification,
       std::unique_ptr<NotificationCommon::Metadata> metadata = nullptr) = 0;
 
@@ -59,16 +61,11 @@ class NotificationDisplayService : public KeyedService {
   // extensions...
   void ProcessNotificationOperation(NotificationCommon::Operation operation,
                                     NotificationCommon::Type notification_type,
-                                    const std::string& origin,
+                                    const GURL& origin,
                                     const std::string& notification_id,
                                     const base::Optional<int>& action_index,
                                     const base::Optional<base::string16>& reply,
                                     const base::Optional<bool>& by_user);
-
-  // Return whether a notification of |notification_type| should be displayed
-  // for |origin| when the browser is in full screen mode.
-  bool ShouldDisplayOverFullscreen(const GURL& origin,
-                                   NotificationCommon::Type notification_type);
 
   // Returns the notification handler that was registered for the given type.
   // May return null.

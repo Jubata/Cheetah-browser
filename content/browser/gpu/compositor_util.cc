@@ -107,23 +107,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
      "Accelerated video decode has been disabled, either via blacklist,"
      " about:flags or the command line.",
      true},
-#if BUILDFLAG(ENABLE_WEBRTC)
-    {"video_encode",
-     manager->IsFeatureBlacklisted(
-         gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE),
-     command_line.HasSwitch(switches::kDisableWebRtcHWEncoding),
-     "Accelerated video encode has been disabled, either via blacklist,"
-     " about:flags or the command line.",
-     true},
-#endif
-#if defined(OS_CHROMEOS)
-    {"panel_fitting",
-     manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_PANEL_FITTING),
-     command_line.HasSwitch(switches::kDisablePanelFitting),
-     "Panel fitting has been disabled, either via blacklist, about:flags or"
-     " the command line.",
-     false},
-#endif
     {kRasterizationFeatureName,
      IsGpuRasterizationBlacklisted() && !IsGpuRasterizationEnabled() &&
          !IsForceGpuRasterizationEnabled(),

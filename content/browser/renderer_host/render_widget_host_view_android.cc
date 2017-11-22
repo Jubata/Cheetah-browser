@@ -91,7 +91,6 @@
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/events/android/motion_event_android.h"
-#include "ui/events/base_event_utils.h"
 #include "ui/events/blink/blink_event_util.h"
 #include "ui/events/blink/did_overscroll_params.h"
 #include "ui/events/blink/web_input_event_traits.h"
@@ -680,12 +679,6 @@ void RenderWidgetHostViewAndroid::OnShowUnhandledTapUIIfNeeded(int x_dip,
                                                                int y_dip) {
   if (!selection_popup_controller_ || !content_view_core_)
     return;
-  // Validate the coordinates are within the viewport.
-  // TODO(jinsukkim): Get viewport size from ViewAndroid.
-  gfx::Size viewport_size = content_view_core_->GetViewportSizeDip();
-  if (x_dip < 0 || x_dip > viewport_size.width() ||
-      y_dip < 0 || y_dip > viewport_size.height())
-    return;
   selection_popup_controller_->OnShowUnhandledTapUIIfNeeded(
       x_dip, y_dip, view_.GetDipScale());
 }
@@ -703,7 +696,7 @@ gfx::Rect RenderWidgetHostViewAndroid::GetViewBounds() const {
   if (!content_view_core_)
     return default_bounds_;
 
-  gfx::Size size(content_view_core_->GetViewSize());
+  gfx::Size size(view_.GetSize());
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableOSKOverscroll)) {
     size.Enlarge(0, view_.GetSystemWindowInsetBottom() / view_.GetDipScale());
@@ -716,7 +709,7 @@ gfx::Size RenderWidgetHostViewAndroid::GetVisibleViewportSize() const {
   if (!content_view_core_)
     return default_bounds_.size();
 
-  return content_view_core_->GetViewSize();
+  return view_.GetSize();
 }
 
 gfx::Size RenderWidgetHostViewAndroid::GetPhysicalBackingSize() const {
@@ -732,26 +725,42 @@ gfx::Size RenderWidgetHostViewAndroid::GetPhysicalBackingSize() const {
 }
 
 bool RenderWidgetHostViewAndroid::DoBrowserControlsShrinkBlinkSize() const {
-  // Whether or not Blink's viewport size should be shrunk by the height of the
-  // URL-bar.
-  return content_view_core_ &&
-         content_view_core_->DoBrowserControlsShrinkBlinkSize();
+  RenderWidgetHostDelegate* delegate = host_->delegate();
+  if (!delegate)
+    return false;
+
+  RenderViewHostDelegateView* delegate_view = delegate->GetDelegateView();
+  return delegate_view ? delegate_view->DoBrowserControlsShrinkBlinkSize()
+                       : false;
 }
 
 float RenderWidgetHostViewAndroid::GetTopControlsHeight() const {
-  if (!content_view_core_)
-    return default_bounds_.x();
+  RenderWidgetHostDelegate* delegate = host_->delegate();
+  if (!delegate)
+    return 0.f;
 
-  // The height of the browser controls.
-  return content_view_core_->GetTopControlsHeightDip();
+  RenderViewHostDelegateView* delegate_view = delegate->GetDelegateView();
+  return delegate_view ? delegate_view->GetTopControlsHeight() : 0.f;
 }
 
 float RenderWidgetHostViewAndroid::GetBottomControlsHeight() const {
-  if (!content_view_core_)
+  RenderWidgetHostDelegate* delegate = host_->delegate();
+  if (!delegate)
     return 0.f;
 
-  // The height of the browser controls.
-  return content_view_core_->GetBottomControlsHeightDip();
+  RenderViewHostDelegateView* delegate_view = delegate->GetDelegateView();
+  return delegate_view ? delegate_view->GetBottomControlsHeight() : 0.f;
+}
+
+int RenderWidgetHostViewAndroid::GetMouseWheelMinimumGranularity() const {
+  if (!content_view_core_)
+    return 0;
+
+  // On Android, mouse wheel MotionEvents specify the number of ticks and how
+  // many pixels each tick scrolls. This multiplier is specified by device
+  // metrics (See RenderCoordinates::mWheelScrollFactor) so the minimum
+  // granularity will be the size of this tick multiplier.
+  return content_view_core_->GetMouseWheelMinimumGranularity();
 }
 
 void RenderWidgetHostViewAndroid::UpdateCursor(const WebCursor& cursor) {
@@ -1218,6 +1227,10 @@ void RenderWidgetHostViewAndroid::ReclaimResources(
     SendReclaimCompositorResources(false /* is_swap_ack */);
 }
 
+void RenderWidgetHostViewAndroid::OnFrameTokenChanged(uint32_t frame_token) {
+  OnFrameTokenChangedForView(frame_token);
+}
+
 void RenderWidgetHostViewAndroid::DidCreateNewRendererCompositorFrameSink(
     viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink) {
   if (!delegated_frame_host_) {
@@ -1252,7 +1265,8 @@ void RenderWidgetHostViewAndroid::EvictFrameIfNecessary() {
 
 void RenderWidgetHostViewAndroid::SubmitCompositorFrame(
     const viz::LocalSurfaceId& local_surface_id,
-    viz::CompositorFrame frame) {
+    viz::CompositorFrame frame,
+    viz::mojom::HitTestRegionListPtr hit_test_region_list) {
   if (!delegated_frame_host_) {
     DCHECK(!using_browser_compositor_);
     return;
@@ -1495,11 +1509,16 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   bool is_mobile_optimized = IsMobileOptimizedFrame(frame_metadata);
   gesture_provider_.SetDoubleTapSupportForPageEnabled(!is_mobile_optimized);
 
-  float dip_scale = IsUseZoomForDSFEnabled() ? 1.f : view_.GetDipScale();
-  float top_controls_pix = frame_metadata.top_controls_height * dip_scale;
+  float dip_scale = view_.GetDipScale();
+  float to_pix = IsUseZoomForDSFEnabled() ? 1.f : dip_scale;
+  float top_controls_pix = frame_metadata.top_controls_height * to_pix;
+  // |top_content_offset| is its CSS pixels * DSF if --use-zoom-for-dsf is
+  // enabled. Otherwise, it is in CSS pixels.
+  // Note that the height of browser control is not affected by page scale
+  // factor. Thus, |top_content_offset| in CSS pixels is also in DIP pixels.
   float top_content_offset = frame_metadata.top_controls_height *
                              frame_metadata.top_controls_shown_ratio;
-  float top_shown_pix = top_content_offset * dip_scale;
+  float top_shown_pix = top_content_offset * to_pix;
 
   if (ime_adapter_android_)
     ime_adapter_android_->UpdateFrameInfo(frame_metadata.selection.start,
@@ -1535,8 +1554,13 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   UpdateBackgroundColor(is_transparent ? SK_ColorTRANSPARENT
                                        : frame_metadata.root_background_color);
 
+  // ViewAndroid::content_offset() must be in CSS scale
+  float top_content_offset_css = IsUseZoomForDSFEnabled()
+                                     ? top_content_offset / dip_scale
+                                     : top_content_offset;
   view_.UpdateFrameInfo({frame_metadata.scrollable_viewport_size,
-                         frame_metadata.page_scale_factor, top_content_offset});
+                         frame_metadata.page_scale_factor,
+                         top_content_offset_css});
 
   bool top_changed = !FloatEquals(top_shown_pix, prev_top_shown_pix_);
   if (top_changed) {
@@ -1545,7 +1569,7 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
     prev_top_shown_pix_ = top_shown_pix;
   }
 
-  float bottom_controls_pix = frame_metadata.bottom_controls_height * dip_scale;
+  float bottom_controls_pix = frame_metadata.bottom_controls_height * to_pix;
   float bottom_shown_pix =
       bottom_controls_pix * frame_metadata.bottom_controls_shown_ratio;
   bool bottom_changed = !FloatEquals(bottom_shown_pix, prev_bottom_shown_pix_);
@@ -1555,13 +1579,13 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
     prev_bottom_shown_pix_ = bottom_shown_pix;
   }
 
-  // All offsets and sizes are in CSS pixels.
+  // All offsets and sizes except |top_shown_pix| are in CSS pixels.
   content_view_core_->UpdateFrameInfo(
       frame_metadata.root_scroll_offset, frame_metadata.page_scale_factor,
       gfx::Vector2dF(frame_metadata.min_page_scale_factor,
                      frame_metadata.max_page_scale_factor),
       frame_metadata.root_layer_size, frame_metadata.scrollable_viewport_size,
-      top_content_offset, top_shown_pix, top_changed, is_mobile_optimized);
+      top_content_offset_css, top_shown_pix, top_changed, is_mobile_optimized);
 
   EvictFrameIfNecessary();
 }
@@ -1870,8 +1894,7 @@ void RenderWidgetHostViewAndroid::SendMouseEvent(
       ui::ToWebMouseEventType(motion_event.GetAction());
 
   if (webMouseEventType == blink::WebInputEvent::kMouseDown)
-    UpdateLeftClickCount(action_button, motion_event.GetX(0),
-                         motion_event.GetY(0));
+    UpdateMouseState(action_button, motion_event.GetX(0), motion_event.GetY(0));
 
   int click_count = 0;
 
@@ -1882,12 +1905,7 @@ void RenderWidgetHostViewAndroid::SendMouseEvent(
                       : 1;
 
   blink::WebMouseEvent mouse_event = WebMouseEventBuilder::Build(
-      webMouseEventType,
-      ui::EventTimeStampToSeconds(motion_event.GetEventTime()),
-      motion_event.GetX(0), motion_event.GetY(0), motion_event.GetFlags(),
-      click_count, motion_event.GetPointerId(0), motion_event.GetPressure(0),
-      motion_event.GetOrientation(0), motion_event.GetTiltX(0),
-      motion_event.GetTiltY(0), action_button, motion_event.GetToolType(0));
+      motion_event, webMouseEventType, click_count, action_button);
 
   if (!host_ || !host_->delegate())
     return;
@@ -1900,9 +1918,9 @@ void RenderWidgetHostViewAndroid::SendMouseEvent(
   }
 }
 
-void RenderWidgetHostViewAndroid::UpdateLeftClickCount(int action_button,
-                                                       float mousedown_x,
-                                                       float mousedown_y) {
+void RenderWidgetHostViewAndroid::UpdateMouseState(int action_button,
+                                                   float mousedown_x,
+                                                   float mousedown_y) {
   if (action_button != ui::MotionEventAndroid::BUTTON_PRIMARY) {
     // Reset state if middle or right button was pressed.
     left_click_count_ = 0;
@@ -2103,13 +2121,6 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
   if (content_view_core != content_view_core_) {
     touch_selection_controller_.reset();
     RunAckCallbacks();
-    // TODO(yusufo) : Get rid of the below conditions and have a better handling
-    // for resizing after crbug.com/628302 is handled.
-    bool is_size_initialized = !content_view_core
-        || content_view_core->GetViewportSizeDip().width() != 0
-        || content_view_core->GetViewportSizeDip().height() != 0;
-    if (content_view_core_ || is_size_initialized)
-      resize = true;
     if (content_view_core_) {
       view_.RemoveObserver(this);
       view_.RemoveFromParent();
@@ -2121,6 +2132,13 @@ void RenderWidgetHostViewAndroid::SetContentViewCore(
       parent_view->AddChild(&view_);
       parent_view->GetLayer()->AddChild(view_.GetLayer());
     }
+    // TODO(yusufo) : Get rid of the below conditions and have a better handling
+    // for resizing after crbug.com/628302 is handled.
+    bool is_size_initialized = !content_view_core ||
+                               view_.GetSize().width() != 0 ||
+                               view_.GetSize().height() != 0;
+    if (content_view_core_ || is_size_initialized)
+      resize = true;
     content_view_core_ = content_view_core;
   }
 
@@ -2170,9 +2188,7 @@ bool RenderWidgetHostViewAndroid::OnMouseEvent(
 
 bool RenderWidgetHostViewAndroid::OnMouseWheelEvent(
     const ui::MotionEventAndroid& event) {
-  SendMouseWheelEvent(WebMouseWheelEventBuilder::Build(
-      event.ticks_x(), event.ticks_y(), event.GetTickMultiplier(),
-      event.time_sec(), event.GetX(0), event.GetY(0)));
+  SendMouseWheelEvent(WebMouseWheelEventBuilder::Build(event));
   return true;
 }
 

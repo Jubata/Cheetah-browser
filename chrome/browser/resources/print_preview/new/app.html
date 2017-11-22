@@ -1,6 +1,17 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
 <link rel="import" href="header.html">
+<link rel="import" href="destination_settings.html">
+<link rel="import" href="pages_settings.html">
+<link rel="import" href="copies_settings.html">
+<link rel="import" href="layout_settings.html">
+<link rel="import" href="color_settings.html">
+<link rel="import" href="media_size_settings.html">
+<link rel="import" href="margins_settings.html">
+<link rel="import" href="dpi_settings.html">
+<link rel="import" href="scaling_settings.html">
+<link rel="import" href="other_options_settings.html">
+<link rel="import" href="advanced_options_settings.html">
 
 <dom-module id="print-preview-app">
   <template>
@@ -13,13 +24,16 @@
       #sidebar {
         -webkit-border-end: 1px solid #c8c8c8;
         background-color: white;
+        display: flex;
+        flex-direction: column;
+        max-width: 310px;
         min-width: 310px;
       }
 
       #settings {
         background: #fbfbfb;
         border-top: 1px solid #f3f3f3;
-        height: 100%;
+        flex: 1;
         overflow: auto;
       }
 
@@ -33,19 +47,25 @@
       }
     </style>
     <div id="sidebar">
-      <print-preview-header></print-preview-header>
+      <print-preview-header model="[[model_]]"></print-preview-header>
       <div id="settings">
-        <div>Destination</div>
-        <div>Pages</div>
-        <div>Copies</div>
-        <div>Layout</div>
-        <div>Color</div>
-        <div>Paper size</div>
-        <div>Margins</div>
-        <div>Quality</div>
-        <div>Scale</div>
-        <div>Options</div>
-        <div>Advanced</div>
+        <print-preview-destination-settings model="{{model_}}">
+        </print-preview-destination-settings>
+        <print-preview-pages-settings model="{{model_}}">
+        </print-preview-pages-settings>
+        <print-preview-copies-settings model="{{model_}}">
+        </print-preview-copies-settings>
+        <print-preview-layout-settings></print-preview-layout-settings>
+        <print-preview-color-settings></print-preview-color-settings>
+        <print-preview-media-size-settings></print-preview-media-size-settings>
+        <print-preview-margins-settings></print-preview-margins-settings>
+        <print-preview-dpi-settings></print-preview-dpi-settings>
+        <print-preview-scaling-settings model="{{model_}}">
+        </print-preview-scaling-settings>
+        <print-preview-other-options-settings model="{{model_}}">
+        </print-preview-other-options-settings>
+        <print-preview-advanced-options-settings>
+        </print-preview-advanced-options-settings>
       </div>
     </div>
     <div id="previewArea">preview area</div>

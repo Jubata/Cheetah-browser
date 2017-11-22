@@ -39,7 +39,6 @@
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/heap/GarbageCollected.h"
-#include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebThread.h"
 
@@ -185,7 +184,7 @@ class MODULES_EXPORT CanvasRenderingContext2D final
                                                   // CanvasRenderingContext
 
   bool StateHasFilter() final;
-  sk_sp<SkImageFilter> StateGetFilter() final;
+  sk_sp<PaintFilter> StateGetFilter() final;
   void SnapshotStateForFilter() final;
 
   void ValidateStateStack() const final;

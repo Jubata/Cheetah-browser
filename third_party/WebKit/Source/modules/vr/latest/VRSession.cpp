@@ -14,6 +14,7 @@
 #include "modules/vr/latest/VRFrameOfReference.h"
 #include "modules/vr/latest/VRFrameOfReferenceOptions.h"
 #include "modules/vr/latest/VRFrameProvider.h"
+#include "modules/vr/latest/VRLayer.h"
 #include "modules/vr/latest/VRPresentationFrame.h"
 #include "modules/vr/latest/VRSessionEvent.h"
 #include "modules/vr/latest/VRView.h"
@@ -66,6 +67,10 @@ void VRSession::setDepthFar(double value) {
     views_dirty_ = true;
     depth_far_ = value;
   }
+}
+
+void VRSession::setBaseLayer(VRLayer* value) {
+  base_layer_ = value;
 }
 
 ExecutionContext* VRSession::GetExecutionContext() const {
@@ -122,6 +127,11 @@ int VRSession::requestFrame(V8VRFrameRequestCallback* callback) {
   if (detached_)
     return 0;
 
+  // Don't allow frames to be scheduled if there's no layers attached to the
+  // session. That would allow tracking with no associated visuals.
+  if (!base_layer_)
+    return 0;
+
   int id = callback_collection_.RegisterCallback(callback);
   if (!pending_frame_) {
     // Kick off a request for a new VR frame.
@@ -167,6 +177,14 @@ void VRSession::ForceEnd() {
   DispatchEvent(VRSessionEvent::Create(EventTypeNames::end, this));
 }
 
+DoubleSize VRSession::IdealFramebufferSize() const {
+  double width = device_->vrDisplayInfoPtr()->leftEye->renderWidth +
+                 device_->vrDisplayInfoPtr()->rightEye->renderWidth;
+  double height = std::max(device_->vrDisplayInfoPtr()->leftEye->renderHeight,
+                           device_->vrDisplayInfoPtr()->rightEye->renderHeight);
+  return DoubleSize(width, height);
+}
+
 void VRSession::OnFocus() {
   if (!blurred_)
     return;
@@ -190,17 +208,28 @@ void VRSession::OnFrame(
   if (detached_)
     return;
 
+  // Don't allow frames to be processed if there's no layers attached to the
+  // session. That would allow tracking with no associated visuals.
+  if (!base_layer_)
+    return;
+
   VRPresentationFrame* presentation_frame = new VRPresentationFrame(this);
   presentation_frame->UpdateBasePose(std::move(base_pose_matrix));
 
   if (pending_frame_) {
     pending_frame_ = false;
 
+    // Cache the base layer, since it could change during the frame callback.
+    VRLayer* frame_base_layer = base_layer_;
+    frame_base_layer->OnFrameStart();
+
     // Resolve the queued requestFrame callbacks. All VR rendering will happen
     // within these calls. resolving_frame_ will be true for the duration of the
     // callbacks.
     AutoReset<bool> resolving(&resolving_frame_, true);
     callback_collection_.ExecuteCallbacks(this, presentation_frame);
+
+    frame_base_layer->OnFrameEnd();
   }
 }
 
@@ -231,6 +260,7 @@ const HeapVector<Member<VRView>>& VRSession::views() {
 
 void VRSession::Trace(blink::Visitor* visitor) {
   visitor->Trace(device_);
+  visitor->Trace(base_layer_);
   visitor->Trace(views_);
   visitor->Trace(callback_collection_);
   EventTargetWithInlineData::Trace(visitor);

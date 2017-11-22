@@ -29,7 +29,6 @@
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/common/surface_handle.h"
 #include "ipc/ipc_sender.h"
-#include "ipc/message_filter.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/viz/privileged/interfaces/compositing/frame_sink_manager.mojom.h"
 #include "services/viz/privileged/interfaces/gl/gpu_host.mojom.h"
@@ -41,10 +40,6 @@
 
 namespace base {
 class Thread;
-}
-
-namespace IPC {
-struct ChannelHandle;
 }
 
 namespace gpu {
@@ -74,7 +69,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
     SUCCESS
   };
   using EstablishChannelCallback =
-      base::Callback<void(const IPC::ChannelHandle&,
+      base::Callback<void(mojo::ScopedMessagePipeHandle channel_handle,
                           const gpu::GPUInfo&,
                           const gpu::GpuFeatureInfo&,
                           EstablishChannelStatus status)>;
@@ -90,7 +85,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   using RequestGPUInfoCallback = base::Callback<void(const gpu::GPUInfo&)>;
   using RequestHDRStatusCallback = base::Callback<void(bool)>;
 
-  static bool gpu_enabled() { return gpu_enabled_; }
   static int gpu_crash_count() { return gpu_crash_count_; }
 
   // Creates a new GpuProcessHost (if |force_create| is turned on) or gets an
@@ -288,8 +282,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   base::TimeTicks init_start_time_;
 
   // Master switch for enabling/disabling GPU acceleration for the current
-  // browser session. It does not change the acceleration settings for
-  // existing tabs, just the future ones.
+  // browser session.
   static bool gpu_enabled_;
 
   static bool hardware_gpu_enabled_;

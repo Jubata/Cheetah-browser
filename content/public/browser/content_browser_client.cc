@@ -64,7 +64,8 @@ WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
 }
 
 GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
-                                           const GURL& url) {
+                                           const GURL& url,
+                                           bool is_isolated_origin) {
   return url;
 }
 
@@ -172,6 +173,13 @@ ContentBrowserClient::GetOriginsRequiringDedicatedProcess() {
   return std::vector<url::Origin>();
 }
 
+bool ContentBrowserClient::IsFileAccessAllowed(
+    const base::FilePath& path,
+    const base::FilePath& absolute_path,
+    const base::FilePath& profile_path) {
+  return true;
+}
+
 std::string ContentBrowserClient::GetApplicationLocale() {
   return "en-US";
 }
@@ -226,7 +234,7 @@ bool ContentBrowserClient::AllowGetCookie(const GURL& url,
 
 bool ContentBrowserClient::AllowSetCookie(const GURL& url,
                                           const GURL& first_party,
-                                          const std::string& cookie_line,
+                                          const net::CanonicalCookie& cookie,
                                           ResourceContext* context,
                                           int render_process_id,
                                           int render_frame_id,
@@ -526,6 +534,15 @@ ContentBrowserClient::CreateURLLoaderThrottles(
     const base::Callback<WebContents*()>& wc_getter) {
   return std::vector<std::unique_ptr<URLLoaderThrottle>>();
 }
+
+void ContentBrowserClient::RegisterNonNetworkNavigationURLLoaderFactories(
+    RenderFrameHost* frame_host,
+    NonNetworkURLLoaderFactoryMap* factories) {}
+
+void ContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
+    RenderFrameHost* frame_host,
+    const GURL& frame_url,
+    NonNetworkURLLoaderFactoryMap* factories) {}
 
 mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
     BrowserContext* context,

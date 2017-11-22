@@ -291,16 +291,11 @@ void DelegatedFrameHost::WasResized() {
   }
 
   if (enable_surface_synchronization_) {
-    ui::Layer* layer = client_->DelegatedFrameHostGetLayer();
-    gfx::Size desired_size_in_pixels =
-        gfx::ConvertSizeToPixel(layer->device_scale_factor(),
-                                client_->DelegatedFrameHostDesiredSizeInDIP());
+    current_frame_size_in_dip_ = client_->DelegatedFrameHostDesiredSizeInDIP();
 
     viz::SurfaceId surface_id(frame_sink_id_, client_->GetLocalSurfaceId());
-    viz::SurfaceInfo surface_info(surface_id, layer->device_scale_factor(),
-                                  desired_size_in_pixels);
     client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
-        surface_info, GetSurfaceReferenceFactory());
+        surface_id, current_frame_size_in_dip_, GetSurfaceReferenceFactory());
     has_primary_surface_ = true;
     frame_evictor_->SwappedFrame(client_->DelegatedFrameHostIsVisible());
     if (compositor_)
@@ -450,7 +445,8 @@ void DelegatedFrameHost::DidCreateNewRendererCompositorFrameSink(
 
 void DelegatedFrameHost::SubmitCompositorFrame(
     const viz::LocalSurfaceId& local_surface_id,
-    viz::CompositorFrame frame) {
+    viz::CompositorFrame frame,
+    viz::mojom::HitTestRegionListPtr hit_test_region_list) {
 #if defined(OS_CHROMEOS)
   DCHECK(!resize_lock_ || !client_->IsAutoResizeEnabled());
 #endif
@@ -464,11 +460,6 @@ void DelegatedFrameHost::SubmitCompositorFrame(
   gfx::Size frame_size = root_pass->output_rect.size();
   gfx::Size frame_size_in_dip =
       gfx::ConvertSizeToDIP(frame_device_scale_factor, frame_size);
-
-  gfx::Rect damage_rect = root_pass->damage_rect;
-  damage_rect.Intersect(gfx::Rect(frame_size));
-  gfx::Rect damage_rect_in_dip =
-      gfx::ConvertRectToDIP(frame_device_scale_factor, damage_rect);
 
   if (ShouldSkipFrame(frame_size_in_dip)) {
     std::vector<viz::ReturnedResource> resources =
@@ -494,12 +485,10 @@ void DelegatedFrameHost::SubmitCompositorFrame(
 
   if (skipped_frames_) {
     skipped_frames_ = false;
-    damage_rect = gfx::Rect(frame_size);
-    damage_rect_in_dip = gfx::Rect(frame_size_in_dip);
 
     // Give the same damage rect to the compositor.
     viz::RenderPass* root_pass = frame.render_pass_list.back().get();
-    root_pass->damage_rect = damage_rect;
+    root_pass->damage_rect = gfx::Rect(frame_size);
   }
 
   background_color_ = frame.metadata.root_background_color;
@@ -515,22 +504,14 @@ void DelegatedFrameHost::SubmitCompositorFrame(
 
     // If surface synchronization is off, then OnFirstSurfaceActivation will be
     // called in the same call stack.
-    // TODO(kenrb): Supply HitTestRegionList data here as described in
-    // crbug.com/750755.
-    bool result = support_->SubmitCompositorFrame(local_surface_id,
-                                                  std::move(frame), nullptr);
+    bool result = support_->SubmitCompositorFrame(
+        local_surface_id, std::move(frame), std::move(hit_test_region_list));
     DCHECK(result);
 
     DCHECK(enable_surface_synchronization_ || has_primary_surface_);
   }
 
-  // TODO(fsamuel): This is used to detect video. We need to develop an
-  // alternative mechanism to detect video in a frame for Viz.
   if (!enable_surface_synchronization_) {
-    if (!damage_rect_in_dip.IsEmpty()) {
-      client_->DelegatedFrameHostGetLayer()->OnDelegatedFrameDamage(
-          damage_rect_in_dip);
-    }
     if (has_primary_surface_)
       frame_evictor_->SwappedFrame(client_->DelegatedFrameHostIsVisible());
     // Note: the frame may have been evicted immediately.
@@ -575,9 +556,12 @@ void DelegatedFrameHost::OnBeginFramePausedChanged(bool paused) {
 
 void DelegatedFrameHost::OnFirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
+  gfx::Size frame_size_in_dip = gfx::ConvertSizeToDIP(
+      surface_info.device_scale_factor(), surface_info.size_in_pixels());
+
   if (!enable_surface_synchronization_) {
     client_->DelegatedFrameHostGetLayer()->SetShowPrimarySurface(
-        surface_info, GetSurfaceReferenceFactory());
+        surface_info.id(), frame_size_in_dip, GetSurfaceReferenceFactory());
     has_primary_surface_ = true;
   }
 
@@ -590,13 +574,19 @@ void DelegatedFrameHost::OnFirstSurfaceActivation(
       surface_info.id());
   local_surface_id_ = surface_info.id().local_surface_id();
 
+  // Surface synchronization deals with resizes in WasResized().
+  if (enable_surface_synchronization_)
+    return;
+
   released_front_lock_ = nullptr;
-  gfx::Size frame_size_in_dip = gfx::ConvertSizeToDIP(
-      surface_info.device_scale_factor(), surface_info.size_in_pixels());
   current_frame_size_in_dip_ = frame_size_in_dip;
   CheckResizeLock();
 
   UpdateGutters();
+}
+
+void DelegatedFrameHost::OnFrameTokenChanged(uint32_t frame_token) {
+  client_->OnFrameTokenChanged(frame_token);
 }
 
 void DelegatedFrameHost::OnBeginFrame(const viz::BeginFrameArgs& args) {

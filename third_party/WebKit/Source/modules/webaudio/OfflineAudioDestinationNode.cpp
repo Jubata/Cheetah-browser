@@ -70,7 +70,7 @@ OfflineAudioDestinationHandler::Create(AudioNode& node,
                                        unsigned number_of_channels,
                                        size_t frames_to_process,
                                        float sample_rate) {
-  return WTF::AdoptRef(new OfflineAudioDestinationHandler(
+  return base::AdoptRef(new OfflineAudioDestinationHandler(
       node, number_of_channels, frames_to_process, sample_rate));
 }
 
@@ -377,7 +377,7 @@ WebThread* OfflineAudioDestinationHandler::GetRenderingThread() {
   return render_thread_.get();
 }
 
-void OfflineAudioDestinationHandler::RestartDestination() {
+void OfflineAudioDestinationHandler::RestartRendering() {
   // If the worklet thread is not assigned yet, that means the context has
   // started without a valid WorkletGlobalScope. Assign the worklet thread,
   // and it will be picked up when the GetRenderingThread() is called next.

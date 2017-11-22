@@ -120,9 +120,9 @@
 #include "content/public/common/page_state.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/service_manager_connection.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/common/web_preferences.h"
-#include "device/geolocation/geolocation_context.h"
 #include "net/base/url_util.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_transaction_factory.h"
@@ -130,11 +130,13 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/features/features.h"
+#include "services/device/public/interfaces/constants.mojom.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/WebKit/common/mime_util/mime_util.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 #include "third_party/WebKit/public/platform/WebSecurityStyle.h"
-#include "third_party/WebKit/public/web/WebSandboxFlags.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/accessibility/ax_tree_combiner.h"
 #include "ui/base/layout.h"
@@ -539,7 +541,6 @@ WebContentsImpl::WebContentsImpl(BrowserContext* browser_context)
       is_subframe_(false),
       force_disable_overscroll_content_(false),
       last_dialog_suppressed_(false),
-      geolocation_context_(new device::GeolocationContext()),
       accessibility_mode_(
           BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()),
       audio_stream_monitor_(this),
@@ -705,7 +706,7 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
   }
 
   // Apply starting sandbox flags.
-  FramePolicy frame_policy(new_root->pending_frame_policy());
+  blink::FramePolicy frame_policy(new_root->pending_frame_policy());
   frame_policy.sandbox_flags |= params.starting_sandbox_flags;
   new_root->SetPendingFramePolicy(frame_policy);
   new_root->CommitPendingFramePolicy();
@@ -1785,12 +1786,11 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
   } else {
     view_.reset(CreateWebContentsView(this, delegate,
                                       &render_view_host_delegate_view_));
-  }
-
-  if (browser_plugin_guest_ && !GuestMode::IsCrossProcessFrameGuest(this)) {
-    view_.reset(new WebContentsViewGuest(this, browser_plugin_guest_.get(),
-                                         std::move(view_),
-                                         &render_view_host_delegate_view_));
+    if (browser_plugin_guest_) {
+      view_ = std::make_unique<WebContentsViewGuest>(
+          this, browser_plugin_guest_.get(), std::move(view_),
+          &render_view_host_delegate_view_);
+    }
   }
   CHECK(render_view_host_delegate_view_);
   CHECK(view_.get());
@@ -2723,7 +2723,17 @@ RenderFrameHost* WebContentsImpl::GetGuestByInstanceID(
   return guest->GetMainFrame();
 }
 
-device::GeolocationContext* WebContentsImpl::GetGeolocationContext() {
+device::mojom::GeolocationContext* WebContentsImpl::GetGeolocationContext() {
+  if (geolocation_context_)
+    return geolocation_context_.get();
+
+  auto request = mojo::MakeRequest(&geolocation_context_);
+  if (!ServiceManagerConnection::GetForProcess())
+    return geolocation_context_.get();
+
+  service_manager::Connector* connector =
+      ServiceManagerConnection::GetForProcess()->GetConnector();
+  connector->BindInterface(device::mojom::kServiceName, std::move(request));
   return geolocation_context_.get();
 }
 
@@ -2743,8 +2753,8 @@ device::mojom::WakeLock* WebContentsImpl::GetRendererWakeLock() {
       return nullptr;
     }
     wake_lock_context->GetWakeLock(
-        device::mojom::WakeLockType::PreventDisplaySleep,
-        device::mojom::WakeLockReason::ReasonOther, "Wake Lock API",
+        device::mojom::WakeLockType::kPreventDisplaySleep,
+        device::mojom::WakeLockReason::kOther, "Wake Lock API",
         mojo::MakeRequest(&renderer_wake_lock_));
   }
   return renderer_wake_lock_.get();
@@ -2875,7 +2885,8 @@ void WebContentsImpl::UpdatePreferredSize(const gfx::Size& pref_size) {
 
 void WebContentsImpl::ResizeDueToAutoResize(
     RenderWidgetHostImpl* render_widget_host,
-    const gfx::Size& new_size) {
+    const gfx::Size& new_size,
+    uint64_t sequence_number) {
   if (render_widget_host != GetRenderViewHost()->GetWidget())
     return;
 
@@ -2895,6 +2906,11 @@ void WebContentsImpl::ResizeDueToAutoResize(
 
   if (delegate_)
     delegate_->ResizeDueToAutoResize(this, new_size);
+
+  RenderWidgetHostViewBase* view =
+      static_cast<RenderWidgetHostViewBase*>(GetRenderWidgetHostView());
+  if (view)
+    view->ResizeDueToAutoResize(new_size, sequence_number);
 }
 
 gfx::Size WebContentsImpl::GetAutoResizeSize() {
@@ -3217,17 +3233,7 @@ void WebContentsImpl::RestoreFocus() {
 }
 
 void WebContentsImpl::FocusThroughTabTraversal(bool reverse) {
-  if (ShowingInterstitialPage()) {
-    interstitial_page_->FocusThroughTabTraversal(reverse);
-    return;
-  }
-  RenderWidgetHostView* const fullscreen_view =
-      GetFullscreenRenderWidgetHostView();
-  if (fullscreen_view) {
-    fullscreen_view->Focus();
-    return;
-  }
-  GetRenderViewHost()->SetInitialFocus(reverse);
+  view_->FocusThroughTabTraversal(reverse);
 }
 
 bool WebContentsImpl::ShowingInterstitialPage() const {
@@ -3240,7 +3246,7 @@ void WebContentsImpl::AdjustPreviewsStateForNavigation(
     delegate_->AdjustPreviewsStateForNavigation(previews_state);
 }
 
-InterstitialPage* WebContentsImpl::GetInterstitialPage() const {
+InterstitialPageImpl* WebContentsImpl::GetInterstitialPage() const {
   return interstitial_page_;
 }
 
@@ -3378,19 +3384,18 @@ void WebContentsImpl::Close() {
   Close(GetRenderViewHost());
 }
 
-void WebContentsImpl::DragSourceEndedAt(int client_x,
-                                        int client_y,
-                                        int screen_x,
-                                        int screen_y,
+void WebContentsImpl::DragSourceEndedAt(float client_x,
+                                        float client_y,
+                                        float screen_x,
+                                        float screen_y,
                                         blink::WebDragOperation operation,
                                         RenderWidgetHost* source_rwh) {
   if (browser_plugin_embedder_.get())
     browser_plugin_embedder_->DragSourceEndedAt(
         client_x, client_y, screen_x, screen_y, operation);
   if (source_rwh) {
-    source_rwh->DragSourceEndedAt(gfx::Point(client_x, client_y),
-                                  gfx::Point(screen_x, screen_y),
-                                  operation);
+    source_rwh->DragSourceEndedAt(gfx::PointF(client_x, client_y),
+                                  gfx::PointF(screen_x, screen_y), operation);
   }
 }
 
@@ -5696,6 +5701,9 @@ void WebContentsImpl::OnDialogClosed(int render_process_id,
       controller_.DiscardNonCommittedEntries();
     }
 
+    // Update the URL display either way, to avoid showing a stale URL.
+    NotifyNavigationStateChanged(INVALIDATE_TYPE_URL);
+
     for (auto& observer : observers_)
       observer.BeforeUnloadDialogCancelled();
   }
@@ -5912,12 +5920,13 @@ void WebContentsImpl::MediaStartedPlaying(
 
 void WebContentsImpl::MediaStoppedPlaying(
     const WebContentsObserver::MediaPlayerInfo& media_info,
-    const WebContentsObserver::MediaPlayerId& id) {
+    const WebContentsObserver::MediaPlayerId& id,
+    WebContentsObserver::MediaStoppedReason reason) {
   if (media_info.has_video)
     currently_playing_video_count_--;
 
   for (auto& observer : observers_)
-    observer.MediaStoppedPlaying(media_info, id);
+    observer.MediaStoppedPlaying(media_info, id, reason);
 }
 
 void WebContentsImpl::MediaResized(

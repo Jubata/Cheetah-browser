@@ -243,7 +243,7 @@ class DevToolsProtocolTest : public ContentBrowserTest,
       return result_.get();
     }
     in_dispatch_ = false;
-    return nullptr;
+    return result_.get();
   }
 
   void WaitForResponse() {
@@ -627,20 +627,17 @@ std::unique_ptr<SkBitmap> DecodeJPEG(std::string base64_data) {
       jpeg_data.size());
 }
 
-bool ColorsMatchWithinLimit(SkColor color1,
-                            SkColor color2,
-                            int32_t error_limit) {
-  auto a_distance = std::abs(static_cast<int32_t>(SkColorGetA(color1)) -
-                             static_cast<int32_t>(SkColorGetA(color2)));
-  auto r_distance = std::abs(static_cast<int32_t>(SkColorGetR(color1)) -
-                             static_cast<int32_t>(SkColorGetR(color2)));
-  auto g_distance = std::abs(static_cast<int32_t>(SkColorGetG(color1)) -
-                             static_cast<int32_t>(SkColorGetG(color2)));
-  auto b_distance = std::abs(static_cast<int32_t>(SkColorGetB(color1)) -
-                             static_cast<int32_t>(SkColorGetB(color2)));
-
-  return a_distance * a_distance + r_distance * r_distance +
-             g_distance * g_distance + b_distance * b_distance <=
+bool ColorsMatchWithinLimit(SkColor color1, SkColor color2, int error_limit) {
+  auto a_diff = static_cast<int>(SkColorGetA(color1)) -
+                static_cast<int>(SkColorGetA(color2));
+  auto r_diff = static_cast<int>(SkColorGetR(color1)) -
+                static_cast<int>(SkColorGetR(color2));
+  auto g_diff = static_cast<int>(SkColorGetG(color1)) -
+                static_cast<int>(SkColorGetG(color2));
+  auto b_diff = static_cast<int>(SkColorGetB(color1)) -
+                static_cast<int>(SkColorGetB(color2));
+  return a_diff * a_diff + r_diff * r_diff + g_diff * g_diff +
+             b_diff * b_diff <=
          error_limit * error_limit;
 }
 
@@ -675,7 +672,7 @@ bool MatchesBitmap(const SkBitmap& expected_bmp,
       SkColor expected_color = expected_bmp.getColor(x, y);
       if (!ColorsMatchWithinLimit(actual_color, expected_color, error_limit)) {
         if (error_pixels_count < 10) {
-          LOG(ERROR) << "Pixel (" << x << "," << y << "): expected "
+          LOG(ERROR) << "Pixel (" << x << "," << y << "): expected " << std::hex
                      << expected_color << " actual " << actual_color;
         }
         error_pixels_count++;
@@ -722,16 +719,11 @@ class CaptureScreenshotTest : public DevToolsProtocolTest {
     std::string base64;
     EXPECT_TRUE(result_->GetString("data", &base64));
     std::unique_ptr<SkBitmap> result_bitmap;
-    int error_limit = 0;
     if (encoding == ENCODING_PNG) {
       result_bitmap.reset(new SkBitmap());
       EXPECT_TRUE(DecodePNG(base64, result_bitmap.get()));
     } else {
       result_bitmap = DecodeJPEG(base64);
-      // Even with quality 100, jpeg isn't lossless. So, we allow some skew in
-      // pixel values. Not that this assumes that there is no skew in pixel
-      // positions, so will only work reliably if all pixels have equal values.
-      error_limit = 3;
     }
     EXPECT_TRUE(result_bitmap);
 
@@ -741,6 +733,14 @@ class CaptureScreenshotTest : public DevToolsProtocolTest {
     // rounded corners.
     matching_mask.Inset(4, 4, 4, 4);
 #endif
+
+    // A color profile can be installed on the host that could affect
+    // pixel colors. Also JPEG compression could further distort the color.
+    // Allow some error between actual and expected pixel values.
+    // That assumes there is no shift in pixel positions, so it only works
+    // reliably if all pixels have equal values.
+    int error_limit = 16;
+
     EXPECT_TRUE(MatchesBitmap(expected_bitmap, *result_bitmap, matching_mask,
                               device_scale_factor, error_limit));
   }
@@ -2169,8 +2169,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CertificateExplanations) {
 
   // There should be one explanation containing the server's certificate chain.
   net::SHA256HashValue cert_chain_fingerprint =
-      net::X509Certificate::CalculateChainFingerprint256(
-          cert->os_cert_handle(), cert->GetIntermediateCertificates());
+      cert->CalculateChainFingerprint256();
 
   // Read the certificate out of the first explanation.
   const base::ListValue* certificate;
@@ -2190,9 +2189,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CertificateExplanations) {
       net::X509Certificate::CreateFromDERCertChain(cert_string_piece);
   ASSERT_TRUE(explanation_cert);
   EXPECT_EQ(cert_chain_fingerprint,
-            net::X509Certificate::CalculateChainFingerprint256(
-                explanation_cert->os_cert_handle(),
-                explanation_cert->GetIntermediateCertificates()));
+            explanation_cert->CalculateChainFingerprint256());
 }
 
 // Download tests are flaky on Android: https://crbug.com/7546
@@ -2220,12 +2217,12 @@ class CountingDownloadFile : public DownloadFileImpl {
   CountingDownloadFile(std::unique_ptr<DownloadSaveInfo> save_info,
                        const base::FilePath& default_downloads_directory,
                        std::unique_ptr<DownloadManager::InputStream> stream,
-                       const net::NetLogWithSource& net_log,
+                       uint32_t download_id,
                        base::WeakPtr<DownloadDestinationObserver> observer)
       : DownloadFileImpl(std::move(save_info),
                          default_downloads_directory,
                          std::move(stream),
-                         net_log,
+                         download_id,
                          observer) {}
 
   ~CountingDownloadFile() override {
@@ -2277,11 +2274,11 @@ class CountingDownloadFileFactory : public DownloadFileFactory {
       std::unique_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
       std::unique_ptr<DownloadManager::InputStream> stream,
-      const net::NetLogWithSource& net_log,
+      uint32_t download_id,
       base::WeakPtr<DownloadDestinationObserver> observer) override {
     return new CountingDownloadFile(std::move(save_info),
                                     default_downloads_directory,
-                                    std::move(stream), net_log, observer);
+                                    std::move(stream), download_id, observer);
   }
 };
 

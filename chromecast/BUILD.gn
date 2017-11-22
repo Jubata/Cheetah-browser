@@ -195,13 +195,12 @@ cast_test_group("cast_tests") {
     if (target_os == "linux") {
       if (is_cast_desktop_build) {
         # Disable PartitionAllocTest.RepeatedReturnNullDirect (b/67975693)
-        gtest_excludes += [ "PartitionAlloc.RepeatedReturnNullDirect" ]
+        gtest_excludes += [ "PartitionAllocTest.RepeatedReturnNullDirect" ]
       } else {
         # Disable ProcessMetricsTest.GetNumberOfThreads (b/15610509)
         # Disable ProcessUtilTest.* (need to define OS_ANDROID)
         # Disable StackContainer.BufferAlignment (don't support 16-byte alignment)
         # Disable SystemMetrics2Test.GetSystemMemoryInfo (buffers>0 can't be guaranteed)
-        # Disable TimeFormattingTest.TimeFormat* for flakiness on devices (crbug/671429)
         # Disable PostTasksViaTaskRunner/* to green up devices (b/62246873)
         # Disable WorkerDetaches to green up devices (b/62246873)
         gtest_excludes += [
@@ -209,7 +208,6 @@ cast_test_group("cast_tests") {
           "ProcessUtilTest.*",
           "StackContainer.BufferAlignment",
           "SystemMetrics2Test.GetSystemMemoryInfo",
-          "TimeFormattingTest.TimeFormat*",
           "OneTraitsExecutionModePair/TaskSchedulerImplTest.PostTasksViaTaskRunner/*",
           "TaskSchedulerWorkerTest.WorkerDetaches",
         ]
@@ -450,6 +448,12 @@ cast_executable("cast_shell") {
 if (is_fuchsia) {
   fuchsia_executable_runner("cast_shell_fuchsia") {
     exe_target = ":cast_shell"
+
+    if (chromecast_branding != "public") {
+      data_deps = [
+        "//chromecast/internal:fuchsia_internal_data_deps",
+      ]
+    }
   }
 }
 
@@ -462,6 +466,7 @@ repack("cast_shell_pak") {
     "$root_gen_dir/content/app/resources/content_resources_100_percent.pak",
     "$root_gen_dir/content/app/strings/content_strings_en-US.pak",
     "$root_gen_dir/content/content_resources.pak",
+    "$root_gen_dir/mojo/public/js/mojo_bindings_resources.pak",
     "$root_gen_dir/net/net_resources.pak",
     "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
     "$root_gen_dir/ui/resources/webui_resources.pak",
@@ -477,6 +482,7 @@ repack("cast_shell_pak") {
     "//content:resources",
     "//content/app/resources",
     "//content/app/strings",
+    "//mojo/public/js:resources",
     "//net:net_resources",
     "//third_party/WebKit/public:resources",
     "//third_party/WebKit/public:scaled_resources_100_percent",

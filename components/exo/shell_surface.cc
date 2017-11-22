@@ -24,6 +24,7 @@
 #include "base/trace_event/trace_event_argument.h"
 #include "cc/trees/layer_tree_frame_sink.h"
 #include "components/exo/surface.h"
+#include "components/exo/wm_helper.h"
 #include "services/ui/public/interfaces/window_tree_constants.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
@@ -72,10 +73,36 @@ const struct {
     {ui::VKEY_W, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN},
     {ui::VKEY_F4, ui::EF_ALT_DOWN}};
 
-class CustomFrameView : public views::NonClientFrameView {
+class CustomFrameView : public ash::CustomFrameViewAshBase {
  public:
+  using ShapeRects = std::vector<gfx::Rect>;
+
   explicit CustomFrameView(views::Widget* widget) : widget_(widget) {}
   ~CustomFrameView() override {}
+
+  // Overridden from ash::CustomFrameViewAshBase:
+  void SetShouldPaintHeader(bool paint) override {
+    aura::Window* window = widget_->GetNativeWindow();
+    ui::Layer* layer = window->layer();
+    if (paint) {
+      if (layer->alpha_shape()) {
+        layer->SetAlphaShape(nullptr);
+        layer->SetMasksToBounds(false);
+      }
+      return;
+    }
+
+    int inset = window->GetProperty(aura::client::kTopViewInset);
+    if (inset <= 0)
+      return;
+
+    gfx::Rect bound(bounds().size());
+    bound.Inset(0, inset, 0, 0);
+    std::unique_ptr<ShapeRects> shape = std::make_unique<ShapeRects>();
+    shape->push_back(bound);
+    layer->SetAlphaShape(std::move(shape));
+    layer->SetMasksToBounds(true);
+  }
 
   // Overridden from views::NonClientFrameView:
   gfx::Rect GetBoundsForClientView() const override { return bounds(); }
@@ -295,7 +322,7 @@ ShellSurface::ShellSurface(Surface* surface,
                            bool activatable,
                            bool can_minimize,
                            int container)
-    : SurfaceTreeHost("ExoShellSurfaceHost", nullptr),
+    : SurfaceTreeHost("ExoShellSurfaceHost"),
       widget_(nullptr),
       parent_(parent ? parent->GetWidget()->GetNativeWindow() : nullptr),
       bounds_mode_(bounds_mode),
@@ -683,6 +710,20 @@ void ShellSurface::SetMinimumSize(const gfx::Size& size) {
   pending_minimum_size_ = size;
 }
 
+void ShellSurface::SetBoundsMode(BoundsMode mode) {
+  TRACE_EVENT1("exo", "ShellSurface::SetBoundsMode", "mode",
+               static_cast<int>(mode));
+
+  bounds_mode_ = mode;
+}
+
+void ShellSurface::SetCanMinimize(bool can_minimize) {
+  TRACE_EVENT1("exo", "ShellSurface::SetCanMinimize", "can_minimize",
+               can_minimize);
+
+  can_minimize_ = can_minimize;
+}
+
 // static
 void ShellSurface::SetMainSurface(aura::Window* window, Surface* surface) {
   window->SetProperty(kMainSurfaceKey, surface);
@@ -1027,7 +1068,8 @@ void ShellSurface::OnPostWindowStateTypeChange(
 
 void ShellSurface::OnWindowBoundsChanged(aura::Window* window,
                                          const gfx::Rect& old_bounds,
-                                         const gfx::Rect& new_bounds) {
+                                         const gfx::Rect& new_bounds,
+                                         ui::PropertyChangeReason reason) {
   // TODO(domlaskowski): For BoundsMode::CLIENT, the configure callback does not
   // yet support resizing. See crbug.com/699746.
   if (bounds_mode_ == BoundsMode::CLIENT)
@@ -1070,11 +1112,11 @@ void ShellSurface::OnWindowDestroying(aura::Window* window) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WMHelper::ActivationObserver overrides:
+// wm::ActivationChangeObserver overrides:
 
-void ShellSurface::OnWindowActivated(
-    aura::Window* gained_active,
-    aura::Window* lost_active) {
+void ShellSurface::OnWindowActivated(ActivationReason reason,
+                                     aura::Window* gained_active,
+                                     aura::Window* lost_active) {
   if (!widget_)
     return;
 
@@ -1087,7 +1129,7 @@ void ShellSurface::OnWindowActivated(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WMHelper::DisplayConfigurationObserver overrides:
+// ash::WindowTreeHostManager::Observer overrides:
 
 void ShellSurface::OnDisplayConfigurationChanged() {
   if (bounds_mode_ != BoundsMode::CLIENT)
@@ -1630,8 +1672,10 @@ void ShellSurface::UpdateWidgetBounds() {
           visible_bounds);
 
   switch (bounds_mode_) {
-    case BoundsMode::CLIENT:
     case BoundsMode::FIXED:
+      new_widget_bounds.set_origin(origin_);
+      break;
+    case BoundsMode::CLIENT:
       new_widget_bounds.set_origin(origin_ -
                                    GetSurfaceOrigin().OffsetFromOrigin());
       break;

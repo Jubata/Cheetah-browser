@@ -7,7 +7,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/command_line.h"
@@ -16,6 +18,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/metrics/user_metrics.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -77,6 +80,8 @@
 #endif
 
 #if !defined(OS_ANDROID)
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/page_info/page_info_infobar_delegate.h"
 #endif
@@ -112,6 +117,7 @@ ContentSettingsType kPermissionType[] = {
     CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS,
     CONTENT_SETTINGS_TYPE_AUTOPLAY,
     CONTENT_SETTINGS_TYPE_MIDI_SYSEX,
+    CONTENT_SETTINGS_TYPE_CLIPBOARD_READ,
 };
 
 // Checks whether this permission is currently the factory default, as set by
@@ -163,6 +169,11 @@ bool ShouldShowPermission(const PageInfoUI::PermissionInfo& info,
       return true;
   }
 
+  if (info.type == CONTENT_SETTINGS_TYPE_CLIPBOARD_READ) {
+    if (!base::FeatureList::IsEnabled(features::kClipboardContentSetting))
+      return false;
+  }
+
 #if defined(OS_ANDROID)
   // Special geolocation DSE settings apply only on Android, so make sure it
   // gets checked there regardless of default setting on Desktop.
@@ -171,10 +182,7 @@ bool ShouldShowPermission(const PageInfoUI::PermissionInfo& info,
 #endif
 
   // All other content settings only show when they are non-factory-default.
-  if ((base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kEnableSiteSettings) ||
-       base::FeatureList::IsEnabled(features::kSiteDetails)) &&
-      IsPermissionFactoryDefault(content_settings, info)) {
+  if (IsPermissionFactoryDefault(content_settings, info)) {
     return false;
   }
 
@@ -418,6 +426,21 @@ void PageInfo::OnSitePermissionChanged(ContentSettingsType type,
   // total count of permission changes in another histogram makes it easier to
   // compare it against other kinds of actions in Page Info.
   RecordPageInfoAction(PAGE_INFO_CHANGED_PERMISSION);
+  if (type == CONTENT_SETTINGS_TYPE_SOUND) {
+    ContentSetting default_setting =
+        content_settings_->GetDefaultContentSetting(CONTENT_SETTINGS_TYPE_SOUND,
+                                                    nullptr);
+    bool mute = (setting == CONTENT_SETTING_BLOCK) ||
+                (setting == CONTENT_SETTING_DEFAULT &&
+                 default_setting == CONTENT_SETTING_BLOCK);
+    if (mute) {
+      base::RecordAction(
+          base::UserMetricsAction("SoundContentSetting.MuteBy.PageInfo"));
+    } else {
+      base::RecordAction(
+          base::UserMetricsAction("SoundContentSetting.UnmuteBy.PageInfo"));
+    }
+  }
 
   PermissionUtil::ScopedRevocationReporter scoped_revocation_reporter(
       profile_, site_url_, site_url_, type, PermissionSourceUI::OIB);
@@ -476,32 +499,13 @@ void PageInfo::OnRevokeSSLErrorBypassButtonPressed() {
 }
 
 void PageInfo::OpenSiteSettingsView() {
-  // By default, this opens the general Content Settings pane. If the
-  // |kSiteSettings| and/or |kSiteDetails| flags are enabled this opens a
-  // settings page specific to the current origin of the page. crbug.com/655876
-  url::Origin site_origin = url::Origin::Create(site_url());
-  std::string link_destination(chrome::kChromeUIContentSettingsURL);
-  // TODO(https://crbug.com/444047): Site Details should work with file:// urls
-  // when this bug is fixed, so add it to the whitelist when that happens.
-  if ((base::CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kEnableSiteSettings) ||
-       base::FeatureList::IsEnabled(features::kSiteDetails)) &&
-      !site_origin.unique() &&
-      (site_url().SchemeIsHTTPOrHTTPS() ||
-       site_url().SchemeIs(content_settings::kExtensionScheme))) {
-    std::string origin_string = site_origin.Serialize();
-    url::RawCanonOutputT<char> percent_encoded_origin;
-    url::EncodeURIComponent(origin_string.c_str(), origin_string.length(),
-                            &percent_encoded_origin);
-    link_destination = chrome::kChromeUISiteDetailsPrefixURL +
-                       std::string(percent_encoded_origin.data(),
-                                   percent_encoded_origin.length());
-  }
-  web_contents()->OpenURL(
-      content::OpenURLParams(GURL(link_destination), content::Referrer(),
-                             WindowOpenDisposition::NEW_FOREGROUND_TAB,
-                             ui::PAGE_TRANSITION_LINK, false));
+#if defined(OS_ANDROID)
+  NOTREACHED();
+#else
+  chrome::ShowSiteSettings(chrome::FindBrowserWithWebContents(web_contents()),
+                           site_url());
   RecordPageInfoAction(PageInfo::PAGE_INFO_SITE_SETTINGS_OPENED);
+#endif
 }
 
 void PageInfo::OnChangePasswordButtonPressed(
@@ -581,9 +585,13 @@ void PageInfo::Init(const GURL& url,
     // HTTPS with no or minor errors.
     if (security_info.security_level ==
         security_state::SECURE_WITH_POLICY_INSTALLED_CERT) {
+#if defined(OS_CHROMEOS)
       site_identity_status_ = SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT;
       site_identity_details_ = l10n_util::GetStringFUTF16(
           IDS_CERT_POLICY_PROVIDED_CERT_MESSAGE, UTF8ToUTF16(url.host()));
+#else
+      DCHECK(false) << "Policy certificates exist only on ChromeOS";
+#endif
     } else if (net::IsCertStatusMinorError(security_info.cert_status)) {
       site_identity_status_ = SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN;
       base::string16 issuer_name(
@@ -896,8 +904,9 @@ void PageInfo::PresentSiteIdentity() {
   ui_->SetIdentityInfo(info);
 #if defined(SAFE_BROWSING_DB_LOCAL)
   if (password_protection_service_ && show_change_password_buttons_) {
-    password_protection_service_->OnWarningShown(
-        web_contents(), safe_browsing::PasswordProtectionService::PAGE_INFO);
+    password_protection_service_->RecordWarningAction(
+        safe_browsing::PasswordProtectionService::PAGE_INFO,
+        safe_browsing::PasswordProtectionService::SHOWN);
   }
 #endif
 }

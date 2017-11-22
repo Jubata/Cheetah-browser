@@ -50,9 +50,9 @@ class IOSTranslateDriver : public TranslateDriver,
   CreateLanguageDetectionCallback();
 
   // web::WebStateObserver methods.
-  void NavigationItemCommitted(
-      web::WebState* web_state,
-      const web::LoadCommittedDetails& load_details) override;
+  void DidFinishNavigation(web::WebState* web_state,
+                           web::NavigationContext* navigation_context) override;
+  void WebStateDestroyed(web::WebState* web_state) override;
 
   // TranslateDriver methods.
   void OnIsPageTranslatedChanged() override;
@@ -99,6 +99,10 @@ class IOSTranslateDriver : public TranslateDriver,
   void OnTranslateComplete(bool success,
                            const std::string& original_language,
                            double translation_time) override;
+
+  // The WebState this instance is observing. Will be null after
+  // WebStateDestroyed has been called.
+  web::WebState* web_state_ = nullptr;
 
   // The navigation manager of the tab we are associated with.
   web::NavigationManager* navigation_manager_;

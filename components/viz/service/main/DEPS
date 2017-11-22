@@ -5,6 +5,9 @@ include_rules = [
   "+gpu/ipc",
   "+gpu/ipc/common",
   "+gpu/ipc/service",
+  "+media/gpu",
   "+mojo/public/cpp",
+  "+services/metrics/public",
+  "+services/service_manager/public/cpp",
   "+services/viz/privileged/interfaces",
 ]

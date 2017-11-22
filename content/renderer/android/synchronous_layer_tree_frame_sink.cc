@@ -24,7 +24,7 @@
 #include "components/viz/service/display/output_surface.h"
 #include "components/viz/service/display/output_surface_frame.h"
 #include "components/viz/service/display/software_output_device.h"
-#include "components/viz/service/display/texture_mailbox_deleter.h"
+#include "components/viz/service/display/texture_deleter.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "content/common/android/sync_compositor_messages.h"
@@ -314,7 +314,7 @@ void SynchronousLayerTreeFrameSink::SubmitCompositorFrame(
     surface_quad->SetNew(
         shared_quad_state, gfx::Rect(child_size), gfx::Rect(child_size),
         viz::SurfaceId(kChildFrameSinkId, child_local_surface_id_),
-        base::nullopt, SK_ColorWHITE);
+        base::nullopt, SK_ColorWHITE, false);
 
     bool result = child_support_->SubmitCompositorFrame(child_local_surface_id_,
                                                         std::move(frame));

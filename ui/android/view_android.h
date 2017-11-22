@@ -97,6 +97,7 @@ class UI_ANDROID_EXPORT ViewAndroid {
   virtual ~ViewAndroid();
 
   void UpdateFrameInfo(const FrameInfo& frame_info);
+  // content_offset is in CSS scale.
   float content_offset() const { return frame_info_.content_offset; }
   float page_scale() const { return frame_info_.page_scale; }
   gfx::SizeF viewport_size() const { return frame_info_.viewport_size; }
@@ -135,7 +136,8 @@ class UI_ANDROID_EXPORT ViewAndroid {
   bool StartDragAndDrop(const base::android::JavaRef<jstring>& jtext,
                         const base::android::JavaRef<jobject>& jimage);
 
-  gfx::Size GetPhysicalBackingSize();
+  gfx::Size GetPhysicalBackingSize() const;
+  gfx::Size GetSize() const;
 
   void OnSizeChanged(int width, int height);
   void OnPhysicalBackingSizeChanged(const gfx::Size& size);

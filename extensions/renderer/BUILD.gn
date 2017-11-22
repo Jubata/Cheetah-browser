@@ -284,7 +284,7 @@ source_set("renderer") {
     "//mojo/public/js",
     "//skia",
     "//third_party/WebKit/public:blink",
-    "//third_party/cld",
+    "//third_party/cld_3/src/src:cld_3",
   ]
 
   if (proprietary_codecs && enable_wifi_display) {
@@ -335,6 +335,8 @@ static_library("unit_test_support") {
     "bindings/api_binding_test_util.h",
     "native_extension_bindings_system_test_base.cc",
     "native_extension_bindings_system_test_base.h",
+    "send_message_tester.cc",
+    "send_message_tester.h",
     "string_source_map.cc",
     "string_source_map.h",
     "test_v8_extension_configuration.cc",
@@ -389,11 +391,11 @@ source_set("unit_tests") {
     "gc_callback_unittest.cc",
     "gin_port_unittest.cc",
     "json_schema_unittest.cc",
+    "messaging_util_unittest.cc",
     "messaging_utils_unittest.cc",
     "module_system_test.cc",
     "module_system_test.h",
     "module_system_unittest.cc",
-    "mojo/keep_alive_client_unittest.cc",
     "native_extension_bindings_system_unittest.cc",
     "native_renderer_messaging_service_unittest.cc",
     "one_time_message_handler_unittest.cc",

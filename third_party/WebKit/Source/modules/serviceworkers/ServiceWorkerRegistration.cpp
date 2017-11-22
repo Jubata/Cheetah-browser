@@ -18,6 +18,7 @@
 #include "platform/bindings/ScriptState.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "public/platform/modules/serviceworker/service_worker_registration.mojom-blink.h"
 
 namespace blink {
 
@@ -88,6 +89,19 @@ String ServiceWorkerRegistration::scope() const {
   return handle_->Registration()->Scope().GetString();
 }
 
+String ServiceWorkerRegistration::updateViaCache() const {
+  switch (handle_->Registration()->UpdateViaCache()) {
+    case mojom::ServiceWorkerUpdateViaCache::kImports:
+      return "imports";
+    case mojom::ServiceWorkerUpdateViaCache::kAll:
+      return "all";
+    case mojom::ServiceWorkerUpdateViaCache::kNone:
+      return "none";
+  }
+  NOTREACHED();
+  return "";
+}
+
 ScriptPromise ServiceWorkerRegistration::update(ScriptState* script_state) {
   ServiceWorkerContainerClient* client =
       ServiceWorkerContainerClient::From(GetExecutionContext());
@@ -101,7 +115,7 @@ ScriptPromise ServiceWorkerRegistration::update(ScriptState* script_state) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
   handle_->Registration()->Update(
-      WTF::MakeUnique<
+      std::make_unique<
           CallbackPromiseAdapter<void, ServiceWorkerErrorForUpdate>>(resolver));
   return promise;
 }
@@ -120,7 +134,7 @@ ScriptPromise ServiceWorkerRegistration::unregister(ScriptState* script_state) {
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
   handle_->Registration()->Unregister(
-      WTF::MakeUnique<CallbackPromiseAdapter<bool, ServiceWorkerError>>(
+      std::make_unique<CallbackPromiseAdapter<bool, ServiceWorkerError>>(
           resolver));
   return promise;
 }

@@ -1270,7 +1270,7 @@ void GlobalActivityTracker::CreateWithAllocator(
 
 #if !defined(OS_NACL)
 // static
-void GlobalActivityTracker::CreateWithFile(const FilePath& file_path,
+bool GlobalActivityTracker::CreateWithFile(const FilePath& file_path,
                                            size_t size,
                                            uint64_t id,
                                            StringPiece name,
@@ -1280,21 +1280,23 @@ void GlobalActivityTracker::CreateWithFile(const FilePath& file_path,
 
   // Create and map the file into memory and make it globally available.
   std::unique_ptr<MemoryMappedFile> mapped_file(new MemoryMappedFile());
-  bool success =
-      mapped_file->Initialize(File(file_path,
-                                   File::FLAG_CREATE_ALWAYS | File::FLAG_READ |
-                                   File::FLAG_WRITE | File::FLAG_SHARE_DELETE),
-                              {0, static_cast<int64_t>(size)},
-                              MemoryMappedFile::READ_WRITE_EXTEND);
-  DCHECK(success);
+  bool success = mapped_file->Initialize(
+      File(file_path, File::FLAG_CREATE_ALWAYS | File::FLAG_READ |
+                          File::FLAG_WRITE | File::FLAG_SHARE_DELETE),
+      {0, size}, MemoryMappedFile::READ_WRITE_EXTEND);
+  if (!success)
+    return false;
+  if (!FilePersistentMemoryAllocator::IsFileAcceptable(*mapped_file, false))
+    return false;
   CreateWithAllocator(std::make_unique<FilePersistentMemoryAllocator>(
                           std::move(mapped_file), size, id, name, false),
                       stack_depth, 0);
+  return true;
 }
 #endif  // !defined(OS_NACL)
 
 // static
-void GlobalActivityTracker::CreateWithLocalMemory(size_t size,
+bool GlobalActivityTracker::CreateWithLocalMemory(size_t size,
                                                   uint64_t id,
                                                   StringPiece name,
                                                   int stack_depth,
@@ -1302,6 +1304,7 @@ void GlobalActivityTracker::CreateWithLocalMemory(size_t size,
   CreateWithAllocator(
       std::make_unique<LocalPersistentMemoryAllocator>(size, id, name),
       stack_depth, process_id);
+  return true;
 }
 
 // static

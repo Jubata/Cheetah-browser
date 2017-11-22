@@ -12,23 +12,28 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string16.h"
 #include "base/test/mock_entropy_provider.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
+#include "base/test/test_mock_time_task_runner.h"
+#include "base/time/tick_clock.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/resource_coordinator/background_tab_navigation_throttle.h"
+#include "chrome/browser/resource_coordinator/tab_manager_features.h"
 #include "chrome/browser/resource_coordinator/tab_manager_stats_collector.h"
 #include "chrome/browser/resource_coordinator/tab_manager_web_contents_data.h"
 #include "chrome/browser/resource_coordinator/tab_stats.h"
+#include "chrome/browser/resource_coordinator/time.h"
 #include "chrome/browser/sessions/tab_loader.h"
+#include "chrome/browser/ui/tab_ui_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_impl.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
-#include "chrome/common/chrome_features.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
@@ -39,6 +44,7 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/web_contents_tester.h"
 #include "content/test/test_web_contents.h"
+#include "services/resource_coordinator/public/cpp/resource_coordinator_features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -127,6 +133,10 @@ enum TestIndicies {
 
 class TabManagerTest : public ChromeRenderViewHostTestHarness {
  public:
+  TabManagerTest() : scoped_set_tick_clock_for_testing_(tick_clock_.get()) {
+    base::MessageLoop::current()->SetTaskRunner(task_runner_);
+  }
+
   WebContents* CreateWebContents() {
     content::TestWebContents* web_contents =
         content::TestWebContents::Create(profile(), nullptr);
@@ -152,6 +162,7 @@ class TabManagerTest : public ChromeRenderViewHostTestHarness {
     contents2_.reset();
     contents3_.reset();
 
+    base::MessageLoop::current()->SetTaskRunner(original_task_runner_);
     ChromeRenderViewHostTestHarness::TearDown();
   }
 
@@ -220,14 +231,24 @@ class TabManagerTest : public ChromeRenderViewHostTestHarness {
     }
   }
 
+ private:
+  scoped_refptr<base::SingleThreadTaskRunner> original_task_runner_ =
+      base::ThreadTaskRunnerHandle::Get();
+
  protected:
   std::unique_ptr<NavigationHandle> CreateTabAndNavigation(const char* url) {
     content::TestWebContents* web_contents =
         content::TestWebContents::Create(profile(), nullptr);
+    TabUIHelper::CreateForWebContents(web_contents);
     return content::NavigationHandle::CreateNavigationHandleForTesting(
         GURL(url), web_contents->GetMainFrame());
   }
 
+  scoped_refptr<base::TestMockTimeTaskRunner> task_runner_ =
+      base::MakeRefCounted<base::TestMockTimeTaskRunner>();
+  std::unique_ptr<base::TickClock> tick_clock_ =
+      task_runner_->GetMockTickClock();
+  ScopedSetTickClockForTesting scoped_set_tick_clock_for_testing_;
   std::unique_ptr<BackgroundTabNavigationThrottle> throttle1_;
   std::unique_ptr<BackgroundTabNavigationThrottle> throttle2_;
   std::unique_ptr<BackgroundTabNavigationThrottle> throttle3_;
@@ -266,7 +287,7 @@ class TabManagerWithExperimentDisabledTest : public TabManagerTest {
 // Tests the sorting comparator to make sure it's producing the desired order.
 TEST_F(TabManagerTest, Comparator) {
   TabStatsList test_list;
-  const base::TimeTicks now = base::TimeTicks::Now();
+  const base::TimeTicks now = NowTicks();
 
   // Add kAutoDiscardable last to verify that the array is being sorted.
 
@@ -410,7 +431,7 @@ TEST_F(TabManagerTest, DiscardWebContentsAt) {
 
   // Discard one of the tabs.
   WebContents* null_contents1 = tab_manager.DiscardWebContentsAt(
-      0, &tabstrip, TabManager::kProactiveShutdown);
+      0, &tabstrip, DiscardCondition::kProactive);
   ASSERT_EQ(2, tabstrip.count());
   EXPECT_TRUE(tab_manager.IsTabDiscarded(tabstrip.GetWebContentsAt(0)));
   EXPECT_FALSE(tab_manager.IsTabDiscarded(tabstrip.GetWebContentsAt(1)));
@@ -425,7 +446,7 @@ TEST_F(TabManagerTest, DiscardWebContentsAt) {
   tab_manager.GetWebContentsData(tabstrip.GetWebContentsAt(0))
       ->SetDiscardState(false);
   WebContents* null_contents2 = tab_manager.DiscardWebContentsAt(
-      0, &tabstrip, TabManager::kProactiveShutdown);
+      0, &tabstrip, DiscardCondition::kProactive);
   ASSERT_EQ(2, tabstrip.count());
   EXPECT_TRUE(tab_manager.IsTabDiscarded(tabstrip.GetWebContentsAt(0)));
   EXPECT_FALSE(tab_manager.IsTabDiscarded(tabstrip.GetWebContentsAt(1)));
@@ -468,8 +489,7 @@ TEST_F(TabManagerTest, ReloadDiscardedTabContextMenu) {
       ->NavigateAndCommit(GURL("chrome://newtab"));
   EXPECT_FALSE(tab_manager.IsTabDiscarded(tabstrip.GetWebContentsAt(1)));
 
-  tab_manager.DiscardWebContentsAt(1, &tabstrip,
-                                   TabManager::kProactiveShutdown);
+  tab_manager.DiscardWebContentsAt(1, &tabstrip, DiscardCondition::kProactive);
   EXPECT_TRUE(tab_manager.IsTabDiscarded(tabstrip.GetWebContentsAt(1)));
 
   tabstrip.GetWebContentsAt(1)->GetController().Reload(
@@ -493,72 +513,17 @@ TEST_F(TabManagerTest, DiscardedTabKeepsLastActiveTime) {
 
   // Simulate an old inactive tab about to get discarded.
   base::TimeTicks new_last_active_time =
-      base::TimeTicks::Now() - base::TimeDelta::FromMinutes(35);
+      NowTicks() - base::TimeDelta::FromMinutes(35);
   test_contents->SetLastActiveTime(new_last_active_time);
   EXPECT_EQ(new_last_active_time, test_contents->GetLastActiveTime());
 
   WebContents* null_contents = tab_manager.DiscardWebContentsAt(
-      1, &tabstrip, TabManager::kProactiveShutdown);
+      1, &tabstrip, DiscardCondition::kProactive);
   EXPECT_EQ(new_last_active_time, null_contents->GetLastActiveTime());
 
   tabstrip.CloseAllTabs();
   EXPECT_TRUE(tabstrip.empty());
 }
-
-// Test to see if a tab can only be discarded once. On Windows and Mac, this
-// defaults to true unless overridden through a variation parameter. On other
-// platforms, it's always false.
-#if defined(OS_WIN) || defined(OS_MACOSX)
-TEST_F(TabManagerTest, CanOnlyDiscardOnce) {
-  TabManager tab_manager;
-  const std::string kTrialName = features::kAutomaticTabDiscarding.name;
-
-  // Not setting the variation parameter.
-  {
-    bool discard_once_value = tab_manager.CanOnlyDiscardOnce();
-    EXPECT_TRUE(discard_once_value);
-  }
-
-  // Setting the variation parameter to true.
-  {
-    std::unique_ptr<base::FieldTrialList> field_trial_list_;
-    field_trial_list_.reset(new base::FieldTrialList(
-        base::MakeUnique<base::MockEntropyProvider>()));
-    variations::testing::ClearAllVariationParams();
-
-    std::map<std::string, std::string> params;
-    params["AllowMultipleDiscards"] = "true";
-    ASSERT_TRUE(variations::AssociateVariationParams(kTrialName, "A", params));
-    base::FieldTrialList::CreateFieldTrial(kTrialName, "A");
-
-    bool discard_once_value = tab_manager.CanOnlyDiscardOnce();
-    EXPECT_FALSE(discard_once_value);
-  }
-
-  // Setting the variation parameter to something else.
-  {
-    std::unique_ptr<base::FieldTrialList> field_trial_list_;
-    field_trial_list_.reset(new base::FieldTrialList(
-        base::MakeUnique<base::MockEntropyProvider>()));
-    variations::testing::ClearAllVariationParams();
-
-    std::map<std::string, std::string> params;
-    params["AllowMultipleDiscards"] = "somethingElse";
-    ASSERT_TRUE(variations::AssociateVariationParams(kTrialName, "B", params));
-    base::FieldTrialList::CreateFieldTrial(kTrialName, "B");
-
-    bool discard_once_value = tab_manager.CanOnlyDiscardOnce();
-    EXPECT_TRUE(discard_once_value);
-  }
-}
-#else
-TEST_F(TabManagerTest, CanOnlyDiscardOnce) {
-  TabManager tab_manager;
-
-  bool discard_once_value = tab_manager.CanOnlyDiscardOnce();
-  EXPECT_FALSE(discard_once_value);
-}
-#endif  // defined(OS_WIN) || defined(OS_MACOSX)
 
 TEST_F(TabManagerTest, DefaultTimeToPurgeInCorrectRange) {
   TabManager tab_manager;
@@ -578,29 +543,26 @@ TEST_F(TabManagerTest, ShouldPurgeAtDefaultTime) {
   WebContents* test_contents = CreateWebContents();
   tabstrip.AppendWebContents(test_contents, false);
 
-  base::SimpleTestTickClock test_clock;
-  tab_manager.set_test_tick_clock(&test_clock);
-
   tab_manager.GetWebContentsData(test_contents)->set_is_purged(false);
   tab_manager.GetWebContentsData(test_contents)
-      ->SetLastInactiveTime(test_clock.NowTicks());
+      ->SetLastInactiveTime(NowTicks());
   tab_manager.GetWebContentsData(test_contents)
       ->set_time_to_purge(base::TimeDelta::FromMinutes(1));
 
   // Wait 1 minute and verify that the tab is still not to be purged.
-  test_clock.Advance(base::TimeDelta::FromMinutes(1));
+  task_runner_->FastForwardBy(base::TimeDelta::FromMinutes(1));
   EXPECT_FALSE(tab_manager.ShouldPurgeNow(test_contents));
 
   // Wait another 1 second and verify that it should be purged now .
-  test_clock.Advance(base::TimeDelta::FromSeconds(1));
+  task_runner_->FastForwardBy(base::TimeDelta::FromSeconds(1));
   EXPECT_TRUE(tab_manager.ShouldPurgeNow(test_contents));
 
   tab_manager.GetWebContentsData(test_contents)->set_is_purged(true);
   tab_manager.GetWebContentsData(test_contents)
-      ->SetLastInactiveTime(test_clock.NowTicks());
+      ->SetLastInactiveTime(NowTicks());
 
   // Wait 1 day and verify that the tab is still be purged.
-  test_clock.Advance(base::TimeDelta::FromHours(24));
+  task_runner_->FastForwardBy(base::TimeDelta::FromHours(24));
   EXPECT_FALSE(tab_manager.ShouldPurgeNow(test_contents));
 
   // Tabs with a committed URL must be closed explicitly to avoid DCHECK errors.
@@ -619,16 +581,12 @@ TEST_F(TabManagerTest, ActivateTabResetPurgeState) {
   browser_info.browser_is_app = false;
   tab_manager.test_browser_info_list_.push_back(browser_info);
 
-  base::SimpleTestTickClock test_clock;
-  tab_manager.set_test_tick_clock(&test_clock);
-
   WebContents* tab1 = CreateWebContents();
   WebContents* tab2 = CreateWebContents();
   tabstrip.AppendWebContents(tab1, true);
   tabstrip.AppendWebContents(tab2, false);
 
-  tab_manager.GetWebContentsData(tab2)->SetLastInactiveTime(
-      test_clock.NowTicks());
+  tab_manager.GetWebContentsData(tab2)->SetLastInactiveTime(NowTicks());
   static_cast<content::MockRenderProcessHost*>(
       tab2->GetMainFrame()->GetProcess())
       ->set_is_process_backgrounded(true);
@@ -638,7 +596,7 @@ TEST_F(TabManagerTest, ActivateTabResetPurgeState) {
   EXPECT_FALSE(tab_manager.GetWebContentsData(tab2)->is_purged());
   tab_manager.GetWebContentsData(tab2)->set_time_to_purge(
       base::TimeDelta::FromMinutes(1));
-  test_clock.Advance(base::TimeDelta::FromMinutes(2));
+  task_runner_->FastForwardBy(base::TimeDelta::FromMinutes(2));
   tab_manager.PurgeBackgroundedTabsIfNeeded();
   // Since tab2 is kept inactive and background for more than time-to-purge,
   // tab2 should be purged.
@@ -744,8 +702,12 @@ TEST_F(TabManagerTest, DiscardTabWithNonVisibleTabs) {
   browser_info2.browser_is_app = false;
   tab_manager.test_browser_info_list_.push_back(browser_info2);
 
+  // Fast-forward time until no tab is protected from being discarded for having
+  // recently been used.
+  task_runner_->FastForwardBy(TabManager::kDiscardProtectionTime);
+
   for (int i = 0; i < 4; ++i)
-    tab_manager.DiscardTab(TabManager::kProactiveShutdown);
+    tab_manager.DiscardTab(DiscardCondition::kProactive);
 
   // Active tab in a visible window should not be discarded.
   EXPECT_FALSE(tab_manager.IsTabDiscarded(tab_strip1.GetWebContentsAt(0)));
@@ -798,7 +760,7 @@ TEST_F(TabManagerTest, OnDidFinishNavigation) {
   EXPECT_FALSE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
 }
 
-TEST_F(TabManagerTest, OnDidStopLoading) {
+TEST_F(TabManagerTest, OnTabIsLoaded) {
   TabManager* tab_manager = g_browser_process->GetTabManager();
   tab_manager->ResetMemoryPressureListenerForTest();
   MaybeThrottleNavigations(tab_manager);
@@ -810,7 +772,7 @@ TEST_F(TabManagerTest, OnDidStopLoading) {
   EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
 
   // Simulate tab 1 has finished loading.
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
 
   // After tab 1 has finished loading, TabManager starts loading the next tab.
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents1_.get()));
@@ -868,14 +830,14 @@ TEST_F(TabManagerTest, OnDelayedTabSelected) {
   // (tab 2) because tab 3 is still loading.
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
   EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents1_.get()));
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
   EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
 
   // Simulate tab 3 has finished loading. TabManager starts loading the next tab
   // (tab 2).
-  tab_manager->GetWebContentsData(contents3_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents3_.get())->NotifyTabIsLoaded();
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents3_.get()));
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents2_.get()));
   EXPECT_FALSE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
@@ -884,8 +846,6 @@ TEST_F(TabManagerTest, OnDelayedTabSelected) {
 TEST_F(TabManagerTest, TimeoutWhenLoadingBackgroundTabs) {
   TabManager* tab_manager = g_browser_process->GetTabManager();
   tab_manager->ResetMemoryPressureListenerForTest();
-  base::SimpleTestTickClock test_clock;
-  tab_manager->set_test_tick_clock(&test_clock);
 
   MaybeThrottleNavigations(tab_manager);
   tab_manager->GetWebContentsData(contents1_.get())
@@ -898,10 +858,9 @@ TEST_F(TabManagerTest, TimeoutWhenLoadingBackgroundTabs) {
   EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
   EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle3_.get()));
 
-  // Simulate timout when loading the 1st tab. TabManager should start loading
+  // Simulate timeout when loading the 1st tab. TabManager should start loading
   // the 2nd tab.
-  test_clock.Advance(base::TimeDelta::FromMinutes(1));
-  EXPECT_TRUE(tab_manager->TriggerForceLoadTimerForTest());
+  task_runner_->FastForwardBy(base::TimeDelta::FromSeconds(10));
 
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents1_.get()));
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents2_.get()));
@@ -910,9 +869,8 @@ TEST_F(TabManagerTest, TimeoutWhenLoadingBackgroundTabs) {
   EXPECT_FALSE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
   EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle3_.get()));
 
-  // Simulate timout again. TabManager should start loading the 3rd tab.
-  test_clock.Advance(base::TimeDelta::FromMinutes(1));
-  EXPECT_TRUE(tab_manager->TriggerForceLoadTimerForTest());
+  // Simulate timeout again. TabManager should start loading the 3rd tab.
+  task_runner_->FastForwardBy(base::TimeDelta::FromSeconds(10));
 
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents1_.get()));
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents2_.get()));
@@ -925,8 +883,6 @@ TEST_F(TabManagerTest, TimeoutWhenLoadingBackgroundTabs) {
 TEST_F(TabManagerTest, BackgroundTabLoadingMode) {
   TabManager* tab_manager = g_browser_process->GetTabManager();
   tab_manager->ResetMemoryPressureListenerForTest();
-  base::SimpleTestTickClock test_clock;
-  tab_manager->set_test_tick_clock(&test_clock);
 
   EXPECT_EQ(TabManager::BackgroundTabLoadingMode::kStaggered,
             tab_manager->background_tab_loading_mode_);
@@ -947,9 +903,8 @@ TEST_F(TabManagerTest, BackgroundTabLoadingMode) {
   EXPECT_EQ(TabManager::BackgroundTabLoadingMode::kPaused,
             tab_manager->background_tab_loading_mode_);
 
-  // Simulate timout when loading the 1st tab.
-  test_clock.Advance(base::TimeDelta::FromMinutes(1));
-  EXPECT_TRUE(tab_manager->TriggerForceLoadTimerForTest());
+  // Simulate timeout when loading the 1st tab.
+  task_runner_->FastForwardBy(base::TimeDelta::FromSeconds(10));
 
   // Tab 2 and 3 are still pending because of the paused loading mode.
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
@@ -958,7 +913,7 @@ TEST_F(TabManagerTest, BackgroundTabLoadingMode) {
   EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle3_.get()));
 
   // Simulate tab 1 has finished loading.
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
 
   // Tab 2 and 3 are still pending because of the paused loading mode.
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
@@ -976,7 +931,7 @@ TEST_F(TabManagerTest, BackgroundTabLoadingMode) {
   EXPECT_FALSE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
 
   // Simulate tab 2 has finished loading.
-  tab_manager->GetWebContentsData(contents2_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents2_.get())->NotifyTabIsLoaded();
 
   // Tab 3 should start loading now in staggered loading mode.
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents3_.get()));
@@ -1008,8 +963,6 @@ TEST_F(TabManagerTest, BackgroundTabLoadingSlots) {
 TEST_F(TabManagerTest, BackgroundTabsLoadingOrdering) {
   TabManager* tab_manager = g_browser_process->GetTabManager();
   tab_manager->ResetMemoryPressureListenerForTest();
-  base::SimpleTestTickClock test_clock;
-  tab_manager->set_test_tick_clock(&test_clock);
 
   MaybeThrottleNavigations(
       tab_manager, 1, kTestUrl,
@@ -1027,7 +980,7 @@ TEST_F(TabManagerTest, BackgroundTabsLoadingOrdering) {
 
   // Simulate tab 1 has finished loading. Tab 3 should be loaded before tab 2,
   // because tab 2 is internal page.
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
 
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents3_.get()));
@@ -1065,7 +1018,7 @@ TEST_F(TabManagerTest, PauseAndResumeBackgroundTabOpening) {
 
   // Simulate tab 1 has finished loading, which was scheduled to load before
   // pausing.
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
 
   // TabManager cannot enter BackgroundTabOpening session when it is in paused
   // mode.
@@ -1103,12 +1056,12 @@ TEST_F(TabManagerTest, IsInBackgroundTabOpeningSession) {
   EXPECT_TRUE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
 
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
   EXPECT_TRUE(tab_manager->IsInBackgroundTabOpeningSession());
   EXPECT_TRUE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
 
-  tab_manager->GetWebContentsData(contents2_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents2_.get())->NotifyTabIsLoaded();
   EXPECT_TRUE(tab_manager->IsInBackgroundTabOpeningSession());
   EXPECT_TRUE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
@@ -1121,7 +1074,7 @@ TEST_F(TabManagerTest, IsInBackgroundTabOpeningSession) {
   EXPECT_TRUE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
 
-  tab_manager->GetWebContentsData(contents3_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents3_.get())->NotifyTabIsLoaded();
   EXPECT_FALSE(tab_manager->IsInBackgroundTabOpeningSession());
   EXPECT_FALSE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
@@ -1155,7 +1108,7 @@ TEST_F(TabManagerWithExperimentDisabledTest, IsInBackgroundTabOpeningSession) {
   EXPECT_TRUE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
 
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents1_.get()));
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents2_.get()));
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents3_.get()));
@@ -1163,7 +1116,7 @@ TEST_F(TabManagerWithExperimentDisabledTest, IsInBackgroundTabOpeningSession) {
   EXPECT_TRUE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
 
-  tab_manager->GetWebContentsData(contents2_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents2_.get())->NotifyTabIsLoaded();
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents1_.get()));
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
   EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents3_.get()));
@@ -1179,7 +1132,7 @@ TEST_F(TabManagerWithExperimentDisabledTest, IsInBackgroundTabOpeningSession) {
   EXPECT_TRUE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
 
-  tab_manager->GetWebContentsData(contents3_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents3_.get())->NotifyTabIsLoaded();
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents1_.get()));
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
   EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents3_.get()));
@@ -1276,9 +1229,9 @@ TEST_F(TabManagerTest, SessionRestoreAfterBackgroundTabOpeningSession) {
 
   // The background tab opening session ends after existing tracked tabs have
   // finished loading.
-  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
-  tab_manager->GetWebContentsData(contents2_.get())->DidStopLoading();
-  tab_manager->GetWebContentsData(contents3_.get())->DidStopLoading();
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
+  tab_manager->GetWebContentsData(contents2_.get())->NotifyTabIsLoaded();
+  tab_manager->GetWebContentsData(contents3_.get())->NotifyTabIsLoaded();
   EXPECT_FALSE(tab_manager->IsInBackgroundTabOpeningSession());
   EXPECT_FALSE(
       tab_manager->stats_collector()->is_in_background_tab_opening_session());
@@ -1296,6 +1249,62 @@ TEST_F(TabManagerTest, IsTabRestoredInForeground) {
   contents->WasHidden();
   tab_manager->OnWillRestoreTab(contents.get());
   EXPECT_FALSE(tab_manager->IsTabRestoredInForeground(contents.get()));
+}
+
+TEST_F(TabManagerTest, EnablePageAlmostIdleSignal) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kPageAlmostIdle);
+  EXPECT_TRUE(base::FeatureList::IsEnabled(features::kPageAlmostIdle));
+
+  TabManager* tab_manager = g_browser_process->GetTabManager();
+  tab_manager->ResetMemoryPressureListenerForTest();
+
+  EXPECT_EQ(TabManager::BackgroundTabLoadingMode::kStaggered,
+            tab_manager->background_tab_loading_mode_);
+
+  MaybeThrottleNavigations(tab_manager);
+  tab_manager->GetWebContentsData(contents1_.get())
+      ->DidStartNavigation(nav_handle1_.get());
+
+  EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents1_.get()));
+  EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
+  EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents3_.get()));
+  EXPECT_FALSE(tab_manager->IsNavigationDelayedForTest(nav_handle1_.get()));
+  EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
+  EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle3_.get()));
+
+  // Simulate tab 1 has finished loading through WebContentsObserver API.
+  // Since the page idle signal feature is enabled, this shouldn't start
+  // next loading.
+  tab_manager->GetWebContentsData(contents1_.get())->DidStopLoading();
+
+  // Tab 2 and Tab 3 are still pending because the DidStopLoading signal from
+  // WebContentsObserver is disabled when PageAlmostIdle signal is enabled.
+  EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents2_.get()));
+  EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents3_.get()));
+  EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
+  EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle3_.get()));
+
+  // Simulate tab 1 has finished loading by receiving idle signal from resource
+  // coordinator. Since the page idle signal feature is enabled, this should
+  // start next loading.
+  tab_manager->GetWebContentsData(contents1_.get())->NotifyTabIsLoaded();
+
+  // Tab 2 should start loading right away.
+  EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents2_.get()));
+  EXPECT_FALSE(tab_manager->IsNavigationDelayedForTest(nav_handle2_.get()));
+
+  // Tab 3 is still pending.
+  EXPECT_FALSE(tab_manager->IsTabLoadingForTest(contents3_.get()));
+  EXPECT_TRUE(tab_manager->IsNavigationDelayedForTest(nav_handle3_.get()));
+
+  // Simulate tab 2 has finished loading by receiving idle signal from resource
+  // coordinator.
+  tab_manager->GetWebContentsData(contents2_.get())->NotifyTabIsLoaded();
+
+  // Tab 3 should start loading now in staggered loading mode.
+  EXPECT_TRUE(tab_manager->IsTabLoadingForTest(contents3_.get()));
+  EXPECT_FALSE(tab_manager->IsNavigationDelayedForTest(nav_handle3_.get()));
 }
 
 }  // namespace resource_coordinator

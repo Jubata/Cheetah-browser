@@ -222,7 +222,7 @@ SkColor WallpaperController::GetProminentColor(
 
 wallpaper::WallpaperLayout WallpaperController::GetWallpaperLayout() const {
   if (current_wallpaper_)
-    return current_wallpaper_->layout();
+    return current_wallpaper_->wallpaper_info().layout;
   return wallpaper::WALLPAPER_LAYOUT_CENTER_CROPPED;
 }
 
@@ -246,7 +246,7 @@ void WallpaperController::SetWallpaperImage(
     color_calculator_.reset();
   }
   current_wallpaper_.reset(new wallpaper::WallpaperResizer(
-      image, GetMaxDisplaySizeInNative(), layout, sequenced_task_runner_));
+      image, GetMaxDisplaySizeInNative(), info, sequenced_task_runner_));
   current_wallpaper_->AddObserver(this);
   current_wallpaper_->StartResize();
 
@@ -360,7 +360,7 @@ bool WallpaperController::WallpaperIsAlreadyLoaded(
     return false;
 
   // Compare layouts only if necessary.
-  if (compare_layouts && layout != current_wallpaper_->layout())
+  if (compare_layouts && layout != current_wallpaper_->wallpaper_info().layout)
     return false;
 
   return wallpaper::WallpaperResizer::GetImageId(image) ==
@@ -368,10 +368,82 @@ bool WallpaperController::WallpaperIsAlreadyLoaded(
 }
 
 void WallpaperController::OpenSetWallpaperPage() {
-  if (wallpaper_picker_ &&
+  if (wallpaper_controller_client_ &&
       Shell::Get()->wallpaper_delegate()->CanOpenSetWallpaperPage()) {
-    wallpaper_picker_->Open();
+    wallpaper_controller_client_->OpenWallpaperPicker();
   }
+}
+
+bool WallpaperController::ShouldApplyDimming() const {
+  return Shell::Get()->session_controller()->IsUserSessionBlocked() &&
+         !base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kAshDisableLoginDimAndBlur);
+}
+
+bool WallpaperController::ShouldApplyBlur() const {
+  return Shell::Get()->session_controller()->IsUserSessionBlocked() &&
+         !IsDevicePolicyWallpaper() &&
+         !base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kAshDisableLoginDimAndBlur);
+}
+
+void WallpaperController::SetClient(
+    mojom::WallpaperControllerClientPtr client) {
+  wallpaper_controller_client_ = std::move(client);
+}
+
+void WallpaperController::SetCustomWallpaper(
+    mojom::WallpaperUserInfoPtr user_info,
+    const std::string& wallpaper_files_id,
+    const std::string& file_name,
+    wallpaper::WallpaperLayout layout,
+    wallpaper::WallpaperType type,
+    const SkBitmap& image,
+    bool show_wallpaper) {
+  NOTIMPLEMENTED();
+}
+
+void WallpaperController::SetOnlineWallpaper(
+    mojom::WallpaperUserInfoPtr user_info,
+    const SkBitmap& image,
+    const std::string& url,
+    wallpaper::WallpaperLayout layout,
+    bool show_wallpaper) {
+  NOTIMPLEMENTED();
+}
+
+void WallpaperController::SetDefaultWallpaper(
+    mojom::WallpaperUserInfoPtr user_info,
+    bool show_wallpaper) {
+  NOTIMPLEMENTED();
+}
+
+void WallpaperController::SetCustomizedDefaultWallpaper(
+    const GURL& wallpaper_url,
+    const base::FilePath& file_path,
+    const base::FilePath& resized_directory) {
+  NOTIMPLEMENTED();
+}
+
+void WallpaperController::ShowUserWallpaper(
+    mojom::WallpaperUserInfoPtr user_info) {
+  NOTIMPLEMENTED();
+}
+
+void WallpaperController::ShowSigninWallpaper() {
+  NOTIMPLEMENTED();
+}
+
+void WallpaperController::RemoveUserWallpaper(
+    mojom::WallpaperUserInfoPtr user_info) {
+  NOTIMPLEMENTED();
+}
+
+void WallpaperController::SetWallpaper(const SkBitmap& wallpaper,
+                                       const wallpaper::WallpaperInfo& info) {
+  if (wallpaper.isNull())
+    return;
+  SetWallpaperImage(gfx::ImageSkia::CreateFrom1xBitmap(wallpaper), info);
 }
 
 void WallpaperController::AddObserver(
@@ -380,18 +452,6 @@ void WallpaperController::AddObserver(
   observer_ptr.Bind(std::move(observer));
   observer_ptr->OnWallpaperColorsChanged(prominent_colors_);
   mojo_observers_.AddPtr(std::move(observer_ptr));
-}
-
-void WallpaperController::SetWallpaperPicker(mojom::WallpaperPickerPtr picker) {
-  wallpaper_picker_ = std::move(picker);
-}
-
-void WallpaperController::SetWallpaper(const SkBitmap& wallpaper,
-                                       const wallpaper::WallpaperInfo& info) {
-  if (wallpaper.isNull())
-    return;
-
-  SetWallpaperImage(gfx::ImageSkia::CreateFrom1xBitmap(wallpaper), info);
 }
 
 void WallpaperController::GetWallpaperColors(
@@ -412,6 +472,10 @@ void WallpaperController::OnColorCalculationComplete() {
   SetProminentColors(colors);
 }
 
+void WallpaperController::FlushForTesting() {
+  wallpaper_controller_client_.FlushForTesting();
+}
+
 void WallpaperController::InstallDesktopController(aura::Window* root_window) {
   WallpaperWidgetController* component = nullptr;
   int container_id = GetWallpaperContainerId(locked_);
@@ -427,8 +491,21 @@ void WallpaperController::InstallDesktopController(aura::Window* root_window) {
       return;
   }
 
-  if (Shell::Get()->session_controller()->IsUserSessionBlocked())
+  bool is_wallpaper_blurred;
+  if (ShouldApplyBlur()) {
     component->SetWallpaperBlur(login_constants::kBlurSigma);
+    is_wallpaper_blurred = true;
+  } else {
+    is_wallpaper_blurred = false;
+  }
+
+  if (is_wallpaper_blurred_ != is_wallpaper_blurred) {
+    is_wallpaper_blurred_ = is_wallpaper_blurred;
+    // TODO(crbug.com/776464): Replace the observer with mojo calls so that it
+    // works under mash and it's easier to add tests.
+    for (auto& observer : observers_)
+      observer.OnWallpaperBlurChanged();
+  }
 
   RootWindowController* controller =
       RootWindowController::ForWindow(root_window);
@@ -553,6 +630,13 @@ bool WallpaperController::MoveToUnlockedContainer() {
 
   locked_ = false;
   return ReparentWallpaper(GetWallpaperContainerId(false));
+}
+
+bool WallpaperController::IsDevicePolicyWallpaper() const {
+  if (current_wallpaper_)
+    return current_wallpaper_->wallpaper_info().type ==
+           wallpaper::WallpaperType::DEVICE;
+  return false;
 }
 
 void WallpaperController::GetInternalDisplayCompositorLock() {

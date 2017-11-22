@@ -389,7 +389,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory {
 
   // Opens the disk cache entry associated with |key|, returning an ActiveEntry
   // in |*entry|. |trans| will be notified via its IO callback if this method
-  // returns ERR_IO_PENDING.
+  // returns ERR_IO_PENDING. This should not be called if there already is
+  // an active entry associated with |key|, e.g. you should call FindActiveEntry
+  // first.
   int OpenEntry(const std::string& key, ActiveEntry** entry,
                 Transaction* trans);
 
@@ -435,9 +437,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory {
   // cache. It may be successful completion of the response or failure as given
   // by |success|.
   // |entry| is the owner of writers.
+  // |should_keep_entry| indicates if the entry should be doomed/destroyed.
   // Virtual so that it can be extended in tests.
   virtual void WritersDoneWritingToEntry(ActiveEntry* entry,
                                          bool success,
+                                         bool should_keep_entry,
                                          TransactionSet make_readers);
 
   // Called when the transaction has received a non-matching response to
@@ -472,6 +476,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory {
   // add_to_entry_queue and make it a headers_transaction, if one doesn't exist
   // already.
   void ProcessAddToEntryQueue(ActiveEntry* entry);
+
+  // Returns true if the transaction can join other transactions for writing to
+  // the cache simultaneously. It is only supported for GET requests and
+  // non-range requests.
+  bool CanTransactionJoinExistingWriters(Transaction* transaction);
 
   // Invoked when a transaction that has already completed the response headers
   // phase can resume reading/writing the response body. It will invoke the IO

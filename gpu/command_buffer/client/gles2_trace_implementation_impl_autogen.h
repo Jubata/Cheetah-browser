@@ -2603,6 +2603,31 @@ void GLES2TraceImplementation::EndRasterCHROMIUM() {
   gl_->EndRasterCHROMIUM();
 }
 
+void GLES2TraceImplementation::CreateTransferCacheEntryCHROMIUM(
+    GLuint64 handle_id,
+    GLuint handle_shm_id,
+    GLuint handle_shm_offset,
+    const cc::ClientTransferCacheEntry& entry) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu",
+                                "GLES2Trace::CreateTransferCacheEntryCHROMIUM");
+  gl_->CreateTransferCacheEntryCHROMIUM(handle_id, handle_shm_id,
+                                        handle_shm_offset, entry);
+}
+
+void GLES2TraceImplementation::DeleteTransferCacheEntryCHROMIUM(
+    GLuint64 handle_id) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu",
+                                "GLES2Trace::DeleteTransferCacheEntryCHROMIUM");
+  gl_->DeleteTransferCacheEntryCHROMIUM(handle_id);
+}
+
+void GLES2TraceImplementation::UnlockTransferCacheEntryCHROMIUM(
+    GLuint64 handle_id) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu",
+                                "GLES2Trace::UnlockTransferCacheEntryCHROMIUM");
+  gl_->UnlockTransferCacheEntryCHROMIUM(handle_id);
+}
+
 void GLES2TraceImplementation::TexStorage2DImageCHROMIUM(GLenum target,
                                                          GLenum internalFormat,
                                                          GLenum bufferUsage,
@@ -2619,6 +2644,13 @@ void GLES2TraceImplementation::SetColorSpaceMetadataCHROMIUM(
   TRACE_EVENT_BINARY_EFFICIENT0("gpu",
                                 "GLES2Trace::SetColorSpaceMetadataCHROMIUM");
   gl_->SetColorSpaceMetadataCHROMIUM(texture_id, color_space);
+}
+
+void GLES2TraceImplementation::WindowRectanglesEXT(GLenum mode,
+                                                   GLsizei count,
+                                                   const GLint* box) {
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "GLES2Trace::WindowRectanglesEXT");
+  gl_->WindowRectanglesEXT(mode, count, box);
 }
 
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_TRACE_IMPLEMENTATION_IMPL_AUTOGEN_H_

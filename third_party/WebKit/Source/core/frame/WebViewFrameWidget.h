@@ -5,13 +5,13 @@
 #ifndef WebViewFrameWidget_h
 #define WebViewFrameWidget_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/frame/WebFrameWidgetBase.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/SelfKeepAlive.h"
 #include "platform/wtf/Noncopyable.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -69,7 +69,6 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
                                          bool has_scrolled_by_touch) override;
   void MouseCaptureLost() override;
   void SetFocus(bool) override;
-  WebRange CompositionRange() override;
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
   bool SelectionTextDirection(WebTextDirection& start,
                               WebTextDirection& end) const override;
@@ -85,7 +84,7 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   void UpdateBrowserControlsState(WebBrowserControlsState constraints,
                                   WebBrowserControlsState current,
                                   bool animate) override;
-  void SetVisibilityState(WebPageVisibilityState) override;
+  void SetVisibilityState(mojom::PageVisibilityState) override;
   void SetBackgroundColorOverride(WebColor) override;
   void ClearBackgroundColorOverride() override;
   void SetBaseBackgroundColorOverride(WebColor) override;

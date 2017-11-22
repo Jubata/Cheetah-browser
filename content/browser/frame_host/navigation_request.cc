@@ -4,10 +4,7 @@
 
 #include "content/browser/frame_host/navigation_request.h"
 
-#include <map>
-#include <string>
 #include <utility>
-#include <vector>
 
 #include "base/memory/ptr_util.h"
 #include "base/optional.h"
@@ -59,8 +56,8 @@
 #include "net/base/url_util.h"
 #include "net/http/http_request_headers.h"
 #include "net/url_request/redirect_info.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 #include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
-#include "third_party/WebKit/public/web/WebSandboxFlags.h"
 
 namespace content {
 
@@ -351,6 +348,7 @@ NavigationRequest::NavigationRequest(
       from_begin_navigation_(from_begin_navigation),
       has_stale_copy_in_cache_(false),
       net_error_(net::OK),
+      devtools_navigation_token_(base::UnguessableToken::Create()),
       weak_factory_(this) {
   DCHECK(!browser_initiated || (entry != nullptr && frame_entry != nullptr));
   TRACE_EVENT_ASYNC_BEGIN2("navigation", "NavigationRequest", this,
@@ -615,8 +613,13 @@ void NavigationRequest::OnRequestRedirected(
   // destination could change.
   dest_site_instance_ = nullptr;
 
+  // For now, DevTools needs the POST data sent to the renderer process even if
+  // it is no longer a POST after the redirect.
+  // TODO(caseq): Send the requestWillBeSent from browser and remove the
+  // IsNetworkHandlerEnabled check here.
   // If the navigation is no longer a POST, the POST data should be reset.
-  if (redirect_info.new_method != "POST")
+  if (redirect_info.new_method != "POST" &&
+      !RenderFrameDevToolsAgentHost::IsNetworkHandlerEnabled(frame_tree_node_))
     common_params_.post_data = nullptr;
 
   // Mark time for the Navigation Timing API.
@@ -839,9 +842,9 @@ void NavigationRequest::OnResponseStarted(
   // Check if the navigation should be allowed to proceed.
   navigation_handle_->WillProcessResponse(
       render_frame_host, response->head.headers.get(),
-      response->head.connection_info, ssl_status, request_id,
-      common_params_.should_replace_current_entry, is_download, is_stream,
-      base::Closure(),
+      response->head.connection_info, response->head.socket_address, ssl_status,
+      request_id, common_params_.should_replace_current_entry, is_download,
+      is_stream, base::Closure(),
       base::Bind(&NavigationRequest::OnWillProcessResponseChecksComplete,
                  base::Unretained(this)));
 }
@@ -913,15 +916,9 @@ void NavigationRequest::OnRequestFailedInternal(
   }
   DCHECK(render_frame_host);
 
-  // The check below is not valid in case of blocked requests, because blocked
-  // requests are committed in the old process (which might not pass the
-  // CanCommitURL check, but this is okay because we will commit a
-  // chrome-error:// page).
-  if (net_error != net::ERR_BLOCKED_BY_CLIENT) {
-    // Don't ask the renderer to commit an URL if the browser will kill it when
-    // it does.
-    DCHECK(render_frame_host->CanCommitURL(common_params_.url));
-  }
+  // Don't ask the renderer to commit an URL if the browser will kill it when
+  // it does.
+  DCHECK(render_frame_host->CanCommitURL(common_params_.url));
 
   NavigatorImpl::CheckWebUIRendererDoesNotDisplayNormalURL(render_frame_host,
                                                            common_params_.url);
@@ -1133,7 +1130,8 @@ void NavigationRequest::OnWillProcessResponseChecksComplete(
           BrowserContext::GetDownloadManager(browser_context));
       loader_->InterceptNavigation(
           download_manager->GetNavigationInterceptionCB(
-              response_, std::move(handle_), ssl_status_));
+              response_, std::move(handle_), ssl_status_,
+              frame_tree_node_->frame_tree_node_id()));
       OnRequestFailed(false, net::ERR_ABORTED, base::nullopt, false);
       return;
     }
@@ -1201,7 +1199,8 @@ void NavigationRequest::CommitNavigation() {
 
   render_frame_host->CommitNavigation(
       response_.get(), std::move(body_), std::move(handle_), common_params_,
-      request_params_, is_view_source_, std::move(subresource_loader_params_));
+      request_params_, is_view_source_, std::move(subresource_loader_params_),
+      devtools_navigation_token_);
 
   frame_tree_node_->ResetNavigationRequest(true, true);
 }

@@ -7,6 +7,7 @@
 #include "core/layout/LayoutObject.h"
 #include "core/layout/ng/geometry/ng_physical_offset_rect.h"
 #include "core/layout/ng/inline/ng_physical_text_fragment.h"
+#include "core/layout/ng/ng_physical_box_fragment.h"
 #include "core/layout/ng/ng_physical_container_fragment.h"
 #include "core/layout/ng/ng_physical_fragment.h"
 #include "platform/wtf/PtrUtil.h"
@@ -19,6 +20,25 @@ NGPaintFragment::NGPaintFragment(
     : physical_fragment_(std::move(fragment)) {
   DCHECK(physical_fragment_);
   PopulateDescendants(stop_at_block_layout_root);
+}
+
+bool NGPaintFragment::HasSelfPaintingLayer() const {
+  return physical_fragment_->IsBox() &&
+         ToNGPhysicalBoxFragment(*physical_fragment_).HasSelfPaintingLayer();
+}
+
+bool NGPaintFragment::HasOverflowClip() const {
+  return physical_fragment_->IsBox() &&
+         ToNGPhysicalBoxFragment(*physical_fragment_).HasOverflowClip();
+}
+
+bool NGPaintFragment::ShouldClipOverflow() const {
+  return physical_fragment_->IsBox() &&
+         ToNGPhysicalBoxFragment(*physical_fragment_).ShouldClipOverflow();
+}
+
+LayoutRect NGPaintFragment::VisualOverflowRect() const {
+  return physical_fragment_->VisualRectWithContents().ToLayoutRect();
 }
 
 // Populate descendants from NGPhysicalFragment tree.
@@ -37,7 +57,7 @@ void NGPaintFragment::PopulateDescendants(bool stop_at_block_layout_root) {
     children_.ReserveCapacity(container.Children().size());
     for (const auto& child_fragment : container.Children()) {
       children_.push_back(
-          WTF::MakeUnique<NGPaintFragment>(child_fragment, true));
+          std::make_unique<NGPaintFragment>(child_fragment, true));
     }
   }
 }
@@ -63,7 +83,7 @@ void NGPaintFragment::UpdateVisualRectFromLayoutObject(
   const LayoutObject* layout_object = fragment.GetLayoutObject();
   if (fragment.IsText() || fragment.IsLineBox() ||
       (fragment.IsBox() && layout_object && layout_object->IsLayoutInline())) {
-    NGPhysicalOffsetRect visual_rect = fragment.LocalVisualRect();
+    NGPhysicalOffsetRect visual_rect = fragment.SelfVisualRect();
     DCHECK(context.parent_box);
     // TODO(kojii): Review the use of FirstFragment() and PaintOffset(). This is
     // likely incorrect.
@@ -74,7 +94,7 @@ void NGPaintFragment::UpdateVisualRectFromLayoutObject(
   } else {
     // Copy the VisualRect from the corresponding LayoutObject.
     // PaintInvalidator has set the correct VisualRect to LayoutObject, computed
-    // from LocalVisualRect().
+    // from SelfVisualRect().
     // TODO(kojii): The relationship of fragment_data and NG multicol isn't
     // clear yet. For now, this copies from the union of fragment visual rects.
     // This should be revisited if this code lives long, but the hope is for
@@ -96,6 +116,20 @@ void NGPaintFragment::UpdateVisualRectFromLayoutObject(
     for (auto& child : children_) {
       child->UpdateVisualRectFromLayoutObject(child_context);
     }
+  }
+}
+
+void NGPaintFragment::AddOutlineRects(
+    Vector<LayoutRect>* outline_rects,
+    const LayoutPoint& additional_offset) const {
+  DCHECK(outline_rects);
+
+  // TODO(layout-dev): This isn't correct but is close enough until we have
+  // the right set of rects for outlines.
+  for (const auto& child : children_) {
+    LayoutRect outline_rect = child->VisualRect();
+    outline_rect.MoveBy(additional_offset);
+    outline_rects->push_back(outline_rect);
   }
 }
 

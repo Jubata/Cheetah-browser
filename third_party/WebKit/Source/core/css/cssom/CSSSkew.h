@@ -5,6 +5,7 @@
 #ifndef CSSSkew_h
 #define CSSSkew_h
 
+#include "base/macros.h"
 #include "core/css/cssom/CSSNumericValue.h"
 #include "core/css/cssom/CSSTransformComponent.h"
 
@@ -17,11 +18,11 @@ class ExceptionState;
 // "transform".
 // See CSSSkew.idl for more information about this class.
 class CORE_EXPORT CSSSkew final : public CSSTransformComponent {
-  WTF_MAKE_NONCOPYABLE(CSSSkew);
   DEFINE_WRAPPERTYPEINFO();
 
  public:
   // Constructor defined in the IDL.
+  static CSSSkew* Create(CSSNumericValue*, CSSNumericValue*, ExceptionState&);
   static CSSSkew* Create(CSSNumericValue* ax, CSSNumericValue* ay) {
     return new CSSSkew(ax, ay);
   }
@@ -43,7 +44,7 @@ class CORE_EXPORT CSSSkew final : public CSSTransformComponent {
   // Internal methods - from CSSTransformComponent.
   const DOMMatrix* AsMatrix(ExceptionState&) const override;
   TransformComponentType GetType() const override { return kSkewType; }
-  const CSSFunctionValue* ToCSSValue() const override;
+  const CSSFunctionValue* ToCSSValue(SecureContextMode) const override;
 
   virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(ax_);
@@ -57,6 +58,7 @@ class CORE_EXPORT CSSSkew final : public CSSTransformComponent {
 
   Member<CSSNumericValue> ax_;
   Member<CSSNumericValue> ay_;
+  DISALLOW_COPY_AND_ASSIGN(CSSSkew);
 };
 
 }  // namespace blink

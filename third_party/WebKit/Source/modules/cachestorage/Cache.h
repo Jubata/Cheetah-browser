@@ -16,7 +16,6 @@
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerCache.h"
-#include "public/platform/modules/serviceworker/WebServiceWorkerCacheError.h"
 
 namespace blink {
 
@@ -71,6 +70,7 @@ class MODULES_EXPORT Cache final : public ScriptWrappable {
  private:
   class BarrierCallbackForPut;
   class BlobHandleCallbackForPut;
+  class CodeCacheHandleCallbackForPut;
   class FetchResolvedForAdd;
   friend class FetchResolvedForAdd;
   Cache(GlobalFetch::ScopedFetcher*, std::unique_ptr<WebServiceWorkerCache>);

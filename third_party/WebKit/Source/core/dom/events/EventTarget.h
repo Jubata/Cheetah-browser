@@ -33,6 +33,8 @@
 #define EventTarget_h
 
 #include <memory>
+
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/dom/events/AddEventListenerOptionsResolved.h"
 #include "core/dom/events/EventDispatchResult.h"
@@ -55,6 +57,7 @@ class ExceptionState;
 class LocalDOMWindow;
 class MessagePort;
 class Node;
+class ScriptState;
 class ServiceWorker;
 
 struct FiringEventIterator {
@@ -72,8 +75,6 @@ using FiringEventIteratorVector = Vector<FiringEventIterator, 1>;
 
 class CORE_EXPORT EventTargetData final
     : public GarbageCollectedFinalized<EventTargetData> {
-  WTF_MAKE_NONCOPYABLE(EventTargetData);
-
  public:
   EventTargetData();
   ~EventTargetData();
@@ -83,6 +84,7 @@ class CORE_EXPORT EventTargetData final
 
   EventListenerMap event_listener_map;
   std::unique_ptr<FiringEventIteratorVector> firing_event_iterators;
+  DISALLOW_COPY_AND_ASSIGN(EventTargetData);
 };
 
 DEFINE_TRAIT_FOR_TRACE_WRAPPERS(EventTargetData);
@@ -107,8 +109,8 @@ DEFINE_TRAIT_FOR_TRACE_WRAPPERS(EventTargetData);
 //   file.
 // - Override EventTarget::interfaceName() and getExecutionContext(). The former
 //   will typically return EventTargetNames::YourClassName. The latter will
-//   return SuspendableObject::executionContext (if you are an
-//   SuspendableObject)
+//   return PausableObject::executionContext (if you are an
+//   PausableObject)
 //   or the document you're in.
 // - Your trace() method will need to call EventTargetWithInlineData::trace
 //   depending on the base class of your class.
@@ -129,6 +131,8 @@ class CORE_EXPORT EventTarget : public ScriptWrappable {
   virtual LocalDOMWindow* ToLocalDOMWindow();
   virtual MessagePort* ToMessagePort();
   virtual ServiceWorker* ToServiceWorker();
+
+  static EventTarget* Create(ScriptState*);
 
   bool addEventListener(const AtomicString& event_type,
                         EventListener*,

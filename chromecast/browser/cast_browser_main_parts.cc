@@ -22,6 +22,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "cc/base/switches.h"
 #include "chromecast/base/cast_constants.h"
 #include "chromecast/base/cast_features.h"
 #include "chromecast/base/cast_paths.h"
@@ -221,6 +222,7 @@ const DefaultCommandLineSwitch kDefaultSwitches[] = {
     {switches::kDisableGpuVsync, ""},
     {switches::kSkipGpuDataLoading, ""},
     {switches::kDisableGpuCompositing, ""},
+    {cc::switches::kDisableThreadedAnimation, ""},
 #endif  // defined(OS_ANDROID)
 #endif  // BUILDFLAG(IS_CAST_AUDIO_ONLY)
 #if defined(OS_LINUX)
@@ -404,8 +406,7 @@ int CastBrowserMainParts::PreCreateThreads() {
   breakpad::CrashDumpObserver::Create();
   breakpad::CrashDumpObserver::GetInstance()->RegisterClient(
       base::MakeUnique<breakpad::ChildProcessCrashObserver>(
-          crash_dumps_dir, kAndroidMinidumpDescriptor,
-          base::Bind(&base::DoNothing)));
+          crash_dumps_dir, kAndroidMinidumpDescriptor));
 #else
   base::FilePath home_dir;
   CHECK(PathService::Get(DIR_CAST_HOME, &home_dir));

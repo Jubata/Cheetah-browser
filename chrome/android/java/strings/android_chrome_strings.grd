@@ -485,6 +485,11 @@ CHAR-LIMIT guidelines:
         Unlock to continue setting up your phone
       </message>
 
+      <!-- Languages preferences -->
+      <message name="IDS_PREFS_LANGUAGES" desc="Menu item for Languages, which allows users to manage their languages preferences. [CHAR-LIMIT=32]">
+        Languages
+      </message>
+
       <!-- Homepage preferences -->
       <message name="IDS_OPTIONS_HOMEPAGE_EDIT_TITLE" desc="The title of the screen that allows users to change the URL that opens when they tap on the home page button in the omnibox.">
         Edit home page
@@ -573,12 +578,6 @@ To adjust your search term, long press to select. To refine your search, slide t
       <message name="IDS_CONTEXTUAL_SEARCH_NO_THANKS_BUTTON" desc="A button to confirm and dismiss opt out promo">
         No thanks
       </message>
-      <message name="IDS_CONTEXTUAL_SEARCH_PEEK_PROMO_TEXT" desc="A promotional message introducing the Touch to Search feature">
-        Now you can search with one touch
-      </message>
-      <message name="IDS_CONTEXTUAL_SEARCH_PEEK_PROMO_NEW" desc="A word that gets placed next to the promotional message to highlight the new Touch To Search feature">
-        New
-      </message>
       <message name="IDS_DO_NOT_TRACK_TITLE" desc="Title for 'Do Not Track' preference">
         “Do Not Track”
       </message>
@@ -592,18 +591,6 @@ For example, some websites may respond to this request by showing you ads that a
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_SUMMARY" desc="Summary of the settings item that opens the Clear Browsing Data dialog.">
         Clear history, cookies, site data, cache…
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SITE_SETTINGS" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that not all data can be cleared through this dialog.">
-        Saved site settings will not be deleted and may reflect your browsing habits. <ph name="BEGIN_LINK">&lt;link&gt;</ph>Learn more<ph name="END_LINK">&lt;/link&gt;</ph>
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SYNC_AND_SITE_SETTINGS" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that synced data types are deleted across devices, and also that not all data can be cleared through this dialog.">
-        This clears synced data from all devices. Saved site settings will not be deleted and may reflect your browsing habits. <ph name="BEGIN_LINK">&lt;link&gt;</ph>Learn more<ph name="END_LINK">&lt;/link&gt;</ph>
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SIGNED" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that deleting cookies will not sign them out of their Google account.">
-        You won’t be signed out of your Google account.
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SIGNED_AND_OTHER_FORMS_OF_HISTORY" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that deleting cookies will not sign them out of their Google account, and also that there are other forms of browsing history present.">
-        You won’t be signed out of your Google account. Your Google account may have other forms of browsing history at <ph name="BEGIN_LINK">&lt;link&gt;</ph>history.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_HISTORY_DIALOG_TITLE" desc="Title of a dialog that is shown after the deletion of browsing history finished.">
         Cleared Chrome data
@@ -621,9 +608,6 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
       <message name="IDS_CLEAR_COOKIES_AND_SITE_DATA_TITLE" desc="Title for Clear Cookies and site data in Clear Browsing Data dialog">
         Cookies and site data
-      </message>
-      <message name="IDS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites.">
-        This will sign you out of most websites.
       </message>
       <message name="IDS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites.">
         Signs you out of most sites.
@@ -658,24 +642,6 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_CLEAR_BROWSING_DATA_PROGRESS_MESSAGE" desc='Message on the progress dialog used when waiting for "clear browsing data" to complete.'>
         Please wait…
       </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_TITLE" desc="Label of the dropdown that selects the time period for which browsing data will be deleted. This sentence can be followed by any option, such as 'Clear data from the past day' or 'Clear data from the past hour'.">
-        Clear data from the
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_HOUR" desc="The option to delete browsing data from the past hour. This is the direct object of the sentence 'Clear data from the past hour'.">
-        past hour
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_DAY" desc="The option to delete browsing data from the past day. This is the direct object of the sentence 'Clear data from the past day'.">
-        past day
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_WEEK" desc="The option to delete browsing data from the past week. This is the direct object of the sentence 'Clear data from the past week'.">
-        past week
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_FOUR_WEEKS" desc="The option to delete browsing data from the last 4 weeks. This is the direct object of the sentence 'Clear data from the last 4 weeks'.">
-        last 4 weeks
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_EVERYTHING" desc="The option to delete browsing data from the beginning of time. This is the direct object of the sentence 'Clear data from the beginning of time'.">
-        beginning of time
-      </message>
       <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_TITLE" desc="Label of the dropdown that selects the time range for which browsing data will be deleted.">
         Time range
       </message>
@@ -690,6 +656,9 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_FOUR_WEEKS" desc="The option to delete browsing data from the last 4 weeks.">
         Last 4 weeks
+      </message>
+      <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_OLDER_THAN_30_DAYS" desc="The option to delete browsing data older than 30 days.">
+        Older than 30 days
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_EVERYTHING" desc="The option to delete browsing data from the beginning of time.">
         All time
@@ -1469,8 +1438,8 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_BLUETOOTH_NOT_SEEING_IT_IDLE" desc="The message to show at the bottom of the dialog when Bluetooth scanning has uncovered some items but is no longer discovering devices. Allows the user to restart the scan, in case their device is not listed.">
         <ph name="BEGIN_LINK1">&lt;link1&gt;</ph>Get help<ph name="END_LINK1">&lt;/link1&gt;</ph> or <ph name="BEGIN_LINK2">&lt;link2&gt;</ph>re-scan<ph name="END_LINK2">&lt;/link2&gt;</ph>
       </message>
-      <message name="IDS_BLUETOOTH_NOT_FOUND" desc="The message to show when no items were found during Bluetooth device scanning.">
-        No Bluetooth devices found
+      <message name="IDS_BLUETOOTH_NOT_FOUND" desc="The label shown to the user to inform them that no Bluetooth devices were found matching the requirements that the application provided.">
+        No compatible devices found
       </message>
       <message name="IDS_BLUETOOTH_ADAPTER_OFF" desc="The message to show when scanning cannot start because the bluetooth adapter is turned off.">
         <ph name="BEGIN_LINK">&lt;link&gt;</ph>Turn on Bluetooth<ph name="END_LINK">&lt;/link&gt;</ph> to allow pairing
@@ -2221,6 +2190,9 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
 
       <!-- First Run strings -->
+      <message name="IDS_FRE_ACTIVITY_LABEL" desc="Label for first run dialog in Android Recents.">
+        Chrome First Run Experience
+      </message>
       <message name="IDS_FRE_SKIP_TEXT" desc="Text for second page skip button">
         No thanks
       </message>
@@ -2665,7 +2637,7 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_URL_COPIED" desc="Notification telling the user that the url has been copied to clipboard. [CHAR-LIMIT=32]">
         URL copied.
       </message>
-      <message name="IDS_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
+      <message name="IDS_CHROME_HOME_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
         Help improve Chrome. <ph name="BEGIN_LINK">&lt;LINK&gt;</ph>Take survey.<ph name="END_LINK">&lt;/LINK&gt;</ph>
       </message>
 
@@ -2751,9 +2723,6 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_ACCESSIBILITY_OMNIBOX_BTN_REFINE" desc="Content description for the omnibox refine button.">
         Refine
       </message>
-      <message name="IDS_ACCESSIBILITY_BOOKMARK_MORE_INFO" desc="Content description for the button that shows option menu for a bookmark.">
-        Options
-      </message>
       <message name="IDS_ACCESSIBILITY_CANCEL_SELECTION" desc="Content description for the cancel selection button that deselects the selected items in a selectable list view.">
         Cancel selection
       </message>
@@ -2762,6 +2731,9 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message name="IDS_ACCESSIBILITY_DRAWER_TOGGLE_BTN_CLOSE" desc="Content description for the button to close the navigation drawer.">
         Close navigation drawer
+      </message>
+      <message name="IDS_ACCESSIBILITY_LIST_MENU_BUTTON" desc="Content description for the button that shows option menu for a list item.">
+        Options
       </message>
       <message name="IDS_ACCESSIBILITY_TOOLBAR_SCREEN_POSITION" desc="Accessibility announcement to inform users about a toolbar's location.">
         Options available near top of the screen
@@ -2828,6 +2800,15 @@ However, you aren’t invisible. Going incognito doesn’t hide your browsing fr
       </message>
       <message name="IDS_CONTEXTUAL_SEARCH_QUICK_ACTION_CAPTION_GENERIC_WEBSITE" desc="Caption displayed in the Contextual Search bar prompting the user to navigate to a web page.">
         Go to page
+      </message>
+      <message name="IDS_CONTEXTUAL_SEARCH_IPH_ENTITY" desc="An in-product-help message for the Touch to Search feature on Chrome Android. The message encourages users to open a panel that contains search results for the word or phrase they tapped on.">
+        See instant search results in this panel
+      </message>
+      <message name="IDS_CONTEXTUAL_SEARCH_IPH_SEARCH_RESULT" desc="An in-product-help message for the Touch to Search feature. It encourages users to open the Touch to Search panel to see search results for a word or phrase they have tapped.">
+        Tap a word to search instantly or see related actions
+      </message>
+      <message name="IDS_CONTEXTUAL_SEARCH_IPH_TAP" desc="An in-product-help message for encouraging users to tap instead of long pressing to trigger the Touch to Search feature.">
+        You can also search with a quick tap on a word
       </message>
 
       <!-- Web apps -->
@@ -2976,8 +2957,8 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_USB_CHOOSER_DIALOG_PROMPT" desc="The text that is used to introduce the USB chooser dialog to the user.">
         <ph name="SITE">%1$s<ex>https://www.google.com</ex></ph> wants to connect
       </message>
-      <message name="IDS_USB_CHOOSER_DIALOG_NO_DEVICES_FOUND_PROMPT" desc="The text that is used to inform the user that no devices found in the USB chooser dialog.">
-        No devices found
+      <message name="IDS_USB_CHOOSER_DIALOG_NO_DEVICES_FOUND_PROMPT" desc="The label shown to the user to inform them that no USB devices were found matching the requirements that the application provided.">
+        No compatible devices found
       </message>
       <message name="IDS_USB_CHOOSER_DIALOG_CONNECT_BUTTON_TEXT" desc="The text that is shown on the connect button in the USB chooser dialog.">
         Connect
@@ -3022,8 +3003,8 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_WEBAPK_RUNNING_IN_CHROME_DISCLOSURE" desc="Message on the notification that indicates a WebApk may use Chrome data.">
         This app is running in Chrome.
       </message>
-      <message name="IDS_WEBAPP_RUNS_IN_CHROME_DISCLOSURE" desc="Message on the notification that indicates a Web App is run by Chrome.">
-        <ph name="WEB_APP_NAME">%1$s<ex>Twitter</ex></ph> runs in Chrome
+      <message name="IDS_WEBAPP_TAP_TO_COPY_URL" desc="Message on the notification that indicates that taping it will copy a Web App's URL into the clipboard.">
+        Tap to copy the URL for this app
       </message>
       <message name="IDS_WEBAPK_OFFLINE_DIALOG" desc="The message on the dialog shown when launching a WebAPK needs network connection.">
         To use <ph name="APP_NAME">%1$s<ex>PWA List</ex></ph> for the first time, please connect to the internet.
@@ -3220,17 +3201,23 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_BOTTOM_SHEET_APP_MENU_IPH" desc="Label for in-product help that appears in the Chrome three-dot menu (navigation menu). In previous versions of Chrome, the menu contained Downloads, Bookmarks, and History. In this version of Chrome, these three items have been moved out of the menu. Tapping this help text will show the user where they can find these three items. 'Downloads', 'Bookmarks', and 'History' should use the same translations as in Chrome settings and menu items. The tone of this string is that of the user asking Chrome, 'where are these 3 things?'">
         Where are downloads, bookmarks, and history?
       </message>
-      <message name="IDS_CHROME_HOME_PROMO_DIALOG_TITLE" desc="Dialog title text. Dialog describes the new Chrome. Object is omitted; intended meaning is that we wish to introduce you, the user, to a new version of Chrome. Infinitive or other verb form may be used if the gerund is not appropriate in your language.">
-        Introducing the new Chrome
-      </message>
       <message name="IDS_CHROME_HOME_PROMO_DIALOG_MESSAGE" desc="Dialog body text. Describes the new features available in the new Chrome. “Swipe up” (imperative) refers to the gesture on a mobile phone. “access” is a noun. “Popular” modifies both “sites and articles.” “Downloads” refers to items the user has downloaded in Chrome.">
         Swipe up for easy access to popular sites and articles, downloads, and more
       </message>
       <message name="IDS_CHROME_HOME_PROMO_DIALOG_MESSAGE_ACCESSIBILITY" desc="Dialog body text when accessibility is enabled. Dialog describes a new feature called “Chrome Home” (which is a placeholder name, official naming is underway; for now, do not translate the feature name). “Swipe up” (imperative) refers to the gesture on a mobile phone. “access” is a noun. “Popular” modifies both “sites and articles.” “Downloads” refers to items the user has downloaded in Chrome.">
         Swipe up from the bottom of the screen or tap the expand button for easy access to popular sites and articles, downloads, and more
       </message>
-      <message name="IDS_CHROME_HOME_PROMO_DIALOG_CHANGE_LATER" desc="Dialog toggle/switch label. Dialog describes the features available in the new Chrome. Toggle is ON by default.">
-        Use the new Chrome
+      <message name="IDS_CHROME_HOME_PROMO_DIALOG_NOT_YET" desc="Dialog button text that is visible if the new Chrome is disabled and will dismiss the dialog when pressed without changing the state of Chrome.">
+        Not yet
+      </message>
+      <message name="IDS_CHROME_HOME_PROMO_DIALOG_TITLE" desc="Dialog title text. Dialog describes the new Chrome. Object is omitted; intended meaning is that we wish to introduce you, the user, to a new version of Chrome. Infinitive or other verb form may be used if the gerund is not appropriate in your language.">
+        Introducing the new Chrome
+      </message>
+      <message name="IDS_CHROME_HOME_PROMO_DIALOG_TRY_IT" desc="Dialog button text that is visible if the new Chrome is disabled and will dismiss the dialog and enable the new Chrome when pressed.">
+        Try it
+      </message>
+      <message name="IDS_CHROME_HOME_PROMO_DIALOG_TURN_OFF" desc="Dialog button text that is visible if the new Chrome is enabled and will dismiss the dialog and disable the new Chrome when pressed.">
+        Turn off
       </message>
       <message name="IDS_CHROME_HOME_OPT_OUT_MENU_ITEM" desc="Item that appears at the top of the Chrome options menu on mobile. Gerund is used to indicate the current state, e.g. you are now using the new Chrome. Tapping this item opens a dialog that allows the user to turn off the new Chrome and revert to an older version.">
         You’re using the new Chrome
@@ -3259,6 +3246,12 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       </message>
 
       <!-- Interventions -->
+      <message name="IDS_REDIRECT_BLOCKED_MESSAGE" desc="The message stating that a redirect (noun) was blocked on this page. This will be followed on a separate line with the address the user was being redirected to.">
+         Chrome stopped this site from taking you to
+      </message>
+      <message name="IDS_REDIRECT_BLOCKED_SHORT_MESSAGE" desc="The short message stating that a redirect (noun) was blocked on this page.">
+         Redirect blocked.
+      </message>
       <message name="IDS_NEAR_OOM_INTERVENTION_MESSAGE" desc="The message stating that the browser intervened to stop the page using too much memory.">
          This page uses too much memory, so Chrome paused it.
       </message>

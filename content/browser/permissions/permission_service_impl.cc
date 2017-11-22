@@ -17,7 +17,7 @@
 #include "content/public/browser/permission_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/content_features.h"
-#include "third_party/WebKit/public/platform/WebFeaturePolicy.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
 
 using blink::mojom::PermissionDescriptorPtr;
 using blink::mojom::PermissionName;
@@ -35,8 +35,6 @@ PermissionType PermissionDescriptorToPermissionType(
       return PermissionType::GEOLOCATION;
     case PermissionName::NOTIFICATIONS:
       return PermissionType::NOTIFICATIONS;
-    case PermissionName::PUSH_NOTIFICATIONS:
-      return PermissionType::PUSH_MESSAGING;
     case PermissionName::MIDI: {
       if (descriptor->extension && descriptor->extension->is_midi() &&
           descriptor->extension->get_midi()->sysex) {
@@ -59,43 +57,44 @@ PermissionType PermissionDescriptorToPermissionType(
     case PermissionName::ACCESSIBILITY_EVENTS:
       return PermissionType::ACCESSIBILITY_EVENTS;
     case PermissionName::CLIPBOARD_READ:
+      return PermissionType::CLIPBOARD_READ;
     case PermissionName::CLIPBOARD_WRITE:
-      NOTIMPLEMENTED();
-      break;
+      return PermissionType::CLIPBOARD_WRITE;
   }
 
   NOTREACHED();
   return PermissionType::NUM;
 }
 
-blink::WebFeaturePolicyFeature PermissionTypeToFeaturePolicyFeature(
+blink::FeaturePolicyFeature PermissionTypeToFeaturePolicyFeature(
     PermissionType type) {
   switch (type) {
     case PermissionType::MIDI:
     case PermissionType::MIDI_SYSEX:
-      return blink::WebFeaturePolicyFeature::kMidiFeature;
+      return blink::FeaturePolicyFeature::kMidiFeature;
     case PermissionType::GEOLOCATION:
-      return blink::WebFeaturePolicyFeature::kGeolocation;
+      return blink::FeaturePolicyFeature::kGeolocation;
     case PermissionType::PROTECTED_MEDIA_IDENTIFIER:
-      return blink::WebFeaturePolicyFeature::kEncryptedMedia;
+      return blink::FeaturePolicyFeature::kEncryptedMedia;
     case PermissionType::AUDIO_CAPTURE:
-      return blink::WebFeaturePolicyFeature::kMicrophone;
+      return blink::FeaturePolicyFeature::kMicrophone;
     case PermissionType::VIDEO_CAPTURE:
-      return blink::WebFeaturePolicyFeature::kCamera;
-    case PermissionType::PUSH_MESSAGING:
+      return blink::FeaturePolicyFeature::kCamera;
     case PermissionType::NOTIFICATIONS:
     case PermissionType::DURABLE_STORAGE:
     case PermissionType::BACKGROUND_SYNC:
     case PermissionType::FLASH:
     case PermissionType::SENSORS:
     case PermissionType::ACCESSIBILITY_EVENTS:
+    case PermissionType::CLIPBOARD_READ:
+    case PermissionType::CLIPBOARD_WRITE:
     case PermissionType::NUM:
       // These aren't exposed by feature policy.
-      return blink::WebFeaturePolicyFeature::kNotFound;
+      return blink::FeaturePolicyFeature::kNotFound;
   }
 
   NOTREACHED();
-  return blink::WebFeaturePolicyFeature::kNotFound;
+  return blink::FeaturePolicyFeature::kNotFound;
 }
 
 bool AllowedByFeaturePolicy(RenderFrameHost* rfh, PermissionType type) {
@@ -105,9 +104,9 @@ bool AllowedByFeaturePolicy(RenderFrameHost* rfh, PermissionType type) {
     return true;
   }
 
-  blink::WebFeaturePolicyFeature feature_policy_feature =
+  blink::FeaturePolicyFeature feature_policy_feature =
       PermissionTypeToFeaturePolicyFeature(type);
-  if (feature_policy_feature == blink::WebFeaturePolicyFeature::kNotFound)
+  if (feature_policy_feature == blink::FeaturePolicyFeature::kNotFound)
     return true;
 
   return rfh->IsFeatureEnabled(feature_policy_feature);

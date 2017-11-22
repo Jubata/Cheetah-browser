@@ -94,9 +94,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   //
   // TODO(lazyboy): Remove |is_guest_view_hack| once BrowserPlugin has migrated
   // to use RWHVChildFrame (http://crbug.com/330264).
+  // |is_mus_browser_plugin_guest| can be removed at the same time.
   RenderWidgetHostViewAura(RenderWidgetHost* host,
                            bool is_guest_view_hack,
-                           bool enable_surface_synchronization);
+                           bool enable_surface_synchronization,
+                           bool is_mus_browser_plugin_guest);
 
   // RenderWidgetHostView implementation.
   void InitAsChild(gfx::NativeView parent_view) override;
@@ -138,6 +140,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                          int error_code) override;
   void Destroy() override;
   void SetTooltipText(const base::string16& tooltip_text) override;
+  void UpdateScreenInfo(gfx::NativeView view) override;
   gfx::Size GetRequestedRendererSize() const override;
   bool IsSurfaceAvailableForCopy() const override;
   void CopyFromSurface(const gfx::Rect& src_rect,
@@ -175,8 +178,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame) override;
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ClearCompositorFrame() override;
   void DidStopFlinging() override;
@@ -396,6 +401,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            ForwardsBeginFrameAcks);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            VirtualKeyboardFocusEnsureCaretInRect);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           HitTestRegionListSubmitted);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
                            CompositorFrameSinkChange);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
@@ -437,6 +444,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 #endif
 
   ui::InputMethod* GetInputMethod() const;
+
+  // Get the focused view that should be used for retrieving the text selection.
+  RenderWidgetHostViewBase* GetFocusedViewForTextSelection();
 
   // Returns whether the widget needs an input grab to work properly.
   bool NeedsInputGrab();
@@ -492,9 +502,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // and to notify the |event_handler_|.
   void SetPopupChild(RenderWidgetHostViewAura* popup_child_host_view);
 
-  // Forwards a mouse event to this view's parent window delegate.
-  void ForwardMouseEventToParent(ui::MouseEvent* event);
-
   // Tells DelegatedFrameHost whether we need to receive BeginFrames.
   void UpdateNeedsBeginFramesInternal();
 
@@ -507,6 +514,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   const bool enable_surface_synchronization_;
 
+  const bool is_mus_browser_plugin_guest_;
+
+  // NOTE: this is null if |is_mus_browser_plugin_guest_| is true.
   aura::Window* window_;
 
   std::unique_ptr<DelegatedFrameHostClient> delegated_frame_host_client_;

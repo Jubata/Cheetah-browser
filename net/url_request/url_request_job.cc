@@ -251,6 +251,10 @@ void URLRequestJob::FollowDeferredRedirect() {
   FollowRedirect(*redirect_info);
 }
 
+int64_t URLRequestJob::prefilter_bytes_read() const {
+  return prefilter_bytes_read_;
+}
+
 bool URLRequestJob::GetMimeType(std::string* mime_type) const {
   return false;
 }
@@ -352,9 +356,9 @@ bool URLRequestJob::CanGetCookies(const CookieList& cookie_list) const {
   return request_->CanGetCookies(cookie_list);
 }
 
-bool URLRequestJob::CanSetCookie(const std::string& cookie_line,
+bool URLRequestJob::CanSetCookie(const net::CanonicalCookie& cookie,
                                  CookieOptions* options) const {
-  return request_->CanSetCookie(cookie_line, options);
+  return request_->CanSetCookie(cookie, options);
 }
 
 bool URLRequestJob::CanEnablePrivacyMode() const {

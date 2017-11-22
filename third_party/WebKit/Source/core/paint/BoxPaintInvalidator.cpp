@@ -159,7 +159,8 @@ PaintInvalidationReason BoxPaintInvalidator::ComputePaintInvalidationReason() {
   return PaintInvalidationReason::kIncremental;
 }
 
-bool BoxPaintInvalidator::BackgroundGeometryDependsOnLayoutOverflowRect() {
+bool BoxPaintInvalidator::BackgroundGeometryDependsOnLayoutOverflowRect()
+    const {
   return !box_.IsDocumentElement() && !box_.BackgroundStolenForBeingBody() &&
          box_.StyleRef()
              .BackgroundLayers()
@@ -183,14 +184,14 @@ bool BoxPaintInvalidator::BackgroundPaintsOntoScrollingContentsLayer() {
 
 bool BoxPaintInvalidator::ShouldFullyInvalidateBackgroundOnLayoutOverflowChange(
     const LayoutRect& old_layout_overflow,
-    const LayoutRect& new_layout_overflow) {
+    const LayoutRect& new_layout_overflow) const {
   DCHECK(old_layout_overflow != new_layout_overflow);
   if (new_layout_overflow.IsEmpty() || old_layout_overflow.IsEmpty())
     return true;
   if (new_layout_overflow.Location() != old_layout_overflow.Location())
     return true;
   if (new_layout_overflow.Width() != old_layout_overflow.Width() &&
-      box_.MustInvalidateFillLayersPaintOnHeightChange(
+      box_.MustInvalidateFillLayersPaintOnWidthChange(
           box_.StyleRef().BackgroundLayers()))
     return true;
   if (new_layout_overflow.Height() != old_layout_overflow.Height() &&
@@ -200,9 +201,43 @@ bool BoxPaintInvalidator::ShouldFullyInvalidateBackgroundOnLayoutOverflowChange(
   return false;
 }
 
+bool BoxPaintInvalidator::ViewBackgroundShouldFullyInvalidate() const {
+  DCHECK(box_.IsLayoutView());
+  // Fixed attachment background is handled in LayoutView::layout().
+  // TODO(wangxianzhu): Combine code for fixed-attachment background when we
+  // enable rootLayerScrolling permanently.
+  if (box_.StyleRef().HasEntirelyFixedBackground())
+    return false;
+
+  // LayoutView's non-fixed-attachment background is positioned in the
+  // document element and needs to invalidate if the size changes.
+  // See: https://drafts.csswg.org/css-backgrounds-3/#root-background.
+  if (BackgroundGeometryDependsOnLayoutOverflowRect()) {
+    Element* document_element = box_.GetDocument().documentElement();
+    if (document_element) {
+      const auto* document_background = document_element->GetLayoutObject();
+      if (document_background && document_background->IsBox()) {
+        const LayoutRect& old_layout_overflow =
+            ToLayoutBox(document_background)->PreviousLayoutOverflowRect();
+        LayoutRect new_layout_overflow =
+            ToLayoutBox(document_background)->LayoutOverflowRect();
+        if (old_layout_overflow != new_layout_overflow &&
+            ShouldFullyInvalidateBackgroundOnLayoutOverflowChange(
+                old_layout_overflow, new_layout_overflow)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 BoxPaintInvalidator::BackgroundInvalidationType
 BoxPaintInvalidator::ComputeBackgroundInvalidation() {
   if (box_.BackgroundChangedSinceLastPaintInvalidation())
+    return BackgroundInvalidationType::kFull;
+
+  if (box_.IsLayoutView() && ViewBackgroundShouldFullyInvalidate())
     return BackgroundInvalidationType::kFull;
 
   bool layout_overflow_change_causes_invalidation =
@@ -323,6 +358,14 @@ PaintInvalidationReason BoxPaintInvalidator::InvalidatePaint() {
 
 bool BoxPaintInvalidator::
     NeedsToSavePreviousContentBoxSizeOrLayoutOverflowRect() {
+  // The LayoutView depends on the document element's layout overflow rect (see:
+  // ViewBackgroundShouldFullyInvalidate) and needs to invalidate before the
+  // document element invalidates. There are few document elements so the
+  // previous layout overflow rect is always saved, rather than duplicating the
+  // logic save-if-needed logic for this special case.
+  if (box_.IsDocumentElement())
+    return true;
+
   // Don't save old box geometries if the paint rect is empty because we'll
   // fully invalidate once the paint rect becomes non-empty.
   if (context_.fragment_data->VisualRect().IsEmpty())

@@ -973,7 +973,9 @@ bool IsInline(const Node* node) {
 // the block that contains the table and not the table, and this function should
 // be the only one responsible for knowing about these kinds of special cases.
 Element* EnclosingBlock(Node* node, EditingBoundaryCrossingRule rule) {
-  return EnclosingBlock(FirstPositionInOrBeforeNodeDeprecated(node), rule);
+  if (!node)
+    return nullptr;
+  return EnclosingBlock(FirstPositionInOrBeforeNode(*node), rule);
 }
 
 template <typename Strategy>
@@ -1022,10 +1024,11 @@ EUserSelect UsedValueOfUserSelect(const Node& node) {
 template <typename Strategy>
 TextDirection DirectionOfEnclosingBlockOfAlgorithm(
     const PositionTemplate<Strategy>& position) {
-  Element* enclosing_block_element = EnclosingBlock(
-      PositionTemplate<Strategy>::FirstPositionInOrBeforeNodeDeprecated(
-          position.ComputeContainerNode()),
-      kCannotCrossEditingBoundary);
+  DCHECK(position.IsNotNull());
+  Element* enclosing_block_element =
+      EnclosingBlock(PositionTemplate<Strategy>::FirstPositionInOrBeforeNode(
+                         *position.ComputeContainerNode()),
+                     kCannotCrossEditingBoundary);
   if (!enclosing_block_element)
     return TextDirection::kLtr;
   LayoutObject* layout_object = enclosing_block_element->GetLayoutObject();
@@ -1574,6 +1577,9 @@ bool IsTabHTMLSpanElement(const Node* node) {
     return false;
   if (!ToText(first_child)->data().Contains('\t'))
     return false;
+  // TODO(editing-dev): Hoist the call of UpdateStyleAndLayoutTree to callers.
+  // See crbug.com/590369 for details.
+  node->GetDocument().UpdateStyleAndLayoutTree();
   return node->GetComputedStyle()->WhiteSpace() == EWhiteSpace::kPre;
 }
 

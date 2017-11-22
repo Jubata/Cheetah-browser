@@ -22,9 +22,10 @@
 #ifndef CSSRuleList_h
 #define CSSRuleList_h
 
+#include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 
 namespace blink {
@@ -34,7 +35,6 @@ class CSSStyleSheet;
 
 class CSSRuleList : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
-  WTF_MAKE_NONCOPYABLE(CSSRuleList);
 
  public:
   virtual unsigned length() const = 0;
@@ -44,6 +44,9 @@ class CSSRuleList : public ScriptWrappable {
 
  protected:
   CSSRuleList() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CSSRuleList);
 };
 
 class StaticCSSRuleList final : public CSSRuleList {

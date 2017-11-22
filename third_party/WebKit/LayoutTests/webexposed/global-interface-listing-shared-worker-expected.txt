@@ -732,6 +732,7 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     getter onchange
 [Worker]     getter ontypechange
 [Worker]     getter rtt
+[Worker]     getter saveData
 [Worker]     getter type
 [Worker]     method constructor
 [Worker]     setter onchange
@@ -1031,6 +1032,7 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     getter pushManager
 [Worker]     getter scope
 [Worker]     getter sync
+[Worker]     getter updateViaCache
 [Worker]     getter waiting
 [Worker]     method constructor
 [Worker]     method getNotifications
@@ -1089,6 +1091,10 @@ Starting worker: resources/global-interface-listing-worker.js
 [Worker]     getter encoding
 [Worker]     method constructor
 [Worker]     method encode
+[Worker] interface TransformStream
+[Worker]     getter readable
+[Worker]     getter writable
+[Worker]     method constructor
 [Worker] interface TrustedHTML
 [Worker]     static method escape
 [Worker]     static method unsafelyCreate

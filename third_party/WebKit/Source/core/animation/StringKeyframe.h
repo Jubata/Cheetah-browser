@@ -6,7 +6,7 @@
 #define StringKeyframe_h
 
 #include "core/animation/Keyframe.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 
 #include "platform/wtf/HashMap.h"
 
@@ -14,25 +14,38 @@ namespace blink {
 
 class StyleSheetContents;
 
-// A specialization of Keyframe that associates user specified keyframe
-// properties with either CSS properties or SVG attributes.
+// An implementation of Keyframe used for CSS Animations, web-animations, and
+// the HTML <marquee> element.
+//
+// A StringKeyframe instance supports an arbitrary number of (property, value)
+// pairs. The properties can be CSS properties or SVG attributes, mapping to
+// CSSValue or plain String values respectively. CSS properties added to a
+// StringKeyframe are expanded to shorthand and de-duplicated, with newer
+// properties replacing older ones. SVG attributes are similarly de-duplicated.
+//
+// TODO(smcgruer): By the spec, a StringKeyframe should not de-duplicate or
+// expand shorthand properties; that is done for computed keyframes.
 class CORE_EXPORT StringKeyframe : public Keyframe {
  public:
   static scoped_refptr<StringKeyframe> Create() {
-    return WTF::AdoptRef(new StringKeyframe);
+    return base::AdoptRef(new StringKeyframe);
   }
 
-  MutableStylePropertySet::SetResult SetCSSPropertyValue(
+  MutableCSSPropertyValueSet::SetResult SetCSSPropertyValue(
       const AtomicString& property_name,
       const PropertyRegistry*,
       const String& value,
+      SecureContextMode,
       StyleSheetContents*);
-  MutableStylePropertySet::SetResult SetCSSPropertyValue(CSSPropertyID,
-                                                         const String& value,
-                                                         StyleSheetContents*);
+  MutableCSSPropertyValueSet::SetResult SetCSSPropertyValue(
+      CSSPropertyID,
+      const String& value,
+      SecureContextMode,
+      StyleSheetContents*);
   void SetCSSPropertyValue(CSSPropertyID, const CSSValue&);
   void SetPresentationAttributeValue(CSSPropertyID,
                                      const String& value,
+                                     SecureContextMode,
                                      StyleSheetContents*);
   void SetSVGAttributeValue(const QualifiedName&, const String& value);
 
@@ -42,7 +55,8 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
       index =
           css_property_map_->FindPropertyIndex(property.CustomPropertyName());
     else
-      index = css_property_map_->FindPropertyIndex(property.CssProperty());
+      index = css_property_map_->FindPropertyIndex(
+          property.GetCSSProperty().PropertyID());
     CHECK_GE(index, 0);
     return css_property_map_->PropertyAt(static_cast<unsigned>(index)).Value();
   }
@@ -60,6 +74,8 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
 
   PropertyHandleSet Properties() const override;
 
+  void AddKeyframePropertiesToV8Object(V8ObjectBuilder&) const override;
+
   class CSSPropertySpecificKeyframe
       : public Keyframe::PropertySpecificKeyframe {
    public:
@@ -68,13 +84,13 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
         scoped_refptr<TimingFunction> easing,
         const CSSValue* value,
         EffectModel::CompositeOperation composite) {
-      return WTF::AdoptRef(new CSSPropertySpecificKeyframe(
+      return base::AdoptRef(new CSSPropertySpecificKeyframe(
           offset, std::move(easing), value, composite));
     }
 
     const CSSValue* Value() const { return value_.Get(); }
 
-    bool PopulateAnimatableValue(CSSPropertyID,
+    bool PopulateAnimatableValue(const CSSProperty&,
                                  Element&,
                                  const ComputedStyle& base_style,
                                  const ComputedStyle* parent_style) const final;
@@ -114,7 +130,7 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
         scoped_refptr<TimingFunction> easing,
         const String& value,
         EffectModel::CompositeOperation composite) {
-      return WTF::AdoptRef(new SVGPropertySpecificKeyframe(
+      return base::AdoptRef(new SVGPropertySpecificKeyframe(
           offset, std::move(easing), value, composite));
     }
 
@@ -147,20 +163,22 @@ class CORE_EXPORT StringKeyframe : public Keyframe {
 
  private:
   StringKeyframe()
-      : css_property_map_(MutableStylePropertySet::Create(kHTMLStandardMode)),
+      : css_property_map_(
+            MutableCSSPropertyValueSet::Create(kHTMLStandardMode)),
         presentation_attribute_map_(
-            MutableStylePropertySet::Create(kHTMLStandardMode)) {}
+            MutableCSSPropertyValueSet::Create(kHTMLStandardMode)) {}
 
   StringKeyframe(const StringKeyframe& copy_from);
 
   scoped_refptr<Keyframe> Clone() const override;
   scoped_refptr<Keyframe::PropertySpecificKeyframe>
-  CreatePropertySpecificKeyframe(const PropertyHandle&) const override;
+  CreatePropertySpecificKeyframe(const PropertyHandle&,
+                                 double offset) const override;
 
   bool IsStringKeyframe() const override { return true; }
 
-  Persistent<MutableStylePropertySet> css_property_map_;
-  Persistent<MutableStylePropertySet> presentation_attribute_map_;
+  Persistent<MutableCSSPropertyValueSet> css_property_map_;
+  Persistent<MutableCSSPropertyValueSet> presentation_attribute_map_;
   HashMap<const QualifiedName*, String> svg_attribute_map_;
 };
 

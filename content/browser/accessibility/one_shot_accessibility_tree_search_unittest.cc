@@ -10,12 +10,23 @@
 #include "base/test/scoped_task_environment.h"
 #include "content/browser/accessibility/browser_accessibility.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#ifdef OS_ANDROID
+#include "content/browser/accessibility/browser_accessibility_manager_android.h"
+#endif
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
 
 namespace {
 
+#ifdef OS_ANDROID
+class TestBrowserAccessibilityManager
+    : public BrowserAccessibilityManagerAndroid {
+ public:
+  TestBrowserAccessibilityManager(const ui::AXTreeUpdate& initial_tree)
+      : BrowserAccessibilityManagerAndroid(initial_tree, nullptr, nullptr) {}
+};
+#else
 class TestBrowserAccessibilityManager : public BrowserAccessibilityManager {
  public:
   TestBrowserAccessibilityManager(
@@ -24,6 +35,7 @@ class TestBrowserAccessibilityManager : public BrowserAccessibilityManager {
                                     nullptr,
                                     new BrowserAccessibilityFactory()) {}
 };
+#endif
 
 }  // namespace
 
@@ -120,6 +132,19 @@ TEST_F(MAYBE_OneShotAccessibilityTreeSearchTest, BackwardsWithStartNode) {
   OneShotAccessibilityTreeSearch search(tree_->GetRoot());
   search.SetStartNode(tree_->GetFromID(4));
   search.SetDirection(OneShotAccessibilityTreeSearch::BACKWARDS);
+  ASSERT_EQ(3U, search.CountMatches());
+  EXPECT_EQ(3, search.GetMatchAtIndex(0)->GetId());
+  EXPECT_EQ(2, search.GetMatchAtIndex(1)->GetId());
+  EXPECT_EQ(1, search.GetMatchAtIndex(2)->GetId());
+}
+
+TEST_F(MAYBE_OneShotAccessibilityTreeSearchTest,
+       BackwardsWithStartNodeForAndroid) {
+  OneShotAccessibilityTreeSearch search(tree_->GetRoot());
+  search.SetStartNode(tree_->GetFromID(4));
+  search.SetDirection(OneShotAccessibilityTreeSearch::BACKWARDS);
+  search.SetResultLimit(3);
+  search.SetCanWrapToLastElement(true);
   ASSERT_EQ(3U, search.CountMatches());
   EXPECT_EQ(3, search.GetMatchAtIndex(0)->GetId());
   EXPECT_EQ(2, search.GetMatchAtIndex(1)->GetId());

@@ -30,7 +30,6 @@
 #include "bindings/core/v8/SourceLocation.h"
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/dom/PausableObject.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/events/EventTarget.h"
 #include "core/events/ErrorEvent.h"
 #include "core/frame/UseCounter.h"
@@ -42,6 +41,7 @@
 #include "platform/loader/fetch/MemoryCache.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "platform/wtf/PtrUtil.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -75,14 +75,14 @@ ExecutionContext* ExecutionContext::ForRelevantRealm(
 
 void ExecutionContext::PausePausableObjects() {
   DCHECK(!is_context_paused_);
-  NotifySuspendingSuspendableObjects();
+  NotifySuspendingPausableObjects();
   is_context_paused_ = true;
 }
 
 void ExecutionContext::UnpausePausableObjects() {
   DCHECK(is_context_paused_);
   is_context_paused_ = false;
-  NotifyResumingSuspendableObjects();
+  NotifyResumingPausableObjects();
 }
 
 void ExecutionContext::NotifyContextDestroyed() {
@@ -92,12 +92,12 @@ void ExecutionContext::NotifyContextDestroyed() {
 
 void ExecutionContext::PauseScheduledTasks() {
   PausePausableObjects();
-  TasksWereSuspended();
+  TasksWerePaused();
 }
 
 void ExecutionContext::UnpauseScheduledTasks() {
   UnpausePausableObjects();
-  TasksWereResumed();
+  TasksWereUnpaused();
 }
 
 void ExecutionContext::PausePausableObjectIfNeeded(PausableObject* object) {

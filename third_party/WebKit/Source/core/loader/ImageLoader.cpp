@@ -81,7 +81,7 @@ class ImageLoader::Task {
   static std::unique_ptr<Task> Create(ImageLoader* loader,
                                       UpdateFromElementBehavior update_behavior,
                                       ReferrerPolicy referrer_policy) {
-    return WTF::MakeUnique<Task>(loader, update_behavior, referrer_policy);
+    return std::make_unique<Task>(loader, update_behavior, referrer_policy);
   }
 
   Task(ImageLoader* loader,
@@ -594,16 +594,6 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* resource) {
   DCHECK(failed_load_url_.IsEmpty());
   DCHECK_EQ(resource, image_content_.Get());
 
-  if (image_content_ && image_content_->GetImage()) {
-    if (IsHTMLImageElement(element_)) {
-      Image::RecordCheckerableImageUMA(*image_content_->GetImage(),
-                                       Image::ImageType::kImg);
-    } else if (IsSVGImageElement(element_)) {
-      Image::RecordCheckerableImageUMA(*image_content_->GetImage(),
-                                       Image::ImageType::kSvg);
-    }
-  }
-
   // |image_complete_| is always true for entire ImageDocument loading for
   // historical reason.
   // DoUpdateFromElement() is not called and SetImageForImageDocument()
@@ -623,17 +613,24 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* resource) {
 
   UpdateLayoutObject();
 
-  if (image_content_ && image_content_->GetImage() &&
-      image_content_->GetImage()->IsSVGImage()) {
-    // SVG's document should be completely loaded before access control
-    // checks, which can occur anytime after ImageNotifyFinished()
-    // (See SVGImage::CurrentFrameHasSingleSecurityOrigin()).
-    // We check the document is loaded here to catch violation of the
-    // assumption reliably.
-    ToSVGImage(image_content_->GetImage())->CheckLoaded();
+  if (image_content_ && image_content_->HasImage()) {
+    Image& image = *image_content_->GetImage();
+    if (IsHTMLImageElement(element_)) {
+      Image::RecordCheckerableImageUMA(image, Image::ImageType::kImg);
+    } else if (IsSVGImageElement(element_)) {
+      Image::RecordCheckerableImageUMA(image, Image::ImageType::kSvg);
+    }
 
-    ToSVGImage(image_content_->GetImage())
-        ->UpdateUseCounters(GetElement()->GetDocument());
+    if (image.IsSVGImage()) {
+      SVGImage& svg_image = ToSVGImage(image);
+      // SVG's document should be completely loaded before access control
+      // checks, which can occur anytime after ImageNotifyFinished()
+      // (See SVGImage::CurrentFrameHasSingleSecurityOrigin()).
+      // We check the document is loaded here to catch violation of the
+      // assumption reliably.
+      svg_image.CheckLoaded();
+      svg_image.UpdateUseCounters(GetElement()->GetDocument());
+    }
   }
 
   DispatchDecodeRequestsIfComplete();
@@ -646,9 +643,9 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* resource) {
   if (resource->ErrorOccurred()) {
     pending_load_event_.Cancel();
 
-    if (resource->GetResourceError().IsAccessCheck()) {
-      CrossSiteOrCSPViolationOccurred(
-          AtomicString(resource->GetResourceError().FailingURL()));
+    Optional<ResourceError> error = resource->GetResourceError();
+    if (error && error->IsAccessCheck()) {
+      CrossSiteOrCSPViolationOccurred(AtomicString(error->FailingURL()));
     }
 
     // The error event should not fire if the image data update is a result of
@@ -681,7 +678,7 @@ LayoutImageResource* ImageLoader::GetLayoutImageResource() {
   // We don't return style generated image because it doesn't belong to the
   // ImageLoader. See <https://bugs.webkit.org/show_bug.cgi?id=42840>
   if (layout_object->IsImage() &&
-      !static_cast<LayoutImage*>(layout_object)->IsGeneratedContent())
+      !ToLayoutImage(layout_object)->IsGeneratedContent())
     return ToLayoutImage(layout_object)->ImageResource();
 
   if (layout_object->IsSVGImage())

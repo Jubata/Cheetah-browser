@@ -147,7 +147,7 @@ cr.define('extensions', function() {
 
     /** @private */
     onOptionsTap_: function() {
-      this.delegate.showItemOptionsPage(this.data.id);
+      this.delegate.showItemOptionsPage(this.data);
     },
 
     /** @private */
@@ -158,6 +158,11 @@ cr.define('extensions', function() {
     /** @private */
     onRepairTap_: function() {
       this.delegate.repairItem(this.data.id);
+    },
+
+    /** @private */
+    onLoadPathTap_: function() {
+      this.delegate.showInFolder(this.data.id);
     },
 
     /** @private */
@@ -182,6 +187,11 @@ cr.define('extensions', function() {
     onCollectErrorsChange_: function() {
       this.delegate.setItemCollectsErrors(
           this.data.id, this.$$('#collect-errors').checked);
+    },
+
+    /** @private */
+    onIconClick_: function(e) {
+      e.preventDefault();
     },
 
     /**

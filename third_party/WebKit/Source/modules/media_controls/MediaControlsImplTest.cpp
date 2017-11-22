@@ -8,8 +8,8 @@
 #include <memory>
 
 #include "build/build_config.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/StyleEngine.h"
-#include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/events/Event.h"
@@ -36,7 +36,7 @@
 #include "platform/testing/EmptyWebMediaPlayer.h"
 #include "platform/testing/HistogramTester.h"
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
-#include "platform/testing/TestingPlatformSupport.h"
+#include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "public/platform/WebMouseEvent.h"
 #include "public/platform/WebScreenInfo.h"
@@ -135,7 +135,7 @@ MediaControlDownloadButtonElement& GetDownloadButton(
 }
 
 bool IsElementVisible(Element& element) {
-  const StylePropertySet* inline_style = element.InlineStyle();
+  const CSSPropertyValueSet* inline_style = element.InlineStyle();
 
   if (!inline_style)
     return true;
@@ -560,6 +560,12 @@ TEST_F(MediaControlsImplTest, DownloadButtonNotDisplayedInfiniteDuration) {
       std::numeric_limits<double>::infinity(), false /* requestSeek */);
   SimulateLoadedMetadata();
   EXPECT_FALSE(IsElementVisible(*download_button));
+
+  // Download button should be shown if the duration changes back to finite.
+  MediaControls().MediaElement().DurationChanged(20.0f,
+                                                 false /* requestSeek */);
+  SimulateLoadedMetadata();
+  EXPECT_TRUE(IsElementVisible(*download_button));
 }
 
 TEST_F(MediaControlsImplTest, DownloadButtonNotDisplayedHLS) {
@@ -965,7 +971,7 @@ class MediaControlsImplTestWithMockScheduler : public MediaControlsImplTest {
   }
 
   bool IsCursorHidden() {
-    const StylePropertySet* style = MediaControls().InlineStyle();
+    const CSSPropertyValueSet* style = MediaControls().InlineStyle();
     if (!style)
       return false;
     return style->GetPropertyValue(CSSPropertyCursor) == "none";
@@ -1198,6 +1204,54 @@ TEST_F(MediaControlsImplTest, OverflowMenuMetricsTimeToDismiss) {
   GetHistogramTester().ExpectBucketCount(kTimeToDismissHistogramName, 100, 1);
   GetHistogramTester().ExpectTotalCount(kTimeToDismissHistogramName, 4);
   GetHistogramTester().ExpectTotalCount(kTimeToActionHistogramName, 0);
+}
+
+TEST_F(MediaControlsImplTest, CastOverlayDefaultHidesOnTimer) {
+  Element* cast_overlay_button = GetElementByShadowPseudoId(
+      MediaControls(), "-internal-media-controls-overlay-cast-button");
+  ASSERT_NE(nullptr, cast_overlay_button);
+
+  SimulateRouteAvailable();
+  EXPECT_TRUE(IsElementVisible(*cast_overlay_button));
+
+  // Starts playback because overlay never hides if paused.
+  MediaControls().MediaElement().SetSrc("http://example.com");
+  MediaControls().MediaElement().Play();
+  testing::RunPendingTasks();
+
+  SimulateHideMediaControlsTimerFired();
+  EXPECT_FALSE(IsElementVisible(*cast_overlay_button));
+}
+
+TEST_F(MediaControlsImplTest, CastOverlayShowsOnSomeEvents) {
+  Element* cast_overlay_button = GetElementByShadowPseudoId(
+      MediaControls(), "-internal-media-controls-overlay-cast-button");
+  ASSERT_NE(nullptr, cast_overlay_button);
+
+  Element* overlay_enclosure = GetElementByShadowPseudoId(
+      MediaControls(), "-webkit-media-controls-overlay-enclosure");
+  ASSERT_NE(nullptr, overlay_enclosure);
+
+  SimulateRouteAvailable();
+  EXPECT_TRUE(IsElementVisible(*cast_overlay_button));
+
+  // Starts playback because overlay never hides if paused.
+  MediaControls().MediaElement().SetSrc("http://example.com");
+  MediaControls().MediaElement().Play();
+  testing::RunPendingTasks();
+
+  SimulateRouteAvailable();
+  SimulateHideMediaControlsTimerFired();
+  EXPECT_FALSE(IsElementVisible(*cast_overlay_button));
+
+  for (const auto& event_name :
+       {"gesturetap", "click", "pointerover", "pointermove"}) {
+    overlay_enclosure->DispatchEvent(Event::Create(event_name));
+    EXPECT_TRUE(IsElementVisible(*cast_overlay_button));
+
+    SimulateHideMediaControlsTimerFired();
+    EXPECT_FALSE(IsElementVisible(*cast_overlay_button));
+  }
 }
 
 }  // namespace blink

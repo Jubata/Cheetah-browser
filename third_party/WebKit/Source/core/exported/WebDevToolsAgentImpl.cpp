@@ -32,6 +32,7 @@
 
 #include <v8-inspector.h>
 #include <memory>
+#include <utility>
 
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8BindingForCore.h"
@@ -80,6 +81,7 @@
 #include "platform/wtf/MathExtras.h"
 #include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebLayerTreeView.h"
@@ -318,8 +320,8 @@ InspectorSession* WebDevToolsAgentImpl::InitializeSession(int session_id,
       InspectorLayerTreeAgent::Create(inspected_frames_.Get(), this);
   session->Append(layer_tree_agent);
 
-  InspectorNetworkAgent* network_agent =
-      new InspectorNetworkAgent(inspected_frames_.Get(), nullptr);
+  InspectorNetworkAgent* network_agent = new InspectorNetworkAgent(
+      inspected_frames_.Get(), nullptr, session->V8Session());
   network_agents_.Set(session_id, network_agent);
   session->Append(network_agent);
 
@@ -549,7 +551,7 @@ void WebDevToolsAgentImpl::InspectElementAt(
   agent_it->value->Inspect(node);
 }
 
-void WebDevToolsAgentImpl::FailedToRequestDevTools() {
+void WebDevToolsAgentImpl::FailedToRequestDevTools(int session_id) {
   ClientMessageLoopAdapter::ResumeForCreateWindow();
 }
 
@@ -571,12 +573,19 @@ void WebDevToolsAgentImpl::PageLayoutInvalidated(bool resized) {
     it.value->PageLayoutInvalidated(resized);
 }
 
-void WebDevToolsAgentImpl::WaitForCreateWindow(LocalFrame* frame) {
-  if (!Attached())
+void WebDevToolsAgentImpl::WaitForCreateWindow(InspectorPageAgent* page_agent,
+                                               LocalFrame* frame) {
+  int session_id = -1;
+  for (auto& it : page_agents_) {
+    if (it.value == page_agent)
+      session_id = it.key;
+  }
+  if (session_id == -1)
     return;
-  if (client_ &&
-      client_->RequestDevToolsForFrame(WebLocalFrameImpl::FromFrame(frame)))
+  if (client_ && client_->RequestDevToolsForFrame(
+                     session_id, WebLocalFrameImpl::FromFrame(frame))) {
     ClientMessageLoopAdapter::PauseForCreateWindow(web_local_frame_impl_);
+  }
 }
 
 bool WebDevToolsAgentImpl::IsInspectorLayer(GraphicsLayer* layer) {
@@ -664,6 +673,8 @@ void WebDevToolsAgent::InterruptAndDispatch(int session_id,
 }
 
 bool WebDevToolsAgent::ShouldInterruptForMethod(const WebString& method) {
+  // Keep in sync with DevToolsSession::ShouldSendOnIO.
+  // TODO(dgozman): find a way to share this.
   return method == "Debugger.pause" || method == "Debugger.setBreakpoint" ||
          method == "Debugger.setBreakpointByUrl" ||
          method == "Debugger.removeBreakpoint" ||

@@ -428,6 +428,13 @@ void GLES2DecoderTestBase::InitDecoderWithWorkarounds(
           line_width_range, line_width_range + arraysize(line_width_range)))
       .RetiresOnSaturation();
 
+  if (group_->feature_info()->feature_flags().ext_window_rectangles) {
+    static GLint max_window_rectangles = 4;
+    EXPECT_CALL(*gl_, GetIntegerv(GL_MAX_WINDOW_RECTANGLES_EXT, _))
+        .WillOnce(SetArgPointee<1>(max_window_rectangles))
+        .RetiresOnSaturation();
+  }
+
   SetupInitCapabilitiesExpectations(group_->feature_info()->IsES3Capable());
   SetupInitStateExpectations(group_->feature_info()->IsES3Capable());
 
@@ -805,6 +812,11 @@ void GLES2DecoderTestBase::SetupClearTextureExpectations(GLuint service_id,
   EXPECT_CALL(*gl_, BindTexture(bind_target, old_service_id))
       .Times(1)
       .RetiresOnSaturation();
+#if DCHECK_IS_ON()
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+#endif
 }
 
 void GLES2DecoderTestBase::SetupExpectationsForFramebufferClearing(
@@ -851,6 +863,11 @@ void GLES2DecoderTestBase::SetupExpectationsForRestoreClearState(
       .Times(1)
       .RetiresOnSaturation();
   SetupExpectationsForEnableDisable(GL_SCISSOR_TEST, restore_scissor_test);
+  if (group_->feature_info()->feature_flags().ext_window_rectangles) {
+    EXPECT_CALL(*gl_, WindowRectanglesEXT(_, _, _))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
   EXPECT_CALL(*gl_, Scissor(restore_scissor_x, restore_scissor_y,
                             restore_scissor_width, restore_scissor_height))
       .Times(1)
@@ -904,6 +921,11 @@ void GLES2DecoderTestBase::SetupExpectationsForFramebufferClearingMulti(
     SetupExpectationsForDepthMask(true);
   }
   SetupExpectationsForEnableDisable(GL_SCISSOR_TEST, false);
+  if (group_->feature_info()->feature_flags().ext_window_rectangles) {
+    EXPECT_CALL(*gl_, WindowRectanglesEXT(GL_EXCLUSIVE_EXT, 0, nullptr))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
   EXPECT_CALL(*gl_, Clear(clear_bits))
       .Times(1)
       .RetiresOnSaturation();
@@ -1134,6 +1156,11 @@ GLES2DecoderTestBase::EnableFlags::EnableFlags()
 
 void GLES2DecoderTestBase::DoBindFramebuffer(
     GLenum target, GLuint client_id, GLuint service_id) {
+  if (group_->feature_info()->feature_flags().ext_window_rectangles) {
+    EXPECT_CALL(*gl_, WindowRectanglesEXT(_, _, _))
+        .Times(::testing::AtMost(1))
+        .RetiresOnSaturation();
+  }
   EXPECT_CALL(*gl_, BindFramebufferEXT(target, service_id))
       .Times(1)
       .RetiresOnSaturation();
@@ -2162,6 +2189,11 @@ void GLES2DecoderTestBase::SetupInitStateManualExpectations(bool es3_capable) {
     EXPECT_CALL(*gl_, PixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0))
         .Times(1)
         .RetiresOnSaturation();
+    if (group_->feature_info()->feature_flags().ext_window_rectangles) {
+      EXPECT_CALL(*gl_, WindowRectanglesEXT(GL_EXCLUSIVE_EXT, 0, nullptr))
+          .Times(1)
+          .RetiresOnSaturation();
+    }
   }
 }
 

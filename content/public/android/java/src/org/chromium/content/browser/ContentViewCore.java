@@ -49,6 +49,7 @@ import org.chromium.content.browser.input.SelectPopupDialog;
 import org.chromium.content.browser.input.SelectPopupDropdown;
 import org.chromium.content.browser.input.SelectPopupItem;
 import org.chromium.content.browser.input.TextSuggestionHost;
+import org.chromium.content.browser.webcontents.WebContentsImpl;
 import org.chromium.content_public.browser.AccessibilitySnapshotCallback;
 import org.chromium.content_public.browser.AccessibilitySnapshotNode;
 import org.chromium.content_public.browser.ActionModeCallbackHelper;
@@ -177,7 +178,7 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
     private final String mProductVersion;
     private ViewGroup mContainerView;
     private InternalAccessDelegate mContainerViewInternals;
-    private WebContents mWebContents;
+    private WebContentsImpl mWebContents;
     private WebContentsObserver mWebContentsObserver;
 
     // Native pointer to C++ ContentViewCore object which will be set by nativeInit().
@@ -196,15 +197,8 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
 
     private TextSuggestionHost mTextSuggestionHost;
 
-    // Size of the viewport in physical pixels as set from onSizeChanged.
-    private int mViewportWidthPix;
-    private int mViewportHeightPix;
-    private int mTopControlsHeightPix;
-    private int mBottomControlsHeightPix;
-    private boolean mTopControlsShrinkBlinkSize;
-
     // Cached copy of all positions and scales as reported by the renderer.
-    private final RenderCoordinates mRenderCoordinates;
+    private RenderCoordinates mRenderCoordinates;
 
     // Whether joystick scroll is enabled.  It's disabled when an editable field is focused.
     private boolean mJoystickScrollEnabled = true;
@@ -293,7 +287,6 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
     public ContentViewCore(Context context, String productVersion) {
         mContext = context;
         mProductVersion = productVersion;
-        mRenderCoordinates = new RenderCoordinates();
         mAccessibilityManager = (AccessibilityManager)
                 getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
         mSystemCaptioningBridge = CaptioningBridgeFactory.getSystemCaptioningBridge(mContext);
@@ -369,33 +362,6 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
         mWindowAndroidChangedObservers.removeObserver(observer);
     }
 
-    /**
-     *
-     * @param browserControlsHeightPix       The height of the browser controls in pixels.
-     * @param browserControlsShrinkBlinkSize The Y amount in pixels to shrink the viewport by.  This
-     *                                   specifies how much smaller the Blink layout size should be
-     *                                   relative to the size of this View.
-     */
-    public void setTopControlsHeight(int topControlsHeightPix, boolean topControlsShrinkBlinkSize) {
-        if (topControlsHeightPix == mTopControlsHeightPix
-                && topControlsShrinkBlinkSize == mTopControlsShrinkBlinkSize) {
-            return;
-        }
-
-        mTopControlsHeightPix = topControlsHeightPix;
-        mTopControlsShrinkBlinkSize = topControlsShrinkBlinkSize;
-        if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
-    }
-
-    /**
-     * Sets the height of the bottom controls. If necessary, triggers a renderer resize.
-     */
-    public void setBottomControlsHeight(int bottomControlHeightPix) {
-        if (mBottomControlsHeightPix == bottomControlHeightPix) return;
-        mBottomControlsHeightPix = bottomControlHeightPix;
-        if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
-    }
-
     public void addImeEventObserver(ImeEventObserver imeEventObserver) {
         mImeAdapter.addEventObserver(imeEventObserver);
     }
@@ -437,12 +403,11 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
 
         final float dipScale = windowAndroid.getDisplay().getDipScale();
 
-        mRenderCoordinates.reset();
-        mRenderCoordinates.setDeviceScaleFactor(dipScale, windowAndroid.getContext());
-
         mNativeContentViewCore =
                 nativeInit(webContents, mViewAndroidDelegate, windowNativePointer, dipScale);
-        mWebContents = nativeGetWebContentsAndroid(mNativeContentViewCore);
+        mWebContents = (WebContentsImpl) nativeGetWebContentsAndroid(mNativeContentViewCore);
+        mRenderCoordinates = mWebContents.getRenderCoordinates();
+        mRenderCoordinates.setDeviceScaleFactor(dipScale, windowAndroid.getContext().get());
 
         setContainerViewInternals(internalDispatcher);
 
@@ -452,8 +417,8 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
         mImeAdapter.addEventObserver(this);
         mTextSuggestionHost = new TextSuggestionHost(this);
 
-        mSelectionPopupController = new SelectionPopupController(
-                mContext, windowAndroid, webContents, mContainerView, mRenderCoordinates);
+        mSelectionPopupController =
+                new SelectionPopupController(mContext, windowAndroid, webContents, mContainerView);
         mSelectionPopupController.setCallback(ActionModeCallbackHelper.EMPTY_CALLBACK);
         mSelectionPopupController.setContainerView(mContainerView);
 
@@ -629,7 +594,7 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
      */
     @CalledByNative
     public int getViewportWidthPix() {
-        return mViewportWidthPix;
+        return mContainerView.getWidth();
     }
 
     /**
@@ -637,63 +602,28 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
      */
     @CalledByNative
     public int getViewportHeightPix() {
-        return mViewportHeightPix;
+        return mContainerView.getHeight();
     }
 
     /**
-     * @return The amount that the viewport size given to Blink is shrunk by the URL-bar..
-     */
-    @CalledByNative
-    public boolean doBrowserControlsShrinkBlinkSize() {
-        return mTopControlsShrinkBlinkSize;
-    }
-
-    @CalledByNative
-    public int getTopControlsHeightPix() {
-        return mTopControlsHeightPix;
-    }
-
-    @CalledByNative
-    public int getBottomControlsHeightPix() {
-        return mBottomControlsHeightPix;
-    }
-
-    /**
-     * @return Current device scale factor (maps DIP pixels to physical pixels).
+     * @return The amount of the top controls height if controls are in the state
+     *    of shrinking Blink's view size, otherwise 0.
      */
     @VisibleForTesting
-    public float getDeviceScaleFactor() {
-        return mRenderCoordinates.getDeviceScaleFactor();
+    public int getTopControlsShrinkBlinkHeightForTesting() {
+        // TODO(jinsukkim): Let callsites provide with its own top controls height to remove
+        //                  the test-only method in content layer.
+        if (mNativeContentViewCore == 0) return 0;
+        return nativeGetTopControlsShrinkBlinkHeightPixForTesting(mNativeContentViewCore);
     }
 
     /**
-     * @return Current page scale factor (maps CSS pixels to DIP pixels).
+     * @return The number of pixels (DIPs) each tick of the mouse wheel should scroll.
      */
-    @VisibleForTesting
-    public float getPageScaleFactor() {
-        return mRenderCoordinates.getPageScaleFactor();
-    }
-
-    /**
-     * @see android.webkit.WebView#getContentHeight()
-     */
-    public float getContentHeightCss() {
-        return mRenderCoordinates.getContentHeightCss();
-    }
-
-    /**
-     * @see android.webkit.WebView#getContentWidth()
-     */
-    public float getContentWidthCss() {
-        return mRenderCoordinates.getContentWidthCss();
-    }
-
-    /**
-     * @return Last frame viewport width.
-     */
-    @VisibleForTesting
-    public float getLastFrameViewportWidthCss() {
-        return mRenderCoordinates.getLastFrameViewportWidthCss();
+    @CalledByNative
+    public float getMouseWheelTickMultiplier() {
+        return mRenderCoordinates.getWheelScrollFactor()
+                / mRenderCoordinates.getDeviceScaleFactor();
     }
 
     /**
@@ -1062,14 +992,6 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
      */
     @SuppressWarnings("javadoc")
     public void onSizeChanged(int wPix, int hPix, int owPix, int ohPix) {
-        if (getViewportWidthPix() == wPix && getViewportHeightPix() == hPix) return;
-
-        mViewportWidthPix = wPix;
-        mViewportHeightPix = hPix;
-        if (mNativeContentViewCore != 0) {
-            nativeWasResized(mNativeContentViewCore);
-        }
-
         updateAfterSizeChanged();
     }
 
@@ -1304,18 +1226,6 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
         scrollBy(dxPix, dyPix);
     }
 
-    // NOTE: this can go away once ContentView.getScrollX() reports correct values.
-    //       see: b/6029133
-    public int getNativeScrollXForTest() {
-        return mRenderCoordinates.getScrollXPixInt();
-    }
-
-    // NOTE: this can go away once ContentView.getScrollY() reports correct values.
-    //       see: b/6029133
-    public int getNativeScrollYForTest() {
-        return mRenderCoordinates.getScrollYPixInt();
-    }
-
     /**
      * @see View#computeHorizontalScrollExtent()
      */
@@ -1438,28 +1348,17 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
     @CalledByNative
     private void updateFrameInfo(float scrollOffsetX, float scrollOffsetY, float pageScaleFactor,
             float minPageScaleFactor, float maxPageScaleFactor, float contentWidth,
-            float contentHeight, float viewportWidth, float viewportHeight, float topBarShownPix,
-            boolean topBarChanged, boolean isMobileOptimizedHint) {
+            float contentHeight, float topBarShownPix, boolean topBarChanged,
+            boolean isMobileOptimizedHint) {
         TraceEvent.begin("ContentViewCore:updateFrameInfo");
         mIsMobileOptimizedHint = isMobileOptimizedHint;
-        // Adjust contentWidth/Height to be always at least as big as
-        // the actual viewport (as set by onSizeChanged).
-        final float deviceScale = mRenderCoordinates.getDeviceScaleFactor();
-        contentWidth = Math.max(contentWidth,
-                mViewportWidthPix / (deviceScale * pageScaleFactor));
-        contentHeight = Math.max(contentHeight,
-                mViewportHeightPix / (deviceScale * pageScaleFactor));
-
-        final boolean contentSizeChanged =
-                contentWidth != mRenderCoordinates.getContentWidthCss()
+        final boolean contentSizeChanged = contentWidth != mRenderCoordinates.getContentWidthCss()
                 || contentHeight != mRenderCoordinates.getContentHeightCss();
         final boolean scaleLimitsChanged =
                 minPageScaleFactor != mRenderCoordinates.getMinPageScaleFactor()
                 || maxPageScaleFactor != mRenderCoordinates.getMaxPageScaleFactor();
-        final boolean pageScaleChanged =
-                pageScaleFactor != mRenderCoordinates.getPageScaleFactor();
-        final boolean scrollChanged =
-                pageScaleChanged
+        final boolean pageScaleChanged = pageScaleFactor != mRenderCoordinates.getPageScaleFactor();
+        final boolean scrollChanged = pageScaleChanged
                 || scrollOffsetX != mRenderCoordinates.getScrollX()
                 || scrollOffsetY != mRenderCoordinates.getScrollY();
 
@@ -1474,10 +1373,6 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
                     (int) mRenderCoordinates.getScrollXPix(),
                     (int) mRenderCoordinates.getScrollYPix());
         }
-
-        mRenderCoordinates.updateFrameInfo(scrollOffsetX, scrollOffsetY, contentWidth,
-                contentHeight, viewportWidth, viewportHeight, pageScaleFactor, minPageScaleFactor,
-                maxPageScaleFactor, topBarShownPix);
 
         if (scrollChanged || topBarChanged) {
             for (mGestureStateListenersIterator.rewind();
@@ -1745,8 +1640,8 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
             if (!mNativeAccessibilityAllowed || mWebContents == null) {
                 return null;
             }
-            mWebContentsAccessibility = WebContentsAccessibility.create(mContext, mContainerView,
-                    mWebContents, mRenderCoordinates, mShouldSetAccessibilityFocusOnPageLoad);
+            mWebContentsAccessibility = WebContentsAccessibility.create(
+                    mContext, mContainerView, mWebContents, mShouldSetAccessibilityFocusOnPageLoad);
         }
         if (!mWebContentsAccessibility.isEnabled()) {
             mWebContentsAccessibility.enable();
@@ -1899,14 +1794,6 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
     }
 
     /**
-     *
-     * @return The cached copy of render positions and scales.
-     */
-    public RenderCoordinates getRenderCoordinates() {
-        return mRenderCoordinates;
-    }
-
-    /**
      * @return Whether the current page seems to be mobile-optimized. This hint is based upon
      *         rendered frames and may return different values when called multiple times for the
      *         same page (particularly during page load).
@@ -1998,7 +1885,7 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
         WindowAndroid windowAndroid = getWindowAndroid();
         if (windowAndroid == null || mNativeContentViewCore == 0) return;
 
-        mRenderCoordinates.setDeviceScaleFactor(dipScale, getWindowAndroid().getContext());
+        mRenderCoordinates.setDeviceScaleFactor(dipScale, getWindowAndroid().getContext().get());
         nativeSetDIPScale(mNativeContentViewCore, dipScale);
     }
 
@@ -2063,6 +1950,9 @@ public class ContentViewCore implements AccessibilityStateChangeListener, Displa
     private native void nativeSetFocus(long nativeContentViewCore, boolean focused);
 
     private native void nativeSetDIPScale(long nativeContentViewCore, float dipScale);
+
+    private native int nativeGetTopControlsShrinkBlinkHeightPixForTesting(
+            long nativeContentViewCore);
 
     private native void nativeSendOrientationChangeEvent(
             long nativeContentViewCore, int orientation);

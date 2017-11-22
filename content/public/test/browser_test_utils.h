@@ -156,6 +156,20 @@ void SimulateMouseWheelEvent(WebContents* web_contents,
                              const gfx::Vector2d& delta,
                              const blink::WebMouseWheelEvent::Phase phase);
 
+#if !defined(OS_MACOSX)
+// Simulate a mouse wheel event with the ctrl modifier set.
+void SimulateMouseWheelCtrlZoomEvent(WebContents* web_contents,
+                                     const gfx::Point& point,
+                                     bool zoom_in,
+                                     blink::WebMouseWheelEvent::Phase phase);
+#endif  // !defined(OS_MACOSX)
+
+// Sends a GesturePinch Begin/Update/End sequence.
+void SimulateGesturePinchSequence(WebContents* web_contents,
+                                  const gfx::Point& point,
+                                  float scale,
+                                  blink::WebGestureDevice source_device);
+
 // Sends a simple, three-event (Begin/Update/End) gesture scroll.
 void SimulateGestureScrollSequence(WebContents* web_contents,
                                    const gfx::Point& point,
@@ -164,6 +178,10 @@ void SimulateGestureScrollSequence(WebContents* web_contents,
 void SimulateGestureFlingSequence(WebContents* web_contents,
                                   const gfx::Point& point,
                                   const gfx::Vector2dF& velocity);
+
+void SimulateGestureEvent(WebContents* web_contents,
+                          const blink::WebGestureEvent& gesture_event,
+                          const ui::LatencyInfo& latency);
 
 // Taps the screen at |point|.
 void SimulateTapAt(WebContents* web_contents, const gfx::Point& point);
@@ -694,6 +712,16 @@ class FrameWatcher : public WebContentsObserver {
 
 // This class is intended to synchronize the renderer main thread, renderer impl
 // thread and the browser main thread.
+//
+// This is accomplished by sending an IPC to RenderWidget, then blocking until
+// the ACK is received and processed.
+//
+// When the main thread receives the ACK it is enqueued. The queue is not
+// processed until a new FrameToken is received.
+//
+// So while the ACK can arrive before a CompositorFrame submission occurs. The
+// processing does not occur until after the FrameToken for that frame
+// submission arrives to the main thread.
 class MainThreadFrameObserver : public IPC::Listener {
  public:
   explicit MainThreadFrameObserver(RenderWidgetHost* render_widget_host);
@@ -748,6 +776,41 @@ class InputMsgWatcher : public RenderWidgetHost::InputEventObserver {
   base::Closure quit_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMsgWatcher);
+};
+
+// Used to wait for a desired input event ack.
+class InputEventAckWaiter : public RenderWidgetHost::InputEventObserver {
+ public:
+  // A function determining if a given |event| and its ack are what we're
+  // waiting for.
+  using InputEventAckPredicate =
+      base::RepeatingCallback<bool(InputEventAckSource source,
+                                   InputEventAckState state,
+                                   const blink::WebInputEvent& event)>;
+
+  // Wait for an event satisfying |predicate|.
+  InputEventAckWaiter(RenderWidgetHost* render_widget_host,
+                      InputEventAckPredicate predicate);
+  // Wait for any event of the given |type|.
+  InputEventAckWaiter(RenderWidgetHost* render_widget_host,
+                      blink::WebInputEvent::Type type);
+  ~InputEventAckWaiter() override;
+
+  void Wait();
+  void Reset();
+
+  // RenderWidgetHost::InputEventObserver:
+  void OnInputEventAck(InputEventAckSource source,
+                       InputEventAckState state,
+                       const blink::WebInputEvent& event) override;
+
+ private:
+  RenderWidgetHost* render_widget_host_;
+  InputEventAckPredicate predicate_;
+  bool event_received_;
+  base::Closure quit_;
+
+  DISALLOW_COPY_AND_ASSIGN(InputEventAckWaiter);
 };
 
 // Sets up a ui::TestClipboard for use in browser tests. On Windows,

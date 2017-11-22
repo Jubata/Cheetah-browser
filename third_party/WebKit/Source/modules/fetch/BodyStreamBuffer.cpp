@@ -8,7 +8,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/streams/ReadableStreamController.h"
+#include "core/streams/ReadableStreamDefaultControllerWrapper.h"
 #include "core/streams/ReadableStreamOperations.h"
 #include "core/typed_arrays/DOMArrayBuffer.h"
 #include "core/typed_arrays/DOMTypedArray.h"
@@ -225,7 +225,9 @@ ScriptPromise BodyStreamBuffer::pull(ScriptState* script_state) {
 ScriptPromise BodyStreamBuffer::Cancel(ScriptState* script_state,
                                        ScriptValue reason) {
   DCHECK_EQ(script_state, script_state_.get());
-  Close();
+  if (Controller())
+    Controller()->Close();
+  CancelConsumer();
   return ScriptPromise::CastUndefined(script_state);
 }
 

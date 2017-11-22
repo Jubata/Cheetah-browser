@@ -24,6 +24,7 @@
 #include "build/build_config.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_controller_delegate.h"
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigator_delegate.h"
@@ -46,6 +47,7 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/three_d_api_types.h"
+#include "device/geolocation/public/interfaces/geolocation_context.mojom.h"
 #include "net/base/load_states.h"
 #include "net/http/http_response_headers.h"
 #include "ppapi/features/features.h"
@@ -197,10 +199,10 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Informs the render view host and the BrowserPluginEmbedder, if present, of
   // a Drag Source End.
-  void DragSourceEndedAt(int client_x,
-                         int client_y,
-                         int screen_x,
-                         int screen_y,
+  void DragSourceEndedAt(float client_x,
+                         float client_y,
+                         float screen_x,
+                         float screen_y,
                          blink::WebDragOperation operation,
                          RenderWidgetHost* source_rwh);
 
@@ -406,7 +408,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void FocusThroughTabTraversal(bool reverse) override;
   bool ShowingInterstitialPage() const override;
   void AdjustPreviewsStateForNavigation(PreviewsState* previews_state) override;
-  InterstitialPage* GetInterstitialPage() const override;
+  InterstitialPageImpl* GetInterstitialPage() const override;
   bool IsSavable() override;
   void OnSavePage() override;
   bool SavePage(const base::FilePath& main_file,
@@ -502,6 +504,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                               IPC::Message* reply_msg) override;
   void RunFileChooser(RenderFrameHost* render_frame_host,
                       const FileChooserParams& params) override;
+  void DidCancelLoading() override;
   void DidAccessInitialDocument() override;
   void DidChangeName(RenderFrameHost* render_frame_host,
                      const std::string& name) override;
@@ -523,7 +526,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   RenderFrameHost* GetGuestByInstanceID(
       RenderFrameHost* render_frame_host,
       int browser_plugin_instance_id) override;
-  device::GeolocationContext* GetGeolocationContext() override;
+  device::mojom::GeolocationContext* GetGeolocationContext() override;
   device::mojom::WakeLockContext* GetWakeLockContext() override;
   device::mojom::WakeLock* GetRendererWakeLock() override;
 #if defined(OS_ANDROID)
@@ -586,7 +589,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                        const GURL& url) override;
   void Close(RenderViewHost* render_view_host) override;
   void RequestMove(const gfx::Rect& new_bounds) override;
-  void DidCancelLoading() override;
   void DocumentAvailableInMainFrame(RenderViewHost* render_view_host) override;
   void RouteCloseEvent(RenderViewHost* rvh) override;
   bool DidAddMessageToConsole(int32_t level,
@@ -675,7 +677,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void RenderWidgetWasResized(RenderWidgetHostImpl* render_widget_host,
                               bool width_changed) override;
   void ResizeDueToAutoResize(RenderWidgetHostImpl* render_widget_host,
-                             const gfx::Size& new_size) override;
+                             const gfx::Size& new_size,
+                             uint64_t sequence_number) override;
   gfx::Size GetAutoResizeSize() override;
   void ResetAutoResizeSize() override;
   void GetScreenInfo(ScreenInfo* screen_info) override;
@@ -839,7 +842,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       const WebContentsObserver::MediaPlayerId& id);
   void MediaStoppedPlaying(
       const WebContentsObserver::MediaPlayerInfo& media_info,
-      const WebContentsObserver::MediaPlayerId& id);
+      const WebContentsObserver::MediaPlayerId& id,
+      WebContentsObserver::MediaStoppedReason reason);
   // This will be called before playback is started, check
   // GetCurrentlyPlayingVideoCount if you need this when playback starts.
   void MediaResized(const gfx::Size& size,
@@ -938,6 +942,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                            IframeBeforeUnloadParentHang);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBrowserTest,
                            BeforeUnloadDialogRequiresGesture);
+  FRIEND_TEST_ALL_PREFIXES(RenderFrameHostImplBrowserTest,
+                           CancelBeforeUnloadResetsURL);
   FRIEND_TEST_ALL_PREFIXES(DevToolsProtocolTest, JavaScriptDialogNotifications);
   FRIEND_TEST_ALL_PREFIXES(DevToolsProtocolTest, JavaScriptDialogInterop);
   FRIEND_TEST_ALL_PREFIXES(DevToolsProtocolTest, BeforeUnloadDialog);
@@ -1595,7 +1601,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Whether the last JavaScript dialog shown was suppressed. Used for testing.
   bool last_dialog_suppressed_;
 
-  std::unique_ptr<device::GeolocationContext> geolocation_context_;
+  device::mojom::GeolocationContextPtr geolocation_context_;
 
   std::unique_ptr<WakeLockContextHost> wake_lock_context_host_;
 

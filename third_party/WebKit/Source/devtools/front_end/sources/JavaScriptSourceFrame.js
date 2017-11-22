@@ -206,8 +206,6 @@ Sources.JavaScriptSourceFrame = class extends Sources.UISourceCodeFrame {
   onTextChanged(oldRange, newRange) {
     this._scriptsPanel.updateLastModificationTime();
     super.onTextChanged(oldRange, newRange);
-    if (this._compiler)
-      this._compiler.scheduleCompile();
   }
 
   /**
@@ -1096,7 +1094,7 @@ Sources.JavaScriptSourceFrame = class extends Sources.UISourceCodeFrame {
       for (var lineNumber of lineNumbers) {
         var decorations = this._lineBreakpointDecorations(lineNumber);
         updateGutter.call(this, lineNumber, decorations);
-        if (this._possibleBreakpointsRequested.has(location.lineNumber)) {
+        if (this._possibleBreakpointsRequested.has(lineNumber)) {
           waitingForInlineDecorations = true;
           continue;
         }
@@ -1333,13 +1331,6 @@ Sources.JavaScriptSourceFrame = class extends Sources.UISourceCodeFrame {
     this._updateDebuggerSourceCode();
     this._updateScriptFiles();
     this._refreshBreakpoints();
-
-    var canLiveCompileJavascript = this._scriptFileForDebuggerModel.size ||
-        this._debuggerSourceCode.extension() === 'js' ||
-        this._debuggerSourceCode.project().type() === Workspace.projectTypes.Snippets;
-    if (!!canLiveCompileJavascript !== !!this._compiler)
-      this._compiler = canLiveCompileJavascript ? new Sources.JavaScriptCompiler(this) : null;
-
     this._showBlackboxInfobarIfNeeded();
     this._updateLinesWithoutMappingHighlight();
   }
@@ -1458,7 +1449,8 @@ Sources.JavaScriptSourceFrame = class extends Sources.UISourceCodeFrame {
     if (this._prettyPrintInfobar)
       return;
 
-    if (!TextUtils.isMinified(/** @type {string} */ (this.uiSourceCode().content())))
+    var content = this.uiSourceCode().content();
+    if (!content || !TextUtils.isMinified(content))
       return;
 
     this._prettyPrintInfobar = UI.Infobar.create(

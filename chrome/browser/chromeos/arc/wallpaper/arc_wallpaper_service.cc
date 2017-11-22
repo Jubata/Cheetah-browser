@@ -194,7 +194,7 @@ ArcWallpaperService::~ArcWallpaperService() {
   arc_bridge_service_->wallpaper()->RemoveObserver(this);
 }
 
-void ArcWallpaperService::OnInstanceReady() {
+void ArcWallpaperService::OnConnectionReady() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   mojom::WallpaperInstance* wallpaper_instance =
       ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->wallpaper(), Init);
@@ -208,7 +208,7 @@ void ArcWallpaperService::OnInstanceReady() {
     wc->AddObserver(this);
 }
 
-void ArcWallpaperService::OnInstanceClosed() {
+void ArcWallpaperService::OnConnectionClosed() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   ash::WallpaperController* wc = GetWallpaperController();
   if (wc)
@@ -234,7 +234,7 @@ void ArcWallpaperService::SetDefaultWallpaper() {
   decode_request_.reset();
   const PrimaryAccount& account = GetPrimaryAccount();
   chromeos::WallpaperManager::Get()->SetDefaultWallpaper(
-      account.id, account.is_active /* update_wallpaper */);
+      account.id, account.is_active /* show_wallpaper */);
 }
 
 void ArcWallpaperService::GetWallpaper(GetWallpaperCallback callback) {

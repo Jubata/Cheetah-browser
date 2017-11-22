@@ -31,11 +31,11 @@
 #ifndef WebSocketHandshakeRequest_h
 #define WebSocketHandshakeRequest_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/WTFString.h"
 
 namespace blink {
@@ -46,14 +46,14 @@ class PLATFORM_EXPORT WebSocketHandshakeRequest final
     : public RefCounted<WebSocketHandshakeRequest> {
  public:
   static scoped_refptr<WebSocketHandshakeRequest> Create(const KURL& url) {
-    return WTF::AdoptRef(new WebSocketHandshakeRequest(url));
+    return base::AdoptRef(new WebSocketHandshakeRequest(url));
   }
   static scoped_refptr<WebSocketHandshakeRequest> Create() {
-    return WTF::AdoptRef(new WebSocketHandshakeRequest);
+    return base::AdoptRef(new WebSocketHandshakeRequest);
   }
   static scoped_refptr<WebSocketHandshakeRequest> Create(
       const WebSocketHandshakeRequest& request) {
-    return WTF::AdoptRef(new WebSocketHandshakeRequest(request));
+    return base::AdoptRef(new WebSocketHandshakeRequest(request));
   }
   virtual ~WebSocketHandshakeRequest();
 

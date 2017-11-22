@@ -112,9 +112,16 @@ class TimeTest : public testing::Test {
 };
 
 // Test conversions to/from time_t and exploding/unexploding.
-TEST_F(TimeTest, TimeT) {
+#if defined(OS_IOS)
+// TODO(crbug.com/782033): this test seems to be unreliable on the simulator;
+// possibly broken on 10.13?
+#define MAYBE_TimeT DISABLED_TimeT
+#else
+#define MAYBE_TimeT TimeT
+#endif
+TEST_F(TimeTest, MAYBE_TimeT) {
   // C library time and exploded time.
-  time_t now_t_1 = time(NULL);
+  time_t now_t_1 = time(nullptr);
   struct tm tms;
 #if defined(OS_WIN)
   localtime_s(&tms, &now_t_1);
@@ -630,6 +637,48 @@ TEST_F(TimeTest, FromLocalExplodedCrashOnAndroid) {
   EXPECT_EQ(1381633200, t.ToTimeT());
 }
 #endif  // OS_ANDROID
+
+TEST_F(TimeTest, FromExploded_MinMax) {
+  Time::Exploded exploded = {0};
+  exploded.month = 1;
+  exploded.day_of_month = 1;
+
+  Time parsed_time;
+
+  if (Time::kExplodedMinYear != std::numeric_limits<int>::min()) {
+    exploded.year = Time::kExplodedMinYear;
+    EXPECT_TRUE(Time::FromUTCExploded(exploded, &parsed_time));
+#if !defined(OS_WIN)
+    // On Windows, January 1, 1601 00:00:00 is actually the null time.
+    EXPECT_FALSE(parsed_time.is_null());
+#endif
+
+#if !defined(OS_ANDROID) && !defined(OS_MACOSX)
+    // The dates earlier than |kExplodedMinYear| that don't work are OS version
+    // dependent on Android and Mac (for example, macOS 10.13 seems to support
+    // dates before 1902).
+    exploded.year--;
+    EXPECT_FALSE(Time::FromUTCExploded(exploded, &parsed_time));
+    EXPECT_TRUE(parsed_time.is_null());
+#endif
+  }
+
+  if (Time::kExplodedMaxYear != std::numeric_limits<int>::max()) {
+    exploded.year = Time::kExplodedMaxYear;
+    exploded.month = 12;
+    exploded.day_of_month = 31;
+    exploded.hour = 23;
+    exploded.minute = 59;
+    exploded.second = 59;
+    exploded.millisecond = 999;
+    EXPECT_TRUE(Time::FromUTCExploded(exploded, &parsed_time));
+    EXPECT_FALSE(parsed_time.is_null());
+
+    exploded.year++;
+    EXPECT_FALSE(Time::FromUTCExploded(exploded, &parsed_time));
+    EXPECT_TRUE(parsed_time.is_null());
+  }
+}
 
 TEST(TimeTicks, Deltas) {
   for (int index = 0; index < 50; index++) {

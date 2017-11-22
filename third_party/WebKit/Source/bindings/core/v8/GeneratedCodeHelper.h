@@ -11,10 +11,10 @@
 #ifndef GeneratedCodeHelper_h
 #define GeneratedCodeHelper_h
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/CoreExport.h"
-#include "platform/wtf/RefPtr.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -59,6 +59,9 @@ class CORE_EXPORT ExceptionToRejectPromiseScope {
   const v8::FunctionCallbackInfo<v8::Value>& info_;
   ExceptionState& exception_state_;
 };
+
+CORE_EXPORT bool IsCallbackFunctionRunnable(
+    const ScriptState* callback_relevant_script_state);
 
 using InstallTemplateFunction =
     void (*)(v8::Isolate* isolate,

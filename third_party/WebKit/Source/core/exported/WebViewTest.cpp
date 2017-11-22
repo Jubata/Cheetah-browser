@@ -117,6 +117,7 @@
 #include "public/web/WebWidget.h"
 #include "public/web/WebWidgetClient.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 
@@ -467,7 +468,7 @@ TEST_P(WebViewTest, SetBaseBackgroundColorBeforeMainFrame) {
   const WebColor kBlue = 0xFF0000FF;
   FrameTestHelpers::TestWebViewClient web_view_client;
   WebViewImpl* web_view = static_cast<WebViewImpl*>(
-      WebView::Create(&web_view_client, kWebPageVisibilityStateVisible));
+      WebView::Create(&web_view_client, mojom::PageVisibilityState::kVisible));
   EXPECT_NE(kBlue, web_view->BackgroundColor());
   // webView does not have a frame yet, but we should still be able to set the
   // background color.
@@ -2441,8 +2442,8 @@ static void DragAndDropURL(WebViewImpl* web_view, const std::string& url) {
   item.string_data = WebString::FromUTF8(url);
   drag_data.AddItem(item);
 
-  const WebPoint client_point(0, 0);
-  const WebPoint screen_point(0, 0);
+  const WebFloatPoint client_point(0, 0);
+  const WebFloatPoint screen_point(0, 0);
   WebFrameWidgetBase* widget = web_view->MainFrameImpl()->FrameWidget();
   widget->DragTargetDragEnter(drag_data, client_point, screen_point,
                               kWebDragOperationCopy, 0);
@@ -2559,7 +2560,7 @@ TEST_P(WebViewTest, ClientTapHandlingNullWebViewClient) {
   // Note: this test doesn't use WebViewHelper since WebViewHelper creates an
   // internal WebViewClient on demand if the supplied WebViewClient is null.
   WebViewImpl* web_view = static_cast<WebViewImpl*>(
-      WebView::Create(nullptr, kWebPageVisibilityStateVisible));
+      WebView::Create(nullptr, mojom::PageVisibilityState::kVisible));
   FrameTestHelpers::TestWebFrameClient web_frame_client;
   FrameTestHelpers::TestWebWidgetClient web_widget_client;
   WebLocalFrame* local_frame = WebLocalFrame::CreateMainFrame(
@@ -3703,7 +3704,7 @@ class CreateChildCounterFrameClient
                                   const WebString& name,
                                   const WebString& fallback_name,
                                   WebSandboxFlags,
-                                  const WebParsedFeaturePolicy&,
+                                  const ParsedFeaturePolicy&,
                                   const WebFrameOwnerProperties&) override;
 
   int Count() const { return count_; }
@@ -3718,7 +3719,7 @@ WebLocalFrame* CreateChildCounterFrameClient::CreateChildFrame(
     const WebString& name,
     const WebString& fallback_name,
     WebSandboxFlags sandbox_flags,
-    const WebParsedFeaturePolicy& container_policy,
+    const ParsedFeaturePolicy& container_policy,
     const WebFrameOwnerProperties& frame_owner_properties) {
   ++count_;
   return TestWebFrameClient::CreateChildFrame(
@@ -4094,7 +4095,11 @@ TEST_P(WebViewTest, CompositionIsUserGesture) {
   frame->SetAutofillClient(nullptr);
 }
 
-TEST_P(WebViewTest, CompareSelectAllToContentAsText) {
+// Currently, SelectionAsText() is built upon TextIterator, but
+// WebFrameContentDumper is built upon TextDumperForTests. Their results can
+// be different, making the test fail.
+// TODO(crbug.com/781434): Build a selection serializer upon TextDumperForTests.
+TEST_P(WebViewTest, DISABLED_CompareSelectAllToContentAsText) {
   RegisterMockedHttpURLLoad("longpress_selection.html");
   WebViewImpl* web_view = web_view_helper_.InitializeAndLoad(
       base_url_ + "longpress_selection.html");
@@ -5045,7 +5050,8 @@ TEST_P(WebViewTest, DetachPluginInLayout) {
       ToHTMLObjectElement(main_frame->GetDocument()->body()->firstChild());
   EXPECT_TRUE(plugin_element->OwnedPlugin());
 
-  plugin_element->style()->setCSSText("display: none", ASSERT_NO_EXCEPTION);
+  plugin_element->style()->setCSSText(main_frame->GetDocument(),
+                                      "display: none", ASSERT_NO_EXCEPTION);
   EXPECT_TRUE(plugin_element->OwnedPlugin());
   web_view->UpdateAllLifecyclePhases();
   EXPECT_FALSE(plugin_element->OwnedPlugin());

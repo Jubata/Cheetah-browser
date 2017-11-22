@@ -84,6 +84,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "components/arc/arc_util.h"
 #else  // !defined(OS_CHROMEOS)
+#include "chrome/browser/ui/webui/settings/printing_handler.h"
 #include "chrome/browser/ui/webui/settings/settings_default_browser_handler.h"
 #include "chrome/browser/ui/webui/settings/settings_manage_profile_handler.h"
 #include "chrome/browser/ui/webui/settings/system_handler.h"
@@ -185,6 +186,7 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   AddSettingsPageUIHandler(base::MakeUnique<DefaultBrowserHandler>(web_ui));
   AddSettingsPageUIHandler(base::MakeUnique<ManageProfileHandler>(profile));
   AddSettingsPageUIHandler(base::MakeUnique<SystemHandler>());
+  AddSettingsPageUIHandler(base::MakeUnique<PrintingHandler>());
 #endif
 
   content::WebUIDataSource* html_source =
@@ -220,10 +222,13 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 #endif  // defined(OS_WIN)
 
 #if defined(SAFE_BROWSING_DB_LOCAL)
-  AddSettingsPageUIHandler(base::MakeUnique<ChangePasswordHandler>(profile));
-  html_source->AddBoolean("changePasswordEnabled",
-                          safe_browsing::ChromePasswordProtectionService::
-                              ShouldShowChangePasswordSettingUI(profile));
+  safe_browsing::ChromePasswordProtectionService* password_protection =
+      safe_browsing::ChromePasswordProtectionService::
+          GetPasswordProtectionService(profile);
+  if (password_protection) {
+    AddSettingsPageUIHandler(
+        base::MakeUnique<ChangePasswordHandler>(profile, password_protection));
+  }
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -270,10 +275,13 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   }
 #endif
 
-  html_source->AddBoolean(
-      "showImportExportPasswords",
-      base::FeatureList::IsEnabled(
-          password_manager::features::kPasswordImportExport));
+  html_source->AddBoolean("showExportPasswords",
+                          base::FeatureList::IsEnabled(
+                              password_manager::features::kPasswordExport));
+
+  html_source->AddBoolean("showImportPasswords",
+                          base::FeatureList::IsEnabled(
+                              password_manager::features::kPasswordImport));
 
   AddSettingsPageUIHandler(
       base::WrapUnique(AboutHandler::Create(html_source, profile)));

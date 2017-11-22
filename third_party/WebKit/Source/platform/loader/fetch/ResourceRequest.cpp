@@ -75,6 +75,8 @@ ResourceRequest::ResourceRequest(const KURL& url)
       check_for_browser_side_navigation_(true),
       ui_start_time_(0),
       is_external_request_(false),
+      cors_preflight_policy_(
+          network::mojom::CORSPreflightPolicy::kConsiderPreflight),
       loading_ipc_type_(RuntimeEnabledFeatures::LoadingWithMojoEnabled()
                             ? WebURLRequest::LoadingIPCType::kMojo
                             : WebURLRequest::LoadingIPCType::kChromeIPC),
@@ -94,7 +96,6 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   http_header_fields_.Adopt(std::move(data->http_headers_));
 
   SetHTTPBody(data->http_body_);
-  SetAttachedCredential(data->attached_credential_);
   SetAllowStoredCredentials(data->allow_stored_credentials_);
   SetReportUploadProgress(data->report_upload_progress_);
   SetHasUserGesture(data->has_user_gesture_);
@@ -119,6 +120,7 @@ ResourceRequest::ResourceRequest(CrossThreadResourceRequestData* data)
   check_for_browser_side_navigation_ = data->check_for_browser_side_navigation_;
   ui_start_time_ = data->ui_start_time_;
   is_external_request_ = data->is_external_request_;
+  cors_preflight_policy_ = data->cors_preflight_policy_;
   loading_ipc_type_ = data->loading_ipc_type_;
   input_perf_metric_report_policy_ = data->input_perf_metric_report_policy_;
   redirect_status_ = data->redirect_status_;
@@ -131,7 +133,7 @@ ResourceRequest& ResourceRequest::operator=(const ResourceRequest&) = default;
 std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
     const {
   std::unique_ptr<CrossThreadResourceRequestData> data =
-      WTF::MakeUnique<CrossThreadResourceRequestData>();
+      std::make_unique<CrossThreadResourceRequestData>();
   data->url_ = Url().Copy();
   data->timeout_interval_ = TimeoutInterval();
   data->site_for_cookies_ = SiteForCookies().Copy();
@@ -144,8 +146,6 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
 
   if (http_body_)
     data->http_body_ = http_body_->DeepCopy();
-  if (attached_credential_)
-    data->attached_credential_ = attached_credential_->DeepCopy();
   data->allow_stored_credentials_ = allow_stored_credentials_;
   data->report_upload_progress_ = report_upload_progress_;
   data->has_user_gesture_ = has_user_gesture_;
@@ -170,6 +170,7 @@ std::unique_ptr<CrossThreadResourceRequestData> ResourceRequest::CopyData()
   data->check_for_browser_side_navigation_ = check_for_browser_side_navigation_;
   data->ui_start_time_ = ui_start_time_;
   data->is_external_request_ = is_external_request_;
+  data->cors_preflight_policy_ = cors_preflight_policy_;
   data->loading_ipc_type_ = loading_ipc_type_;
   data->input_perf_metric_report_policy_ = input_perf_metric_report_policy_;
   data->redirect_status_ = redirect_status_;
@@ -299,15 +300,6 @@ EncodedFormData* ResourceRequest::HttpBody() const {
 
 void ResourceRequest::SetHTTPBody(scoped_refptr<EncodedFormData> http_body) {
   http_body_ = std::move(http_body);
-}
-
-EncodedFormData* ResourceRequest::AttachedCredential() const {
-  return attached_credential_.get();
-}
-
-void ResourceRequest::SetAttachedCredential(
-    scoped_refptr<EncodedFormData> attached_credential) {
-  attached_credential_ = std::move(attached_credential);
 }
 
 bool ResourceRequest::AllowStoredCredentials() const {

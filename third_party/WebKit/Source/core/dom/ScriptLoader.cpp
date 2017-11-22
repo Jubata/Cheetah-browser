@@ -206,7 +206,7 @@ bool ScriptLoader::IsValidScriptTypeAndLanguage(
     return true;
   }
 
-  if (RuntimeEnabledFeatures::ModuleScriptsEnabled() && type == "module") {
+  if (type == "module") {
     // - "If the script block's type string is an ASCII case-insensitive match
     //    for the string "module", the script's type is "module"."
     out_script_type = ScriptType::kModule;
@@ -219,8 +219,22 @@ bool ScriptLoader::IsValidScriptTypeAndLanguage(
 }
 
 bool ScriptLoader::BlockForNoModule(ScriptType script_type, bool nomodule) {
-  return nomodule && script_type == ScriptType::kClassic &&
-         RuntimeEnabledFeatures::ModuleScriptsEnabled();
+  return nomodule && script_type == ScriptType::kClassic;
+}
+
+// Step 16 of https://html.spec.whatwg.org/#prepare-a-script
+network::mojom::FetchCredentialsMode ScriptLoader::ModuleScriptCredentialsMode(
+    CrossOriginAttributeValue cross_origin) {
+  switch (cross_origin) {
+    case kCrossOriginAttributeNotSet:
+      return network::mojom::FetchCredentialsMode::kOmit;
+    case kCrossOriginAttributeAnonymous:
+      return network::mojom::FetchCredentialsMode::kSameOrigin;
+    case kCrossOriginAttributeUseCredentials:
+      return network::mojom::FetchCredentialsMode::kInclude;
+  }
+  NOTREACHED();
+  return network::mojom::FetchCredentialsMode::kOmit;
 }
 
 bool ScriptLoader::IsScriptTypeSupported(LegacyTypeSupport support_legacy_types,
@@ -322,18 +336,7 @@ bool ScriptLoader::PrepareScript(const TextPosition& script_start_position,
   // 16. "Let module script credentials mode be determined by switching
   //      on CORS setting:"
   network::mojom::FetchCredentialsMode credentials_mode =
-      network::mojom::FetchCredentialsMode::kOmit;
-  switch (cross_origin) {
-    case kCrossOriginAttributeNotSet:
-      credentials_mode = network::mojom::FetchCredentialsMode::kOmit;
-      break;
-    case kCrossOriginAttributeAnonymous:
-      credentials_mode = network::mojom::FetchCredentialsMode::kSameOrigin;
-      break;
-    case kCrossOriginAttributeUseCredentials:
-      credentials_mode = network::mojom::FetchCredentialsMode::kInclude;
-      break;
-  }
+      ModuleScriptCredentialsMode(cross_origin);
 
   // 17. "If the script element has a nonce attribute,
   //      then let cryptographic nonce be that attribute's value.
@@ -437,8 +440,6 @@ bool ScriptLoader::PrepareScript(const TextPosition& script_start_position,
       // Steps 14 and 18 are skipped because they are not used in module
       // scripts.
 
-      DCHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
       Modulator* modulator = Modulator::From(
           ToScriptStateForMainWorld(context_document->GetFrame()));
       FetchModuleScriptTree(url, modulator, options);
@@ -469,19 +470,31 @@ bool ScriptLoader::PrepareScript(const TextPosition& script_start_position,
     // 22.2. "Switch on the script's type:"
     switch (GetScriptType()) {
       // - "classic":
-      case ScriptType::kClassic:
+      case ScriptType::kClassic: {
         // 1. Let script be the result of creating a classic script using source
         // text, settings object, base URL, and options.
         //
         // TODO(hiroshige): Implement base URL and options.
-        prepared_pending_script_ =
-            ClassicPendingScript::CreateInline(element_, position, options);
+
+        ScriptSourceLocationType script_location_type =
+            ScriptSourceLocationType::kInline;
+        if (!parser_inserted_) {
+          script_location_type =
+              ScriptSourceLocationType::kInlineInsideGeneratedElement;
+        } else if (element_->GetDocument().IsInDocumentWrite()) {
+          script_location_type =
+              ScriptSourceLocationType::kInlineInsideDocumentWrite;
+        }
+
+        prepared_pending_script_ = ClassicPendingScript::CreateInline(
+            element_, position, script_location_type, options);
 
         // 2. Set the script's script to script.
         // 3. The script is ready.
         // Implemented by ClassicPendingScript.
 
         break;
+      }
 
       // - "module":
       case ScriptType::kModule: {
@@ -700,8 +713,9 @@ void ScriptLoader::FetchModuleScriptTree(const KURL& url,
   //      options."
 
   auto* module_tree_client = ModulePendingScriptTreeClient::Create();
-  modulator->FetchTree(ModuleScriptFetchRequest(url, options),
-                       module_tree_client);
+  modulator->FetchTree(
+      ModuleScriptFetchRequest(url, modulator->GetReferrerPolicy(), options),
+      module_tree_client);
   prepared_pending_script_ = ModulePendingScript::Create(
       element_, module_tree_client, is_external_script_);
 }

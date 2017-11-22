@@ -42,6 +42,10 @@ class WatchDogThread;
 class WebRtcLogUploader;
 #endif
 
+namespace content {
+class NetworkConnectionTracker;
+}
+
 namespace safe_browsing {
 class SafeBrowsingService;
 }
@@ -89,6 +93,10 @@ class ChromeNetLog;
 
 namespace network_time {
 class NetworkTimeTracker;
+}
+
+namespace optimization_guide {
+class OptimizationGuideService;
 }
 
 namespace physical_web {
@@ -185,6 +193,10 @@ class BrowserProcess {
   // backed by the IOThread's URLRequestContext.
   virtual SystemNetworkContextManager* system_network_context_manager() = 0;
 
+  // Returns a NetworkConnectionTracker that can be used to subscribe for
+  // network change events.
+  virtual content::NetworkConnectionTracker* network_connection_tracker() = 0;
+
   // Returns the thread that is used for health check of all browser threads.
   virtual WatchDogThread* watchdog_thread() = 0;
 
@@ -250,6 +262,11 @@ class BrowserProcess {
   // Browsing subresource filter.
   virtual subresource_filter::ContentRulesetService*
   subresource_filter_ruleset_service() = 0;
+
+  // Returns the service used to provide hints for what optimizations can be
+  // performed on slow page loads.
+  virtual optimization_guide::OptimizationGuideService*
+  optimization_guide_service() = 0;
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
   // This will start a timer that, if Chrome is in persistent mode, will check

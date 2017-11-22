@@ -92,7 +92,7 @@ BaseAudioContext* BaseAudioContext::Create(
 // Constructor for rendering to the audio hardware.
 BaseAudioContext::BaseAudioContext(Document* document,
                                    enum ContextType context_type)
-    : SuspendableObject(document),
+    : PausableObject(document),
       destination_node_(nullptr),
       is_cleared_(false),
       is_resolving_resume_promises_(false),
@@ -162,7 +162,8 @@ void BaseAudioContext::Initialize() {
   // Check if a document or a frame supports AudioWorklet. If not, AudioWorklet
   // cannot be accessed.
   if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
-    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(this);
+    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(
+        *GetExecutionContext()->ExecutingWindow());
     if (audioWorklet)
       audioWorklet->RegisterContext(this);
   }
@@ -182,7 +183,8 @@ void BaseAudioContext::Uninitialize() {
   // AudioWorklet may be destroyed before the context goes away. So we have to
   // check the pointer. See: crbug.com/503845
   if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
-    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(this);
+    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(
+        *GetExecutionContext()->ExecutingWindow());
     if (audioWorklet) {
       audioWorklet->UnregisterContext(this);
       worklet_messaging_proxy_.Clear();
@@ -352,7 +354,7 @@ ScriptPromise BaseAudioContext::decodeAudioData(
         kDataCloneError, "Cannot decode detached ArrayBuffer");
     resolver->Reject(error);
     if (error_callback) {
-      error_callback->call(this, error);
+      error_callback->InvokeAndReportException(this, error);
     }
   }
 
@@ -370,14 +372,14 @@ void BaseAudioContext::HandleDecodeAudioData(
     // Resolve promise successfully and run the success callback
     resolver->Resolve(audio_buffer);
     if (success_callback)
-      success_callback->call(this, audio_buffer);
+      success_callback->InvokeAndReportException(this, audio_buffer);
   } else {
     // Reject the promise and run the error callback
     DOMException* error =
         DOMException::Create(kEncodingError, "Unable to decode audio data");
     resolver->Reject(error);
     if (error_callback)
-      error_callback->call(this, error);
+      error_callback->InvokeAndReportException(this, error);
   }
 
   // We've resolved the promise.  Remove it now.
@@ -779,7 +781,7 @@ void BaseAudioContext::HandlePreRenderTasks(
   if (TryLock()) {
     GetDeferredTaskHandler().HandleDeferredTasks();
 
-    ResolvePromisesForResume();
+    ResolvePromisesForUnpause();
 
     // Check to see if source nodes can be stopped because the end time has
     // passed.
@@ -887,7 +889,7 @@ void BaseAudioContext::ScheduleMainThreadCleanup() {
   has_posted_cleanup_task_ = true;
 }
 
-void BaseAudioContext::ResolvePromisesForResume() {
+void BaseAudioContext::ResolvePromisesForUnpause() {
   // This runs inside the BaseAudioContext's lock when handling pre-render
   // tasks.
   DCHECK(IsAudioThread());
@@ -981,7 +983,7 @@ const AtomicString& BaseAudioContext::InterfaceName() const {
 }
 
 ExecutionContext* BaseAudioContext::GetExecutionContext() const {
-  return SuspendableObject::GetExecutionContext();
+  return PausableObject::GetExecutionContext();
 }
 
 void BaseAudioContext::StartRendering() {
@@ -1012,7 +1014,7 @@ void BaseAudioContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(periodic_wave_triangle_);
   visitor->Trace(worklet_messaging_proxy_);
   EventTargetWithInlineData::Trace(visitor);
-  SuspendableObject::Trace(visitor);
+  PausableObject::Trace(visitor);
 }
 
 void BaseAudioContext::TraceWrappers(
@@ -1049,9 +1051,8 @@ void BaseAudioContext::SetWorkletMessagingProxy(
   // If the context is running or suspended, restart the destination to switch
   // the render thread with the worklet thread. Note that restarting can happen
   // right after the context construction.
-  // TODO(hongchan): consider removing redundant restart.
   if (ContextState() != kClosed) {
-    destination()->GetAudioDestinationHandler().RestartDestination();
+    destination()->GetAudioDestinationHandler().RestartRendering();
   }
 }
 

@@ -89,20 +89,20 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
 
   // The visual bounding box that includes glpyh bounding box and CSS
   // properties, in local coordinates.
-  NGPhysicalOffsetRect LocalVisualRect() const;
+  NGPhysicalOffsetRect SelfVisualRect() const;
 
   NGTextEndEffect EndEffect() const {
     return static_cast<NGTextEndEffect>(end_effect_);
   }
 
   scoped_refptr<NGPhysicalFragment> CloneWithoutOffset() const {
-    return WTF::AdoptRef(new NGPhysicalTextFragment(
+    return base::AdoptRef(new NGPhysicalTextFragment(
         layout_object_, Style(), text_, item_index_, start_offset_, end_offset_,
         size_, expansion_, LineOrientation(), EndEffect(), shape_result_));
   }
 
   NGTextFragmentPaintInfo PaintInfo() const {
-    return NGTextFragmentPaintInfo{Text(), StartOffset(), EndOffset(),
+    return NGTextFragmentPaintInfo{text_, StartOffset(), EndOffset(),
                                    TextShapeResult()};
   }
 

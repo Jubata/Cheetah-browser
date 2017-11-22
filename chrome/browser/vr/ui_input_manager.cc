@@ -6,10 +6,12 @@
 
 #include <algorithm>
 
+#include "base/containers/adapters.h"
 #include "base/macros.h"
 #include "chrome/browser/vr/elements/ui_element.h"
 #include "chrome/browser/vr/model/controller_model.h"
 #include "chrome/browser/vr/model/reticle_model.h"
+#include "chrome/browser/vr/ui_renderer.h"
 #include "chrome/browser/vr/ui_scene.h"
 // TODO(tiborg): Remove include once we use a generic type to pass scroll/fling
 // gestures.
@@ -24,11 +26,8 @@ static constexpr gfx::PointF kInvalidTargetPoint =
                 std::numeric_limits<float>::max());
 static constexpr gfx::Point3F kOrigin = {0.0f, 0.0f, 0.0f};
 
-gfx::Point3F GetRayPoint(const gfx::Point3F& rayOrigin,
-                         const gfx::Vector3dF& rayVector,
-                         float scale) {
-  return rayOrigin + gfx::ScaleVector3d(rayVector, scale);
-}
+static constexpr float kControllerQuiescenceAngularThresholdDegrees = 3.5f;
+static constexpr float kControllerQuiescenceTemporalThresholdSeconds = 1.2f;
 
 bool IsScrollEvent(const GestureList& list) {
   if (list.empty()) {
@@ -46,60 +45,35 @@ bool IsScrollEvent(const GestureList& list) {
   return false;
 }
 
-bool GetTargetLocalPoint(const gfx::Vector3dF& eye_to_target,
-                         const UiElement& element,
-                         float max_distance_to_plane,
-                         gfx::PointF* out_target_local_point,
-                         gfx::Point3F* out_target_point,
-                         float* out_distance_to_plane) {
-  if (!element.GetRayDistance(kOrigin, eye_to_target, out_distance_to_plane)) {
-    return false;
-  }
-
-  if (*out_distance_to_plane < 0 ||
-      *out_distance_to_plane >= max_distance_to_plane) {
-    return false;
-  }
-
-  *out_target_point =
-      GetRayPoint(kOrigin, eye_to_target, *out_distance_to_plane);
-  gfx::PointF unit_xy_point =
-      element.GetUnitRectangleCoordinates(*out_target_point);
-
-  out_target_local_point->set_x(0.5f + unit_xy_point.x());
-  out_target_local_point->set_y(0.5f - unit_xy_point.y());
-  return true;
-}
-
-void HitTestElements(UiElement* element,
+void HitTestElements(UiElement* root_element,
                      ReticleModel* reticle_model,
-                     gfx::Vector3dF* out_eye_to_target,
-                     float* out_closest_element_distance) {
-  for (auto& child : element->children()) {
-    HitTestElements(child.get(), reticle_model, out_eye_to_target,
-                    out_closest_element_distance);
+                     HitTestRequest* request) {
+  std::vector<const UiElement*> elements;
+  for (auto& element : *root_element) {
+    if (element.IsVisible()) {
+      elements.push_back(&element);
+    }
   }
 
-  if (!element->IsHitTestable()) {
-    return;
-  }
+  std::vector<const UiElement*> sorted =
+      UiRenderer::GetElementsInDrawOrder(elements);
 
-  gfx::PointF local_point;
-  gfx::Point3F plane_intersection_point;
-  float distance_to_plane;
-  if (!GetTargetLocalPoint(*out_eye_to_target, *element,
-                           *out_closest_element_distance, &local_point,
-                           &plane_intersection_point, &distance_to_plane)) {
-    return;
-  }
-  if (!element->HitTest(local_point)) {
-    return;
-  }
+  for (const auto* element : base::Reversed(sorted)) {
+    if (!element->IsHitTestable()) {
+      continue;
+    }
 
-  *out_closest_element_distance = distance_to_plane;
-  reticle_model->target_point = plane_intersection_point;
-  reticle_model->target_element_id = element->id();
-  reticle_model->target_local_point = local_point;
+    HitTestResult result;
+    element->HitTest(*request, &result);
+    if (result.type != HitTestResult::Type::kHits) {
+      continue;
+    }
+
+    reticle_model->target_element_id = element->id();
+    reticle_model->target_local_point = result.local_hit_point;
+    reticle_model->target_point = result.hit_point;
+    break;
+  }
 }
 
 }  // namespace
@@ -108,13 +82,14 @@ UiInputManager::UiInputManager(UiScene* scene) : scene_(scene) {}
 
 UiInputManager::~UiInputManager() {}
 
-void UiInputManager::HandleInput(const ControllerModel& controller_model,
+void UiInputManager::HandleInput(base::TimeTicks current_time,
+                                 const ControllerModel& controller_model,
                                  ReticleModel* reticle_model,
                                  GestureList* gesture_list) {
-  gfx::Vector3dF eye_to_target;
+  UpdateQuiescenceState(current_time, controller_model);
   reticle_model->target_element_id = 0;
   reticle_model->target_local_point = kInvalidTargetPoint;
-  GetVisualTargetElement(controller_model, reticle_model, &eye_to_target);
+  GetVisualTargetElement(controller_model, reticle_model);
 
   UiElement* target_element = nullptr;
   // TODO(vollick): this should be replaced with a formal notion of input
@@ -122,12 +97,14 @@ void UiInputManager::HandleInput(const ControllerModel& controller_model,
   if (input_locked_element_id_) {
     target_element = scene_->GetUiElementById(input_locked_element_id_);
     if (target_element) {
-      gfx::Point3F plane_intersection_point;
-      float distance_to_plane;
-      if (!GetTargetLocalPoint(eye_to_target, *target_element,
-                               2 * scene_->background_distance(),
-                               &reticle_model->target_local_point,
-                               &plane_intersection_point, &distance_to_plane)) {
+      HitTestRequest request;
+      request.ray_origin = kOrigin;
+      request.ray_target = reticle_model->target_point;
+      request.max_distance_to_plane = 2 * scene_->background_distance();
+      HitTestResult result;
+      target_element->HitTest(request, &result);
+      reticle_model->target_local_point = result.local_hit_point;
+      if (result.type == HitTestResult::Type::kNone) {
         reticle_model->target_local_point = kInvalidTargetPoint;
       }
     }
@@ -375,8 +352,7 @@ bool UiInputManager::SendButtonUp(UiElement* target,
 
 void UiInputManager::GetVisualTargetElement(
     const ControllerModel& controller_model,
-    ReticleModel* reticle_model,
-    gfx::Vector3dF* out_eye_to_target) const {
+    ReticleModel* reticle_model) const {
   // If we place the reticle based on elements intersecting the controller beam,
   // we can end up with the reticle hiding behind elements, or jumping laterally
   // in the field of view. This is physically correct, but hard to use. For
@@ -393,18 +369,49 @@ void UiInputManager::GetVisualTargetElement(
   // simplicity.
   float distance = scene_->background_distance();
   reticle_model->target_point =
-      GetRayPoint(controller_model.laser_origin,
-                  controller_model.laser_direction, distance);
-  *out_eye_to_target = reticle_model->target_point - kOrigin;
-  out_eye_to_target->GetNormalized(out_eye_to_target);
+      controller_model.laser_origin +
+      gfx::ScaleVector3d(controller_model.laser_direction, distance);
 
   // Determine which UI element (if any) intersects the line between the eyes
   // and the controller target position.
   float closest_element_distance =
       (reticle_model->target_point - kOrigin).Length();
 
-  HitTestElements(&scene_->root_element(), reticle_model, out_eye_to_target,
-                  &closest_element_distance);
+  HitTestRequest request;
+  request.ray_origin = kOrigin;
+  request.ray_target = reticle_model->target_point;
+  request.max_distance_to_plane = closest_element_distance;
+  HitTestElements(&scene_->root_element(), reticle_model, &request);
+}
+
+void UiInputManager::UpdateQuiescenceState(
+    base::TimeTicks current_time,
+    const ControllerModel& controller_model) {
+  // Update quiescence state.
+  gfx::Point3F old_position;
+  gfx::Point3F old_forward_position(0, 0, -1);
+  last_significant_controller_transform_.TransformPoint(&old_position);
+  last_significant_controller_transform_.TransformPoint(&old_forward_position);
+  gfx::Vector3dF old_forward = old_forward_position - old_position;
+  old_forward.GetNormalized(&old_forward);
+  gfx::Point3F new_position;
+  gfx::Point3F new_forward_position(0, 0, -1);
+  controller_model.transform.TransformPoint(&new_position);
+  controller_model.transform.TransformPoint(&new_forward_position);
+  gfx::Vector3dF new_forward = new_forward_position - new_position;
+  new_forward.GetNormalized(&new_forward);
+
+  float angle = AngleBetweenVectorsInDegrees(old_forward, new_forward);
+  if (angle > kControllerQuiescenceAngularThresholdDegrees || in_click_ ||
+      in_scroll_) {
+    controller_quiescent_ = false;
+    last_significant_controller_transform_ = controller_model.transform;
+    last_significant_controller_update_time_ = current_time;
+  } else if ((current_time - last_significant_controller_update_time_)
+                 .InSecondsF() >
+             kControllerQuiescenceTemporalThresholdSeconds) {
+    controller_quiescent_ = true;
+  }
 }
 
 }  // namespace vr

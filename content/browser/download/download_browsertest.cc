@@ -55,6 +55,7 @@
 #include "content/public/test/slow_download_http_response.h"
 #include "content/public/test/test_download_http_response.h"
 #include "content/public/test/test_file_error_injector.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -97,6 +98,27 @@ constexpr int kTestRequestCount = 3;
 const std::string kOriginOne = "one.example";
 const std::string kOriginTwo = "two.example";
 const std::string kOriginThree = "example.com";
+
+class TestResourceDispatcherHostDelegate
+    : public ResourceDispatcherHostDelegate {
+ public:
+  TestResourceDispatcherHostDelegate() = default;
+
+  bool AllowRenderingMhtmlOverHttp(net::URLRequest* request) const override {
+    return allowed_rendering_mhtml_over_http_;
+  }
+
+  void SetDelegate() { ResourceDispatcherHost::Get()->SetDelegate(this); }
+
+  void set_allowed_rendering_mhtml_over_http(bool allowed) {
+    allowed_rendering_mhtml_over_http_ = allowed;
+  }
+
+ private:
+  bool allowed_rendering_mhtml_over_http_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(TestResourceDispatcherHostDelegate);
+};
 
 class MockDownloadItemObserver : public DownloadItem::Observer {
  public:
@@ -150,7 +172,7 @@ class DownloadFileWithDelay : public DownloadFileImpl {
   DownloadFileWithDelay(std::unique_ptr<DownloadSaveInfo> save_info,
                         const base::FilePath& default_download_directory,
                         std::unique_ptr<DownloadManager::InputStream> stream,
-                        const net::NetLogWithSource& net_log,
+                        uint32_t download_id,
                         base::WeakPtr<DownloadDestinationObserver> observer,
                         base::WeakPtr<DownloadFileWithDelayFactory> owner);
 
@@ -195,7 +217,7 @@ class DownloadFileWithDelayFactory : public DownloadFileFactory {
       std::unique_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_download_directory,
       std::unique_ptr<DownloadManager::InputStream> stream,
-      const net::NetLogWithSource& net_log,
+      uint32_t download_id,
       base::WeakPtr<DownloadDestinationObserver> observer) override;
 
   void AddRenameCallback(base::Closure callback);
@@ -216,13 +238,13 @@ DownloadFileWithDelay::DownloadFileWithDelay(
     std::unique_ptr<DownloadSaveInfo> save_info,
     const base::FilePath& default_download_directory,
     std::unique_ptr<DownloadManager::InputStream> stream,
-    const net::NetLogWithSource& net_log,
+    uint32_t download_id,
     base::WeakPtr<DownloadDestinationObserver> observer,
     base::WeakPtr<DownloadFileWithDelayFactory> owner)
     : DownloadFileImpl(std::move(save_info),
                        default_download_directory,
                        std::move(stream),
-                       net_log,
+                       download_id,
                        observer),
       owner_(owner) {}
 
@@ -275,14 +297,11 @@ DownloadFile* DownloadFileWithDelayFactory::CreateFile(
     std::unique_ptr<DownloadSaveInfo> save_info,
     const base::FilePath& default_download_directory,
     std::unique_ptr<DownloadManager::InputStream> stream,
-    const net::NetLogWithSource& net_log,
+    uint32_t download_id,
     base::WeakPtr<DownloadDestinationObserver> observer) {
-  return new DownloadFileWithDelay(std::move(save_info),
-                                   default_download_directory,
-                                   std::move(stream),
-                                   net_log,
-                                   observer,
-                                   weak_ptr_factory_.GetWeakPtr());
+  return new DownloadFileWithDelay(
+      std::move(save_info), default_download_directory, std::move(stream),
+      download_id, observer, weak_ptr_factory_.GetWeakPtr());
 }
 
 void DownloadFileWithDelayFactory::AddRenameCallback(base::Closure callback) {
@@ -313,12 +332,12 @@ class CountingDownloadFile : public DownloadFileImpl {
   CountingDownloadFile(std::unique_ptr<DownloadSaveInfo> save_info,
                        const base::FilePath& default_downloads_directory,
                        std::unique_ptr<DownloadManager::InputStream> stream,
-                       const net::NetLogWithSource& net_log,
+                       uint32_t download_id,
                        base::WeakPtr<DownloadDestinationObserver> observer)
       : DownloadFileImpl(std::move(save_info),
                          default_downloads_directory,
                          std::move(stream),
-                         net_log,
+                         download_id,
                          observer) {}
 
   ~CountingDownloadFile() override {
@@ -371,13 +390,11 @@ class CountingDownloadFileFactory : public DownloadFileFactory {
       std::unique_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
       std::unique_ptr<DownloadManager::InputStream> stream,
-      const net::NetLogWithSource& net_log,
+      uint32_t download_id,
       base::WeakPtr<DownloadDestinationObserver> observer) override {
     return new CountingDownloadFile(std::move(save_info),
                                     default_downloads_directory,
-                                    std::move(stream),
-                                    net_log,
-                                    observer);
+                                    std::move(stream), download_id, observer);
   }
 };
 
@@ -387,14 +404,14 @@ class ErrorInjectionDownloadFile : public DownloadFileImpl {
       std::unique_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
       std::unique_ptr<DownloadManager::InputStream> stream,
-      const net::NetLogWithSource& net_log,
+      uint32_t download_id,
       base::WeakPtr<DownloadDestinationObserver> observer,
       int64_t error_stream_offset,
       int64_t error_stream_length)
       : DownloadFileImpl(std::move(save_info),
                          default_downloads_directory,
                          std::move(stream),
-                         net_log,
+                         download_id,
                          observer),
         error_stream_offset_(error_stream_offset),
         error_stream_length_(error_stream_length) {}
@@ -434,11 +451,11 @@ class ErrorInjectionDownloadFileFactory : public DownloadFileFactory {
       std::unique_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_download_directory,
       std::unique_ptr<DownloadManager::InputStream> stream,
-      const net::NetLogWithSource& net_log,
+      uint32_t download_id,
       base::WeakPtr<DownloadDestinationObserver> observer) override {
     ErrorInjectionDownloadFile* download_file = new ErrorInjectionDownloadFile(
         std::move(save_info), default_download_directory, std::move(stream),
-        net_log, observer, injected_error_offset_, injected_error_length_);
+        download_id, observer, injected_error_offset_, injected_error_length_);
     // If the InjectError() is not called yet, memorize |download_file| and wait
     // for error to be injected.
     if (injected_error_offset_ < 0)
@@ -656,32 +673,6 @@ class TestRequestPauseHandler {
   base::OnceClosure resume_callback_;
 };
 
-// Class for creating and monitoring the completed response from the server.
-class TestDownloadResponseHandler {
- public:
-  static std::unique_ptr<net::test_server::HttpResponse>
-  HandleTestDownloadRequest(
-      const TestDownloadHttpResponse::OnResponseSentCallback& callback,
-      const net::test_server::HttpRequest& request) {
-    return TestDownloadHttpResponse::Create(request, callback);
-  }
-
-  TestDownloadResponseHandler() = default;
-
-  void OnRequestCompleted(
-      std::unique_ptr<TestDownloadHttpResponse::CompletedRequest> request) {
-    completed_requests_.push_back(std::move(request));
-  }
-
-  using CompletedRequests =
-      std::vector<std::unique_ptr<TestDownloadHttpResponse::CompletedRequest>>;
-  CompletedRequests const& completed_requests() { return completed_requests_; }
-
- private:
-  CompletedRequests completed_requests_;
-  DISALLOW_COPY_AND_ASSIGN(TestDownloadResponseHandler);
-};
-
 class DownloadContentTest : public ContentBrowserTest {
  protected:
   void SetUpOnMainThread() override {
@@ -700,10 +691,7 @@ class DownloadContentTest : public ContentBrowserTest {
     embedded_test_server()->ServeFilesFromDirectory(test_data_dir);
     embedded_test_server()->RegisterRequestHandler(
         base::Bind(&SlowDownloadHttpResponse::HandleSlowDownloadRequest));
-    embedded_test_server()->RegisterRequestHandler(
-        base::Bind(&TestDownloadResponseHandler::HandleTestDownloadRequest,
-                   base::Bind(&TestDownloadResponseHandler::OnRequestCompleted,
-                              base::Unretained(&test_response_handler_))));
+    test_response_handler_.RegisterToTestServer(embedded_test_server());
     ASSERT_TRUE(embedded_test_server()->Start());
     const std::string real_host =
         embedded_test_server()->host_port_pair().host();
@@ -714,6 +702,14 @@ class DownloadContentTest : public ContentBrowserTest {
                              real_host);
     host_resolver()->AddRule(TestDownloadHttpResponse::kTestDownloadHostName,
                              real_host);
+
+    test_resource_dispatcher_host_delegate_ =
+        std::make_unique<TestResourceDispatcherHostDelegate>();
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO, FROM_HERE,
+        base::BindOnce(
+            &TestResourceDispatcherHostDelegate::SetDelegate,
+            base::Unretained(test_resource_dispatcher_host_delegate_.get())));
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
@@ -877,12 +873,18 @@ class DownloadContentTest : public ContentBrowserTest {
     return inject_error_callback_;
   }
 
+  TestResourceDispatcherHostDelegate* test_resource_dispatcher_host_delegate() {
+    return test_resource_dispatcher_host_delegate_.get();
+  }
+
  private:
   // Location of the downloads directory for these tests
   base::ScopedTempDir downloads_directory_;
   std::unique_ptr<TestShellDownloadManagerDelegate> test_delegate_;
   TestDownloadResponseHandler test_response_handler_;
   TestDownloadHttpResponse::InjectErrorCallback inject_error_callback_;
+  std::unique_ptr<TestResourceDispatcherHostDelegate>
+      test_resource_dispatcher_host_delegate_;
 };
 
 // Test fixture for parallel downloading.
@@ -892,7 +894,7 @@ class ParallelDownloadTest : public DownloadContentTest {
 
   ~ParallelDownloadTest() override {}
 
-  void SetUpOnMainThread() override {
+  void InitParallelDownloadFeature() {
     std::map<std::string, std::string> params = {
         {content::kMinSliceSizeFinchKey, "1"},
         {content::kParallelRequestCountFinchKey,
@@ -901,7 +903,6 @@ class ParallelDownloadTest : public DownloadContentTest {
         {content::kParallelRequestRemainingTimeFinchKey, "0"}};
     scoped_feature_list_.InitAndEnableFeatureWithParameters(
         features::kParallelDownloading, params);
-    DownloadContentTest::SetUpOnMainThread();
   }
 
  private:
@@ -912,13 +913,8 @@ class ParallelDownloadTest : public DownloadContentTest {
 
 }  // namespace
 
-#if defined(OS_ANDROID)
-// Failing/Flaky on Android: https://crbug.com/754679
-#define MAYBE_DownloadCancelled DISABLED_DownloadCancelled
-#else
-#define MAYBE_DownloadCancelled DownloadCancelled
-#endif
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, MAYBE_DownloadCancelled) {
+// Flaky. See https://crbug.com/754679.
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, DISABLED_DownloadCancelled) {
   SetupEnsureNoPendingDownloads();
 
   // Create a download, wait until it's started, and confirm
@@ -2898,7 +2894,14 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
 }
 
 // Verify parallel download in normal case.
-IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ParallelDownloadComplete) {
+// Flaky. See http://crbug.com/786626.
+#if defined(OS_ANDROID) || defined(OS_LINUX)
+#define MAYBE_ParallelDownloadComplete DISABLED_ParallelDownloadComplete
+#else
+#define MAYBE_ParallelDownloadComplete ParallelDownloadComplete
+#endif
+IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, MAYBE_ParallelDownloadComplete) {
+  InitParallelDownloadFeature();
   EXPECT_TRUE(base::FeatureList::IsEnabled(features::kParallelDownloading));
 
   GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
@@ -2937,6 +2940,7 @@ IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ParallelDownloadComplete) {
 
 // Verify parallel download resumption.
 IN_PROC_BROWSER_TEST_F(ParallelDownloadTest, ParallelDownloadResumption) {
+  InitParallelDownloadFeature();
   EXPECT_TRUE(base::FeatureList::IsEnabled(features::kParallelDownloading));
 
   GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
@@ -3074,8 +3078,6 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, FetchErrorResponseBody) {
 // fetched.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, FetchErrorResponseBodyResumption) {
   SetupErrorInjectionDownloads();
-  const std::string kNotFoundResponseBody = "This is 404 response body.";
-
   GURL url = TestDownloadHttpResponse::GetNextURLForDownload();
   GURL server_url = embedded_test_server()->GetURL(url.host(), url.path());
   TestDownloadHttpResponse::Parameters parameters =
@@ -3119,6 +3121,31 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, FetchErrorResponseBodyResumption) {
         base::ReadFileToString(items[0]->GetTargetFilePath(), &file_content));
     EXPECT_EQ(std::string(), file_content);
   }
+}
+
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, ForceDownloadMhtml) {
+  // Force downloading the MHTML.
+  test_resource_dispatcher_host_delegate()
+      ->set_allowed_rendering_mhtml_over_http(false);
+
+  NavigateToURLAndWaitForDownload(
+      shell(), embedded_test_server()->GetURL("/download/hello.mhtml"),
+      DownloadItem::COMPLETE);
+}
+
+IN_PROC_BROWSER_TEST_F(DownloadContentTest, AllowRenderMhtml) {
+  // Allows loading the MHTML, instead of downloading it.
+  test_resource_dispatcher_host_delegate()
+      ->set_allowed_rendering_mhtml_over_http(true);
+
+  GURL url = embedded_test_server()->GetURL("/download/hello.mhtml");
+  auto observer = std::make_unique<content::TestNavigationObserver>(url);
+  observer->WatchExistingWebContents();
+  observer->StartWatchingNewWebContents();
+
+  NavigateToURL(shell(), url);
+
+  observer->WaitForNavigationFinished();
 }
 
 }  // namespace content

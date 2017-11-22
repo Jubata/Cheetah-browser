@@ -476,6 +476,8 @@ bool StructTraits<autofill::mojom::FormDataDataView, autofill::FormData>::Read(
     return false;
   if (!data.ReadAction(&out->action))
     return false;
+  if (!data.ReadMainFrameOrigin(&out->main_frame_origin))
+    return false;
 
   out->is_form_tag = data.is_form_tag();
   out->is_formless_checkout = data.is_formless_checkout();
@@ -639,6 +641,7 @@ bool StructTraits<
   out->is_public_suffix_match = data.is_public_suffix_match();
   out->is_affiliation_based_match = data.is_affiliation_based_match();
   out->does_look_like_signup_form = data.does_look_like_signup_form();
+  out->only_for_fallback_saving = data.only_for_fallback_saving();
 
   return true;
 }

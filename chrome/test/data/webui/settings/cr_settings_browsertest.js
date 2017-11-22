@@ -465,6 +465,7 @@ CrSettingsResetPageTest.prototype = {
     '../test_browser_proxy.js',
     'test_lifetime_browser_proxy.js',
     'test_reset_browser_proxy.js',
+    'test_util.js',
     'reset_page_test.js',
   ]),
 };
@@ -547,7 +548,7 @@ TEST_F('CrSettingsAppearanceFontsPageTest', 'All', function() {
   mocha.run();
 });
 
-GEN('#if defined(OS_WIN)');
+GEN('#if defined(OS_WIN) and defined(GOOGLE_CHROME_BUILD)');
 /**
  * @constructor
  * @extends {CrSettingsBrowserTest}
@@ -1463,7 +1464,7 @@ CrSettingsMainPageTest.prototype = {
 
 // Times out on Windows Tests (dbg). See https://crbug.com/651296.
 // Times out / crashes on chromium.linux/Linux Tests (dbg) crbug.com/667882
-GEN('#if !defined(NDEBUG)')
+GEN('#if !defined(NDEBUG)');
 GEN('#define MAYBE_MainPage DISABLED_MainPage');
 GEN('#else');
 GEN('#define MAYBE_MainPage MainPage');
@@ -1715,5 +1716,29 @@ CrSettingsExtensionControlledIndicatorTest.prototype = {
 };
 
 TEST_F('CrSettingsExtensionControlledIndicatorTest', 'All', function() {
+  mocha.run();
+});
+
+/**
+ * @constructor
+ * @extends {CrSettingsBrowserTest}
+ */
+function CrSettingsChangePasswordPageTest() {}
+
+CrSettingsChangePasswordPageTest.prototype = {
+  __proto__: CrSettingsBrowserTest.prototype,
+
+  /** @override */
+  browsePreload:
+      'chrome://settings/change_password_page/change_password_page.html',
+
+  /** @override */
+  extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
+    '../test_browser_proxy.js',
+    'change_password_page_test.js',
+  ]),
+};
+
+TEST_F('CrSettingsChangePasswordPageTest', 'All', function() {
   mocha.run();
 });

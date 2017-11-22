@@ -25,10 +25,7 @@ void DeleteServiceObjects(ClientServiceMap<ClientType, ServiceType>* id_map,
                           bool have_context,
                           DeleteFunction delete_function) {
   if (have_context) {
-    for (auto client_service_id_pair : *id_map) {
-      delete_function(client_service_id_pair.first,
-                      client_service_id_pair.second);
-    }
+    id_map->ForEach(delete_function);
   }
 
   id_map->Clear();
@@ -1154,6 +1151,9 @@ gpu::Capabilities GLES2DecoderPassthroughImpl::GetCapabilities() {
   caps.texture_norm16 = feature_info_->feature_flags().ext_texture_norm16;
   caps.texture_half_float_linear =
       feature_info_->feature_flags().enable_texture_half_float_linear;
+  caps.color_buffer_half_float_rgba =
+      feature_info_->ext_color_buffer_float_available() ||
+      feature_info_->ext_color_buffer_half_float_available();
   caps.image_ycbcr_422 =
       feature_info_->feature_flags().chromium_image_ycbcr_422;
   caps.image_ycbcr_420v =
@@ -1213,6 +1213,8 @@ void GLES2DecoderPassthroughImpl::RestoreTextureUnitBindings(
 void GLES2DecoderPassthroughImpl::RestoreVertexAttribArray(unsigned index) {}
 
 void GLES2DecoderPassthroughImpl::RestoreAllExternalTextureBindingsIfNeeded() {}
+
+void GLES2DecoderPassthroughImpl::RestoreDeviceWindowRectangles() const {}
 
 void GLES2DecoderPassthroughImpl::ClearAllAttributes() const {}
 

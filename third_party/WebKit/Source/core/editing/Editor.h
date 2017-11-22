@@ -53,7 +53,7 @@ class KillRing;
 class Pasteboard;
 class SetSelectionOptions;
 class SpellChecker;
-class StylePropertySet;
+class CSSPropertyValueSet;
 class TextEvent;
 class UndoStack;
 class UndoStep;
@@ -124,10 +124,11 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
       InputEvent::InputType,
       const Position& reference_move_position = Position());
 
-  void ApplyStyle(StylePropertySet*, InputEvent::InputType);
-  void ApplyParagraphStyle(StylePropertySet*, InputEvent::InputType);
-  void ApplyStyleToSelection(StylePropertySet*, InputEvent::InputType);
-  void ApplyParagraphStyleToSelection(StylePropertySet*, InputEvent::InputType);
+  void ApplyStyle(CSSPropertyValueSet*, InputEvent::InputType);
+  void ApplyParagraphStyle(CSSPropertyValueSet*, InputEvent::InputType);
+  void ApplyStyleToSelection(CSSPropertyValueSet*, InputEvent::InputType);
+  void ApplyParagraphStyleToSelection(CSSPropertyValueSet*,
+                                      InputEvent::InputType);
 
   void AppliedEditing(CompositeEditCommand*);
   void UnappliedEditing(UndoStep*);
@@ -243,9 +244,9 @@ class CORE_EXPORT Editor final : public GarbageCollectedFinalized<Editor> {
                            FindOptions);
 
   const VisibleSelection& Mark() const;  // Mark, to be used as emacs uses it.
-  void SetMark(const VisibleSelection&);
+  void SetMark();
 
-  void ComputeAndSetTypingStyle(StylePropertySet*, InputEvent::InputType);
+  void ComputeAndSetTypingStyle(CSSPropertyValueSet*, InputEvent::InputType);
 
   // |firstRectForRange| requires up-to-date layout.
   IntRect FirstRectForRange(const EphemeralRange&) const;
@@ -367,10 +368,6 @@ inline void Editor::SetStartNewKillRingSequence(bool flag) {
 
 inline const VisibleSelection& Editor::Mark() const {
   return mark_;
-}
-
-inline void Editor::SetMark(const VisibleSelection& selection) {
-  mark_ = selection;
 }
 
 inline bool Editor::MarkedTextMatchesAreHighlighted() const {

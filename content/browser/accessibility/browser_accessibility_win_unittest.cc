@@ -293,6 +293,9 @@ TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
   line_break.AddState(ui::AX_STATE_EDITABLE);
   line_break.SetName("\n");
 
+  inline_box1.AddIntAttribute(ui::AX_ATTR_NEXT_ON_LINE_ID, line_break.id);
+  line_break.AddIntAttribute(ui::AX_ATTR_PREVIOUS_ON_LINE_ID, inline_box1.id);
+
   ui::AXNodeData static_text2;
   static_text2.id = 6;
   static_text2.role = ui::AX_ROLE_STATIC_TEXT;
@@ -496,7 +499,7 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
 
   ui::AXNodeData combo_box;
   combo_box.id = 12;
-  combo_box.role = ui::AX_ROLE_COMBO_BOX;
+  combo_box.role = ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX;
   combo_box.SetName(base::UTF16ToUTF8(combo_box_name));
   combo_box.SetValue(base::UTF16ToUTF8(combo_box_value));
 
@@ -808,7 +811,7 @@ TEST_F(BrowserAccessibilityTest, TestValueAttributeInTextControls) {
   combo_box_text.id = 3;
   combo_box.SetName("Combo box:");
   combo_box_text.SetName("Combo box text");
-  combo_box.role = ui::AX_ROLE_COMBO_BOX;
+  combo_box.role = ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX;
   combo_box_text.role = ui::AX_ROLE_STATIC_TEXT;
   combo_box.AddState(ui::AX_STATE_EDITABLE);
   combo_box.AddState(ui::AX_STATE_FOCUSABLE);
@@ -1103,7 +1106,7 @@ TEST_F(BrowserAccessibilityTest, TestCaretAndSelectionInSimpleFields) {
 
   ui::AXNodeData combo_box;
   combo_box.id = 2;
-  combo_box.role = ui::AX_ROLE_COMBO_BOX;
+  combo_box.role = ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX;
   combo_box.AddState(ui::AX_STATE_EDITABLE);
   combo_box.AddState(ui::AX_STATE_FOCUSABLE);
   combo_box.SetValue("Test1");
@@ -1878,7 +1881,7 @@ TEST_F(BrowserAccessibilityTest, TestExistingMisspellingsInSimpleTextFields) {
 
   ui::AXNodeData combo_box;
   combo_box.id = 2;
-  combo_box.role = ui::AX_ROLE_COMBO_BOX;
+  combo_box.role = ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX;
   combo_box.AddState(ui::AX_STATE_EDITABLE);
   combo_box.AddState(ui::AX_STATE_FOCUSABLE);
   combo_box.SetValue(value1 + value2);
@@ -1992,7 +1995,7 @@ TEST_F(BrowserAccessibilityTest, TestNewMisspellingsInSimpleTextFields) {
 
   ui::AXNodeData combo_box;
   combo_box.id = 2;
-  combo_box.role = ui::AX_ROLE_COMBO_BOX;
+  combo_box.role = ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX;
   combo_box.AddState(ui::AX_STATE_EDITABLE);
   combo_box.AddState(ui::AX_STATE_FOCUSABLE);
   combo_box.SetValue(value1 + value2);

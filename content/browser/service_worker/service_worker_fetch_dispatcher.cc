@@ -117,12 +117,12 @@ void NotifyNavigationPreloadResponseReceivedOnUI(
 }
 
 void NotifyNavigationPreloadCompletedOnUI(
-    const ResourceRequestCompletionStatus& completion_status,
+    const network::URLLoaderCompletionStatus& status,
     const std::pair<int, int>& worker_id,
     const std::string& request_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (ServiceWorkerDevToolsAgentHost* agent_host = GetAgentHost(worker_id))
-    agent_host->NavigationPreloadCompleted(request_id, completion_status);
+    agent_host->NavigationPreloadCompleted(request_id, status);
 }
 
 // DelegatingURLLoaderClient is the URLLoaderClient for the navigation preload
@@ -145,7 +145,7 @@ class DelegatingURLLoaderClient final : public mojom::URLLoaderClient {
   ~DelegatingURLLoaderClient() override {
     if (!completed_) {
       // Let the service worker know that the request has been canceled.
-      ResourceRequestCompletionStatus status;
+      network::URLLoaderCompletionStatus status;
       status.error_code = net::ERR_ABORTED;
       client_->OnComplete(status);
       AddDevToolsCallback(
@@ -193,7 +193,7 @@ class DelegatingURLLoaderClient final : public mojom::URLLoaderClient {
     client_->OnReceiveRedirect(redirect_info, head);
     AddDevToolsCallback(
         base::Bind(&NotifyNavigationPreloadResponseReceivedOnUI, url_, head));
-    ResourceRequestCompletionStatus status;
+    network::URLLoaderCompletionStatus status;
     AddDevToolsCallback(
         base::Bind(&NotifyNavigationPreloadCompletedOnUI, status));
   }
@@ -201,14 +201,13 @@ class DelegatingURLLoaderClient final : public mojom::URLLoaderClient {
       mojo::ScopedDataPipeConsumerHandle body) override {
     client_->OnStartLoadingResponseBody(std::move(body));
   }
-  void OnComplete(
-      const ResourceRequestCompletionStatus& completion_status) override {
+  void OnComplete(const network::URLLoaderCompletionStatus& status) override {
     if (completed_)
       return;
     completed_ = true;
-    client_->OnComplete(completion_status);
+    client_->OnComplete(status);
     AddDevToolsCallback(
-        base::Bind(&NotifyNavigationPreloadCompletedOnUI, completion_status));
+        base::Bind(&NotifyNavigationPreloadCompletedOnUI, status));
   }
 
   void Bind(mojom::URLLoaderClientPtr* ptr_info) {
@@ -783,7 +782,8 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreload(
 
   auto url_loader = std::make_unique<DelegatingURLLoader>(
       std::move(url_loader_associated_ptr));
-  preload_handle_->url_loader = url_loader->CreateInterfacePtrAndBind();
+  preload_handle_->url_loader =
+      url_loader->CreateInterfacePtrAndBind().PassInterface();
   url_loader_assets_ = base::MakeRefCounted<URLLoaderAssets>(
       std::move(url_loader_factory), std::move(url_loader),
       std::move(url_loader_client));
@@ -849,7 +849,8 @@ bool ServiceWorkerFetchDispatcher::MaybeStartNavigationPreloadWithURLLoader(
   // DelegatingURLLoaderClient.
   auto url_loader = std::make_unique<DelegatingURLLoader>(
       std::move(url_loader_associated_ptr));
-  preload_handle_->url_loader = url_loader->CreateInterfacePtrAndBind();
+  preload_handle_->url_loader =
+      url_loader->CreateInterfacePtrAndBind().PassInterface();
 
   DCHECK(!url_loader_assets_);
   // Unlike the non-S13N code path, we don't own the URLLoaderFactory being used

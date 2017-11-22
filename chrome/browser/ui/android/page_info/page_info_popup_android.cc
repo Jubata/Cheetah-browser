@@ -8,7 +8,7 @@
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/stl_util.h"
-#include "chrome/browser/android/search_geolocation/search_geolocation_service.h"
+#include "chrome/browser/android/search_permissions/search_permissions_service.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/security_state_tab_helper.h"
@@ -30,10 +30,11 @@ using base::android::ConvertUTF8ToJavaString;
 using base::android::JavaParamRef;
 
 // static
-static jlong Init(JNIEnv* env,
-                  const JavaParamRef<jclass>& clazz,
-                  const JavaParamRef<jobject>& obj,
-                  const JavaParamRef<jobject>& java_web_contents) {
+static jlong JNI_PageInfoPopup_Init(
+    JNIEnv* env,
+    const JavaParamRef<jclass>& clazz,
+    const JavaParamRef<jobject>& obj,
+    const JavaParamRef<jobject>& java_web_contents) {
   content::WebContents* web_contents =
       content::WebContents::FromJavaWebContents(java_web_contents);
 
@@ -63,7 +64,7 @@ PageInfoPopupAndroid::PageInfoPopupAndroid(JNIEnv* env,
   helper->GetSecurityInfo(&security_info);
 
   search_geolocation_service_ =
-      SearchGeolocationService::Factory::GetForBrowserContext(
+      SearchPermissionsService::Factory::GetForBrowserContext(
           web_contents->GetBrowserContext());
 
   presenter_.reset(new PageInfo(

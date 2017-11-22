@@ -32,8 +32,8 @@
 #include "core/animation/KeyframeEffectOptions.h"
 #include "core/animation/StringKeyframe.h"
 #include "core/animation/TimingInput.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSStyleDeclaration.h"
-#include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
 #include "core/dom/FrameRequestCallbackCollection.h"
 #include "core/dom/ShadowRoot.h"
@@ -224,7 +224,7 @@ bool HTMLMarqueeElement::IsPresentationAttribute(
 void HTMLMarqueeElement::CollectStyleForPresentationAttribute(
     const QualifiedName& attr,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (attr == HTMLNames::bgcolorAttr) {
     AddHTMLColorToStyle(style, CSSPropertyBackgroundColor, value);
   } else if (attr == HTMLNames::heightAttr) {
@@ -246,16 +246,21 @@ StringKeyframeEffectModel* HTMLMarqueeElement::CreateEffectModel(
     const AnimationParameters& parameters) {
   StyleSheetContents* style_sheet_contents =
       mover_->GetDocument().ElementSheet().Contents();
-  MutableStylePropertySet::SetResult set_result;
+  MutableCSSPropertyValueSet::SetResult set_result;
+
+  SecureContextMode secure_context_mode =
+      mover_->GetDocument().SecureContextMode();
 
   scoped_refptr<StringKeyframe> keyframe1 = StringKeyframe::Create();
   set_result = keyframe1->SetCSSPropertyValue(
-      CSSPropertyTransform, parameters.transform_begin, style_sheet_contents);
+      CSSPropertyTransform, parameters.transform_begin, secure_context_mode,
+      style_sheet_contents);
   DCHECK(set_result.did_parse);
 
   scoped_refptr<StringKeyframe> keyframe2 = StringKeyframe::Create();
   set_result = keyframe2->SetCSSPropertyValue(
-      CSSPropertyTransform, parameters.transform_end, style_sheet_contents);
+      CSSPropertyTransform, parameters.transform_end, secure_context_mode,
+      style_sheet_contents);
   DCHECK(set_result.did_parse);
 
   return StringKeyframeEffectModel::Create(
@@ -350,10 +355,11 @@ HTMLMarqueeElement::Metrics HTMLMarqueeElement::GetMetrics() {
   }
 
   if (IsHorizontal()) {
-    mover_->style()->setProperty("width", "-webkit-max-content", "important",
-                                 ASSERT_NO_EXCEPTION);
+    mover_->style()->setProperty(&GetDocument(), "width", "-webkit-max-content",
+                                 "important", ASSERT_NO_EXCEPTION);
   } else {
-    mover_->style()->setProperty("height", "-webkit-max-content", "important",
+    mover_->style()->setProperty(&GetDocument(), "height",
+                                 "-webkit-max-content", "important",
                                  ASSERT_NO_EXCEPTION);
   }
   CSSStyleDeclaration* mover_style =

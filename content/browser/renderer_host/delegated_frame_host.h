@@ -24,6 +24,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/render_process_host.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
+#include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/compositor_vsync_manager.h"
@@ -72,6 +73,7 @@ class CONTENT_EXPORT DelegatedFrameHostClient {
 
   virtual void OnBeginFrame() = 0;
   virtual bool IsAutoResizeEnabled() const = 0;
+  virtual void OnFrameTokenChanged(uint32_t frame_token) = 0;
 };
 
 // The DelegatedFrameHost is used to host all of the RenderWidgetHostView state
@@ -127,13 +129,16 @@ class CONTENT_EXPORT DelegatedFrameHost
 
   // viz::HostFrameSinkClient implementation.
   void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
 
   // Public interface exposed to RenderWidgetHostView.
 
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink);
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame);
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list);
   void ClearDelegatedFrame();
   void WasHidden();
   void WasShown(const ui::LatencyInfo& latency_info);
@@ -189,6 +194,9 @@ class CONTENT_EXPORT DelegatedFrameHost
   viz::SurfaceId SurfaceIdForTesting() const {
     return viz::SurfaceId(frame_sink_id_, local_surface_id_);
   }
+  viz::CompositorFrameSinkSupport* GetCompositorFrameSinkSupportForTesting() {
+    return support_.get();
+  }
 
   bool HasPrimarySurfaceForTesting() const { return has_primary_surface_; }
 
@@ -202,6 +210,10 @@ class CONTENT_EXPORT DelegatedFrameHost
       const base::Callback<void(std::unique_ptr<viz::CopyOutputRequest>)>&
           callback) {
     request_copy_of_output_callback_for_testing_ = callback;
+  }
+
+  gfx::Size CurrentFrameSizeInDipForTesting() const {
+    return current_frame_size_in_dip_;
   }
 
  private:

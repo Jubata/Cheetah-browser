@@ -12,7 +12,6 @@
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/interfaces/tray_action.mojom.h"
 #include "ash/session/test_session_controller_client.h"
-#include "ash/test/ash_test_helper.h"
 #include "base/base64.h"
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
@@ -27,7 +26,6 @@
 #include "chrome/browser/chromeos/lock_screen_apps/focus_cycler_delegate.h"
 #include "chrome/browser/chromeos/lock_screen_apps/state_observer.h"
 #include "chrome/browser/chromeos/login/users/fake_chrome_user_manager.h"
-#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/chromeos/note_taking_helper.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -36,7 +34,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -45,6 +42,7 @@
 #include "components/arc/arc_service_manager.h"
 #include "components/arc/arc_session.h"
 #include "components/session_manager/core/session_manager.h"
+#include "components/user_manager/scoped_user_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -395,8 +393,7 @@ class LockScreenAppStateTest : public BrowserWithTestWindowTest {
  public:
   LockScreenAppStateTest()
       : fake_user_manager_(new chromeos::FakeChromeUserManager),
-        user_manager_enabler_(fake_user_manager_),
-        profile_manager_(TestingBrowserProcess::GetGlobal()) {}
+        user_manager_enabler_(base::WrapUnique(fake_user_manager_)) {}
 
   ~LockScreenAppStateTest() override = default;
 
@@ -404,8 +401,6 @@ class LockScreenAppStateTest : public BrowserWithTestWindowTest {
     command_line_ = base::MakeUnique<base::test::ScopedCommandLine>();
     command_line_->GetProcessCommandLine()->InitFromArgv({""});
     SetUpCommandLine(command_line_->GetProcessCommandLine());
-
-    ASSERT_TRUE(profile_manager_.SetUp());
 
     SetUpStylusAvailability();
 
@@ -434,7 +429,7 @@ class LockScreenAppStateTest : public BrowserWithTestWindowTest {
     InitExtensionSystem(profile());
 
     std::unique_ptr<FakeLockScreenProfileCreator> profile_creator =
-        base::MakeUnique<FakeLockScreenProfileCreator>(&profile_manager_);
+        base::MakeUnique<FakeLockScreenProfileCreator>(profile_manager());
     lock_screen_profile_creator_ = profile_creator.get();
 
     std::unique_ptr<TestAppManager> app_manager =
@@ -475,7 +470,6 @@ class LockScreenAppStateTest : public BrowserWithTestWindowTest {
     lock_screen_profile_creator_ = nullptr;
     app_window_.reset();
     BrowserWithTestWindowTest::TearDown();
-    profile_manager_.DeleteAllTestingProfiles();
     focus_cycler_delegate_.reset();
   }
 
@@ -483,15 +477,7 @@ class LockScreenAppStateTest : public BrowserWithTestWindowTest {
     const AccountId account_id(AccountId::FromUserEmail(kPrimaryProfileName));
     AddTestUser(account_id);
     fake_user_manager()->LoginUser(account_id);
-    return profile_manager_.CreateTestingProfile(kPrimaryProfileName);
-  }
-
-  void DestroyProfile(TestingProfile* test_profile) override {
-    if (test_profile == profile()) {
-      profile_manager_.DeleteTestingProfile(kPrimaryProfileName);
-    } else {
-      ADD_FAILURE() << "Request to destroy unknown profile.";
-    }
+    return profile_manager()->CreateTestingProfile(kPrimaryProfileName);
   }
 
   // Adds test user for the primary profile - virtual so test fixture can
@@ -589,8 +575,6 @@ class LockScreenAppStateTest : public BrowserWithTestWindowTest {
     SetFirstRunCompletedIfNeeded(app_->id());
 
     session_manager_->SetSessionState(session_manager::SessionState::LOCKED);
-    ash_test_helper()->test_session_controller_client()->SetSessionState(
-        session_manager::SessionState::LOCKED);
 
     if (app_manager_->state() != TestAppManager::State::kStarted) {
       ADD_FAILURE() << "Lock app manager Start not invoked.";
@@ -707,8 +691,7 @@ class LockScreenAppStateTest : public BrowserWithTestWindowTest {
   std::unique_ptr<base::test::ScopedCommandLine> command_line_;
 
   chromeos::FakeChromeUserManager* fake_user_manager_;
-  chromeos::ScopedUserManagerEnabler user_manager_enabler_;
-  TestingProfileManager profile_manager_;
+  user_manager::ScopedUserManager user_manager_enabler_;
 
   // Run loop used to throttle test until async state controller initialization
   // is fully complete. The quit closure for this run loop will be passed to
@@ -769,17 +752,17 @@ class LockScreenAppStateNoStylusInputTest : public LockScreenAppStateTest {
 };
 
 // Tests with show-md-login flag set.
-class LockScreenAppStateMdLoginTest : public LockScreenAppStateTest {
+class LockScreenAppStateWebUiLockTest : public LockScreenAppStateTest {
  public:
-  LockScreenAppStateMdLoginTest() = default;
-  ~LockScreenAppStateMdLoginTest() override = default;
+  LockScreenAppStateWebUiLockTest() = default;
+  ~LockScreenAppStateWebUiLockTest() override = default;
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    command_line->AppendSwitch(ash::switches::kShowMdLogin);
+    command_line->AppendSwitch(ash::switches::kShowWebUiLock);
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(LockScreenAppStateMdLoginTest);
+  DISALLOW_COPY_AND_ASSIGN(LockScreenAppStateWebUiLockTest);
 };
 
 }  // namespace
@@ -1226,7 +1209,7 @@ TEST_F(LockScreenAppStateTest, HandleActionWithLaunchFailure) {
   EXPECT_EQ(2, app_manager()->launch_count());
 }
 
-TEST_F(LockScreenAppStateTest, LaunchActionWhenStylusGetsRemoved) {
+TEST_F(LockScreenAppStateWebUiLockTest, LaunchActionWhenStylusGetsRemoved) {
   ui::test::DeviceDataManagerTestAPI devices_test_api;
   ASSERT_TRUE(InitializeNoteTakingApp(TrayActionState::kAvailable,
                                       true /* enable_app_launch */));
@@ -1251,7 +1234,7 @@ TEST_F(LockScreenAppStateTest, LaunchActionWhenStylusGetsRemoved) {
   EXPECT_EQ(1, app_manager()->launch_count());
 }
 
-TEST_F(LockScreenAppStateMdLoginTest, LaunchActionWhenStylusGetsRemoved) {
+TEST_F(LockScreenAppStateTest, LaunchActionWhenStylusGetsRemoved) {
   ui::test::DeviceDataManagerTestAPI devices_test_api;
   ASSERT_TRUE(InitializeNoteTakingApp(TrayActionState::kAvailable,
                                       true /* enable_app_launch */));
@@ -1274,7 +1257,7 @@ TEST_F(LockScreenAppStateMdLoginTest, LaunchActionWhenStylusGetsRemoved) {
   EXPECT_EQ(1, app_manager()->launch_count());
 }
 
-TEST_F(LockScreenAppStateTest,
+TEST_F(LockScreenAppStateWebUiLockTest,
        LaunchActionWhenStylusRemoved_ActionClosedBeforeAnimationDone) {
   ui::test::DeviceDataManagerTestAPI devices_test_api;
   ASSERT_TRUE(InitializeNoteTakingApp(TrayActionState::kAvailable,
@@ -1727,6 +1710,10 @@ TEST_F(LockScreenAppStateTest, ToastDialogShownOnFirstAppRun) {
 
   ASSERT_TRUE(InitializeNoteTakingApp(TrayActionState::kActive,
                                       true /* enable_app_launch */));
+  // Make sure that the app window is activated, because the toast dialog is
+  // shown only after lock screen app window activation.
+  app_window()->window()->OnNativeWindowActivated();
+  base::RunLoop().RunUntilIdle();
 
   ASSERT_TRUE(state_controller()->first_app_run_toast_manager()->widget());
   EXPECT_TRUE(
@@ -1735,6 +1722,11 @@ TEST_F(LockScreenAppStateTest, ToastDialogShownOnFirstAppRun) {
   // The toast should be shown again after app re-launch, as the toast widget
   // was not dismissed by the user.
   ASSERT_TRUE(RelaunchLockScreenApp());
+  // Make sure that the app window is activated, because the toast dialog is
+  // shown only after lock screen app window activation.
+  app_window()->window()->OnNativeWindowActivated();
+  base::RunLoop().RunUntilIdle();
+
   ASSERT_TRUE(state_controller()->first_app_run_toast_manager()->widget());
   EXPECT_TRUE(
       state_controller()->first_app_run_toast_manager()->widget()->IsVisible());
@@ -1745,5 +1737,10 @@ TEST_F(LockScreenAppStateTest, ToastDialogShownOnFirstAppRun) {
   // Relaunch the note taking app - this time the toast bubble should not have
   // been shown.
   ASSERT_TRUE(RelaunchLockScreenApp());
+  // Make sure that the app window is activated, because the toast dialog is
+  // shown only after lock screen app window activation.
+  app_window()->window()->OnNativeWindowActivated();
+  base::RunLoop().RunUntilIdle();
+
   EXPECT_FALSE(state_controller()->first_app_run_toast_manager()->widget());
 }

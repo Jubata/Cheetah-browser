@@ -143,6 +143,7 @@ void FrameInputHandlerImpl::SetEditableSelectionOffsets(int32_t start,
   }
   if (!render_frame_)
     return;
+  HandlingState handling_state(render_frame_, UpdateState::kIsSelectingRange);
   render_frame_->GetWebFrame()->SetEditableSelectionOffsets(start, end);
 }
 
@@ -377,18 +378,20 @@ void FrameInputHandlerImpl::MoveCaret(const gfx::Point& point) {
 }
 
 void FrameInputHandlerImpl::GetWidgetInputHandler(
-    mojom::WidgetInputHandlerAssociatedRequest interface_request) {
+    mojom::WidgetInputHandlerAssociatedRequest interface_request,
+    mojom::WidgetInputHandlerHostPtr host) {
   if (!main_thread_task_runner_->BelongsToCurrentThread()) {
     main_thread_task_runner_->PostTask(
         FROM_HERE, base::BindOnce(&FrameInputHandlerImpl::GetWidgetInputHandler,
-                                  weak_this_, std::move(interface_request)));
+                                  weak_this_, std::move(interface_request),
+                                  std::move(host)));
     return;
   }
   if (!render_frame_)
     return;
   render_frame_->GetRenderWidget()
       ->widget_input_handler_manager()
-      ->AddAssociatedInterface(std::move(interface_request));
+      ->AddAssociatedInterface(std::move(interface_request), std::move(host));
 }
 
 void FrameInputHandlerImpl::ExecuteCommandOnMainThread(

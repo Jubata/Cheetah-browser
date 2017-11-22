@@ -90,6 +90,8 @@
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_object.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
+using blink::mojom::CacheStorageError;
+
 namespace content {
 
 namespace {
@@ -1373,6 +1375,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, FetchWithSaveData) {
   content_browser_client.set_data_saver_enabled(true);
   ContentBrowserClient* old_client =
       SetBrowserClientForTesting(&content_browser_client);
+  shell()->web_contents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
   InstallTestHelper("/service_worker/fetch_in_install.js", SERVICE_WORKER_OK);
   SetBrowserClientForTesting(old_client);
 }
@@ -1386,6 +1389,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionOffMainThreadFetchTest,
   content_browser_client.set_data_saver_enabled(true);
   ContentBrowserClient* old_client =
       SetBrowserClientForTesting(&content_browser_client);
+  shell()->web_contents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
   InstallTestHelper("/service_worker/fetch_in_install.js", SERVICE_WORKER_OK);
   SetBrowserClientForTesting(old_client);
 }
@@ -1399,6 +1403,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
   content_browser_client.set_data_saver_enabled(true);
   ContentBrowserClient* old_client =
       SetBrowserClientForTesting(&content_browser_client);
+  shell()->web_contents()->GetRenderViewHost()->OnWebkitPreferencesChanged();
   InstallTestHelper("/service_worker/generated_sw.js", SERVICE_WORKER_OK);
   SetBrowserClientForTesting(old_client);
 }
@@ -2685,16 +2690,15 @@ class CacheStorageSideDataSizeChecker
                        continuation));
   }
 
-  void OnCacheStorageOpenCallback(
-      int* result,
-      const base::Closure& continuation,
-      std::unique_ptr<CacheStorageCacheHandle> cache_handle,
-      CacheStorageError error) {
-    ASSERT_EQ(CACHE_STORAGE_OK, error);
+  void OnCacheStorageOpenCallback(int* result,
+                                  const base::Closure& continuation,
+                                  CacheStorageCacheHandle cache_handle,
+                                  CacheStorageError error) {
+    ASSERT_EQ(CacheStorageError::kSuccess, error);
     std::unique_ptr<ServiceWorkerFetchRequest> scoped_request(
         new ServiceWorkerFetchRequest());
     scoped_request->url = url_;
-    CacheStorageCache* cache = cache_handle->value();
+    CacheStorageCache* cache = cache_handle.value();
     cache->Match(
         std::move(scoped_request), CacheStorageCacheQueryParams(),
         base::BindOnce(&self::OnCacheStorageCacheMatchCallback, this, result,
@@ -2704,11 +2708,11 @@ class CacheStorageSideDataSizeChecker
   void OnCacheStorageCacheMatchCallback(
       int* result,
       const base::Closure& continuation,
-      std::unique_ptr<CacheStorageCacheHandle> cache_handle,
+      CacheStorageCacheHandle cache_handle,
       CacheStorageError error,
       std::unique_ptr<ServiceWorkerResponse> response,
       std::unique_ptr<storage::BlobDataHandle> blob_data_handle) {
-    ASSERT_EQ(CACHE_STORAGE_OK, error);
+    ASSERT_EQ(CacheStorageError::kSuccess, error);
     blob_data_handle_ = std::move(blob_data_handle);
     blob_reader_ = blob_data_handle_->CreateReader(file_system_context_);
     const storage::BlobReader::Status status = blob_reader_->CalculateSize(

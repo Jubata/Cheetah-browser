@@ -98,6 +98,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
@@ -148,9 +149,6 @@ const char* kBeforeUnloadHTML =
 
 const char* kOpenNewBeforeUnloadPage =
     "w=window.open(); w.onbeforeunload=function(e){return 'foo'};";
-
-const base::FilePath::CharType* kBeforeUnloadFile =
-    FILE_PATH_LITERAL("beforeunload.html");
 
 const base::FilePath::CharType* kTitle1File = FILE_PATH_LITERAL("title1.html");
 const base::FilePath::CharType* kTitle2File = FILE_PATH_LITERAL("title2.html");
@@ -850,46 +848,6 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, SingleBeforeUnloadAfterRedirect) {
   SetBrowserClientForTesting(old_client);
 }
 
-// Test for crbug.com/80401.  Canceling a before unload dialog should reset
-// the URL to the previous page's URL.
-IN_PROC_BROWSER_TEST_F(BrowserTest, CancelBeforeUnloadResetsURL) {
-  GURL url(ui_test_utils::GetTestUrl(base::FilePath(
-      base::FilePath::kCurrentDirectory), base::FilePath(kBeforeUnloadFile)));
-  ui_test_utils::NavigateToURL(browser(), url);
-  WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
-  content::PrepContentsForBeforeUnloadTest(contents);
-
-  // Navigate to a page that triggers a cross-site transition.
-  ASSERT_TRUE(embedded_test_server()->Start());
-  GURL url2(embedded_test_server()->GetURL("/title1.html"));
-  browser()->OpenURL(OpenURLParams(url2, Referrer(),
-                                   WindowOpenDisposition::CURRENT_TAB,
-                                   ui::PAGE_TRANSITION_TYPED, false));
-
-  content::WindowedNotificationObserver host_destroyed_observer(
-      content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
-      content::NotificationService::AllSources());
-
-  // Cancel the dialog.
-  JavaScriptAppModalDialog* alert = ui_test_utils::WaitForAppModalDialog();
-  alert->CloseModalDialog();
-  EXPECT_FALSE(contents->IsLoading());
-
-  // Verify there are no pending history items after the dialog is cancelled.
-  // (see crbug.com/93858)
-  NavigationEntry* entry = contents->GetController().GetPendingEntry();
-  EXPECT_EQ(NULL, entry);
-
-  // Wait for the ShouldClose_ACK to arrive.  We can detect it by waiting for
-  // the pending RVH to be destroyed.
-  host_destroyed_observer.Wait();
-  EXPECT_EQ(url, browser()->toolbar_model()->GetURL());
-
-  // Clear the beforeunload handler so the test can easily exit.
-  contents->GetMainFrame()->ExecuteJavaScriptForTests(
-      ASCIIToUTF16("onbeforeunload=null;"));
-}
-
 // Test for crbug.com/11647.  A page closed with window.close() should not have
 // two beforeunload dialogs shown.
 // http://crbug.com/410891
@@ -1289,7 +1247,6 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_TabClosingWhenRemovingExtension) {
       browser()->profile())->extension_service();
   service->UninstallExtension(GetExtension()->id(),
                               extensions::UNINSTALL_REASON_FOR_TESTING,
-                              base::Bind(&base::DoNothing),
                               NULL);
   EXPECT_EQ(1, observer.closing_count());
 
@@ -1512,10 +1469,11 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OpenAppWindowLikeNtp) {
       WindowOpenDisposition::NEW_WINDOW, extensions::SOURCE_TEST));
   ASSERT_TRUE(app_window);
 
-  // Apps launched in a window from the NTP have an extensions tab helper but
-  // do not have extension_app set in it.
+  // Apps launched in a window from the NTP have an extensions tab helper and
+  // an extension_app set in it.
   ASSERT_TRUE(extensions::TabHelper::FromWebContents(app_window));
-  EXPECT_FALSE(
+  EXPECT_EQ(
+      extension_app,
       extensions::TabHelper::FromWebContents(app_window)->extension_app());
   EXPECT_EQ(extensions::AppLaunchInfo::GetFullLaunchURL(extension_app),
             app_window->GetURL());
@@ -2046,6 +2004,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest2, NoTabsInPopups) {
 IN_PROC_BROWSER_TEST_F(BrowserTest, WindowOpenClose) {
   base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisablePopupBlocking);
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kDisableBackgroundTimerThrottling);
   GURL url = ui_test_utils::GetTestUrl(
       base::FilePath(), base::FilePath().AppendASCII("window.close.html"));
 
@@ -2058,18 +2018,15 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, WindowOpenClose) {
 
 // TODO(linux_aura) http://crbug.com/163931
 // Mac disabled: http://crbug.com/169820
-#if !defined(OS_MACOSX) && \
-    !(defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA))
+#if !defined(OS_MACOSX) && !(defined(OS_LINUX) && !defined(OS_CHROMEOS))
 IN_PROC_BROWSER_TEST_F(BrowserTest, FullscreenBookmarkBar) {
   chrome::ToggleBookmarkBar(browser());
   EXPECT_EQ(BookmarkBar::SHOW, browser()->bookmark_bar_state());
   chrome::ToggleFullscreenMode(browser());
   EXPECT_TRUE(browser()->window()->IsFullscreen());
-#if defined(OS_MACOSX)
-  EXPECT_EQ(BookmarkBar::SHOW, browser()->bookmark_bar_state());
-#elif defined(OS_CHROMEOS)
-  // TODO(jamescook): If immersive fullscreen is disabled by default, test
-  // for BookmarkBar::HIDDEN.
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  // Mac and Chrome OS both have an "immersive style" fullscreen where the
+  // bookmark bar is visible when the top views slide down.
   EXPECT_EQ(BookmarkBar::SHOW, browser()->bookmark_bar_state());
 #else
   EXPECT_EQ(BookmarkBar::HIDDEN, browser()->bookmark_bar_state());

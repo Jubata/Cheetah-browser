@@ -70,7 +70,6 @@ class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
   bool AtEnd() const { return !text_state_.PositionNode() || should_stop_; }
   void Advance();
   bool IsInsideAtomicInlineElement() const;
-  bool IsInTextSecurityMode() const;
 
   EphemeralRangeTemplate<Strategy> Range() const;
   Node* GetNode() const;
@@ -186,6 +185,11 @@ class CORE_TEMPLATE_CLASS_EXPORT TextIteratorAlgorithm {
 
   bool DoesNotBreakAtReplacedElement() const {
     return behavior_.DoesNotBreakAtReplacedElement();
+  }
+
+  // Clipboard should respect user-select style attribute
+  bool SkipsUnselectableContent() const {
+    return behavior_.SkipsUnselectableContent();
   }
 
   bool ForInnerText() const { return behavior_.ForInnerText(); }

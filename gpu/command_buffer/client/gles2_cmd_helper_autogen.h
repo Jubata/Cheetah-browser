@@ -3298,6 +3298,37 @@ void EndRasterCHROMIUM() {
   }
 }
 
+void CreateTransferCacheEntryCHROMIUM(GLuint64 handle_id,
+                                      GLuint handle_shm_id,
+                                      GLuint handle_shm_offset,
+                                      GLuint type,
+                                      GLuint data_shm_id,
+                                      GLuint data_shm_offset,
+                                      GLuint data_size) {
+  gles2::cmds::CreateTransferCacheEntryCHROMIUM* c =
+      GetCmdSpace<gles2::cmds::CreateTransferCacheEntryCHROMIUM>();
+  if (c) {
+    c->Init(handle_id, handle_shm_id, handle_shm_offset, type, data_shm_id,
+            data_shm_offset, data_size);
+  }
+}
+
+void DeleteTransferCacheEntryCHROMIUM(GLuint64 handle_id) {
+  gles2::cmds::DeleteTransferCacheEntryCHROMIUM* c =
+      GetCmdSpace<gles2::cmds::DeleteTransferCacheEntryCHROMIUM>();
+  if (c) {
+    c->Init(handle_id);
+  }
+}
+
+void UnlockTransferCacheEntryCHROMIUM(GLuint64 handle_id) {
+  gles2::cmds::UnlockTransferCacheEntryCHROMIUM* c =
+      GetCmdSpace<gles2::cmds::UnlockTransferCacheEntryCHROMIUM>();
+  if (c) {
+    c->Init(handle_id);
+  }
+}
+
 void TexStorage2DImageCHROMIUM(GLenum target,
                                GLenum internalFormat,
                                GLsizei width,
@@ -3317,6 +3348,19 @@ void SetColorSpaceMetadataCHROMIUM(GLuint texture_id,
       GetCmdSpace<gles2::cmds::SetColorSpaceMetadataCHROMIUM>();
   if (c) {
     c->Init(texture_id, shm_id, shm_offset, color_space_size);
+  }
+}
+
+void WindowRectanglesEXTImmediate(GLenum mode,
+                                  GLsizei count,
+                                  const GLint* box) {
+  const uint32_t size =
+      gles2::cmds::WindowRectanglesEXTImmediate::ComputeSize(count);
+  gles2::cmds::WindowRectanglesEXTImmediate* c =
+      GetImmediateCmdSpaceTotalSize<gles2::cmds::WindowRectanglesEXTImmediate>(
+          size);
+  if (c) {
+    c->Init(mode, count, box);
   }
 }
 

@@ -13,7 +13,6 @@
 #include "platform/Length.h"
 
 namespace blink {
-
 namespace {
 
 static CSSIdentifierValue* ConsumeBorderImageRepeatKeyword(
@@ -124,7 +123,7 @@ CSSValue* CSSPropertyBorderImageUtils::ConsumeBorderImageSlice(
   CSSPropertyParserHelpers::Complete4Sides(slices);
   if (default_fill == DefaultFill::kFill)
     fill = true;
-  return CSSBorderImageSliceValue::Create(
+  return cssvalue::CSSBorderImageSliceValue::Create(
       CSSQuadValue::Create(slices[0], slices[1], slices[2], slices[3],
                            CSSQuadValue::kSerializeAsQuad),
       fill);

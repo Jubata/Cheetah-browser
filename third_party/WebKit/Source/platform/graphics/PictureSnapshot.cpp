@@ -41,8 +41,8 @@
 #include "platform/image-decoders/ImageFrame.h"
 #include "platform/image-decoders/SegmentReader.h"
 #include "platform/image-encoders/ImageEncoder.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/HexNumber.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/Base64.h"
 #include "platform/wtf/text/TextEncoding.h"
 #include "third_party/skia/include/core/SkData.h"
@@ -98,7 +98,7 @@ scoped_refptr<PictureSnapshot> PictureSnapshot::Load(
     pictures.push_back(std::move(picture));
   }
   if (tiles.size() == 1)
-    return WTF::AdoptRef(new PictureSnapshot(std::move(pictures[0])));
+    return base::AdoptRef(new PictureSnapshot(std::move(pictures[0])));
   SkPictureRecorder recorder;
   SkCanvas* canvas = recorder.beginRecording(union_rect.Width(),
                                              union_rect.Height(), nullptr, 0);
@@ -109,7 +109,7 @@ scoped_refptr<PictureSnapshot> PictureSnapshot::Load(
     pictures[i]->playback(canvas, nullptr);
     canvas->restore();
   }
-  return WTF::AdoptRef(
+  return base::AdoptRef(
       new PictureSnapshot(recorder.finishRecordingAsPicture()));
 }
 

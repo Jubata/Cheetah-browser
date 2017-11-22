@@ -15,6 +15,7 @@
 
 namespace metrics {
 class UkmBrowserTest;
+class UkmEGTestHelper;
 }
 
 namespace ukm {
@@ -51,8 +52,11 @@ class UkmRecorderImpl : public UkmRecorder {
 
   const std::vector<mojom::UkmEntryPtr>& entries() const { return entries_; }
 
+  virtual bool ShouldRestrictToWhitelistedSourceIds() const;
+
  private:
   friend ::metrics::UkmBrowserTest;
+  friend ::metrics::UkmEGTestHelper;
   friend ::ukm::debug::DebugPage;
 
   // UkmRecorder:

@@ -119,9 +119,6 @@ const char* GetNameForConnectionTypeInternal(
       return "None";
     case NetworkChangeNotifier::CONNECTION_BLUETOOTH:
       return "Bluetooth";
-    default:
-      NOTREACHED();
-      break;
   }
   return "";
 }
@@ -407,6 +404,10 @@ NetworkQualityEstimatorParams::NetworkQualityEstimatorParams(
               params_,
               "upper_bound_http_rtt_transport_rtt_multiplier",
               -1)),
+      http_rtt_transport_rtt_min_count_(
+          GetValueForVariationParam(params_,
+                                    "http_rtt_transport_rtt_min_count",
+                                    5)),
       increase_in_transport_rtt_logging_interval_(
           base::TimeDelta::FromMillisecondsD(
               GetDoubleValueForVariationParamWithDefaultValue(
@@ -436,6 +437,11 @@ NetworkQualityEstimatorParams::NetworkQualityEstimatorParams(
               params_,
               "add_default_platform_observations",
               "true") == "true"),
+      socket_watchers_min_notification_interval_(
+          base::TimeDelta::FromMilliseconds(GetValueForVariationParam(
+              params_,
+              "socket_watchers_min_notification_interval_msec",
+              200))),
       use_small_responses_(false) {
   DCHECK_LE(0.0, correlation_uma_logging_probability_);
   DCHECK_GE(1.0, correlation_uma_logging_probability_);

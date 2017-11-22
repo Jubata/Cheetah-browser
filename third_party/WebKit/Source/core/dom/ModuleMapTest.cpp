@@ -13,7 +13,7 @@
 #include "core/testing/DummyModulator.h"
 #include "core/testing/DummyPageHolder.h"
 #include "platform/heap/Handle.h"
-#include "platform/testing/TestingPlatformSupport.h"
+#include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "public/platform/Platform.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -175,7 +175,8 @@ TEST_F(ModuleMapTest, sequentialRequests) {
   platform->AdvanceClockSeconds(1.);  // For non-zero DocumentParserTimings
 
   KURL url(NullURL(), "https://example.com/foo.js");
-  ModuleScriptFetchRequest module_request(url, ScriptFetchOptions());
+  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
+                                          ScriptFetchOptions());
 
   // First request
   TestSingleModuleClient* client = new TestSingleModuleClient;
@@ -217,7 +218,8 @@ TEST_F(ModuleMapTest, concurrentRequestsShouldJoin) {
   platform->AdvanceClockSeconds(1.);  // For non-zero DocumentParserTimings
 
   KURL url(NullURL(), "https://example.com/foo.js");
-  ModuleScriptFetchRequest module_request(url, ScriptFetchOptions());
+  ModuleScriptFetchRequest module_request(url, kReferrerPolicyDefault,
+                                          ScriptFetchOptions());
 
   // First request
   TestSingleModuleClient* client = new TestSingleModuleClient;

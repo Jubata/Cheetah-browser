@@ -14,11 +14,6 @@
 // The time delay before non-initial button images are loaded.
 extern const int64_t kNonInitialImageAdditionDelayNanosec;
 
-// Notification that the tools menu has been requested to be shown.
-extern NSString* const kMenuWillShowNotification;
-// Notification that the tools menu is closed.
-extern NSString* const kMenuWillHideNotification;
-
 // Accessibility identifier of the toolbar view.
 extern NSString* const kToolbarIdentifier;
 // Accessibility identifier of the incognito toolbar view.
@@ -32,9 +27,6 @@ extern NSString* const kToolbarShareButtonIdentifier;
 
 // The maximum number to display in the tab switcher button.
 extern NSInteger const kStackButtonMaxTabCount;
-
-// Animation key used for stack view transition animations
-extern NSString* const kToolbarTransitionAnimationKey;
 
 // Font sizes for the button containing the tab count
 extern const NSInteger kFontSizeFewerThanTenTabs;

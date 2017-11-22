@@ -11,6 +11,7 @@
 #include "base/ios/ios_util.h"
 #include "base/mac/foundation_util.h"
 #include "base/path_service.h"
+#include "base/scoped_observer.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #import "base/test/ios/wait_util.h"
@@ -21,7 +22,10 @@
 #import "ios/web/navigation/navigation_manager_impl.h"
 #import "ios/web/public/crw_navigation_item_storage.h"
 #import "ios/web/public/crw_session_storage.h"
+#import "ios/web/public/download/download_controller.h"
+#import "ios/web/public/download/download_task.h"
 #include "ios/web/public/referrer.h"
+#include "ios/web/public/test/fakes/fake_download_controller_delegate.h"
 #import "ios/web/public/test/fakes/test_native_content.h"
 #import "ios/web/public/test/fakes/test_native_content_provider.h"
 #import "ios/web/public/test/fakes/test_web_client.h"
@@ -29,14 +33,14 @@
 #include "ios/web/public/test/fakes/test_web_state_observer.h"
 #import "ios/web/public/test/fakes/test_web_view_content_view.h"
 #import "ios/web/public/test/web_view_content_test_util.h"
-#import "ios/web/public/web_state/crw_web_controller_observer.h"
 #import "ios/web/public/web_state/ui/crw_content_view.h"
 #import "ios/web/public/web_state/ui/crw_native_content.h"
 #import "ios/web/public/web_state/ui/crw_native_content_provider.h"
 #import "ios/web/public/web_state/ui/crw_web_view_content_view.h"
 #include "ios/web/public/web_state/url_verification_constants.h"
 #include "ios/web/public/web_state/web_state_observer.h"
-#import "ios/web/test/fakes/crw_test_back_forward_list.h"
+#import "ios/web/test/fakes/crw_fake_back_forward_list.h"
+#import "ios/web/test/fakes/crw_fake_wk_navigation_response.h"
 #import "ios/web/test/web_test_with_web_controller.h"
 #import "ios/web/test/wk_web_view_crash_utils.h"
 #import "ios/web/web_state/ui/crw_web_controller_container_view.h"
@@ -59,22 +63,11 @@
 #error "This file requires ARC support."
 #endif
 
+using testing::WaitUntilConditionOrTimeout;
+using testing::kWaitForPageLoadTimeout;
+
 @interface CRWWebController (PrivateAPI)
 @property(nonatomic, readwrite) web::PageDisplayState pageDisplayState;
-@end
-
-@interface CountingObserver : NSObject<CRWWebControllerObserver>
-
-@property(nonatomic, readonly) int pageLoadedCount;
-@end
-
-@implementation CountingObserver
-@synthesize pageLoadedCount = _pageLoadedCount;
-
-- (void)pageLoaded:(CRWWebController*)webController {
-  ++_pageLoadedCount;
-}
-
 @end
 
 namespace web {
@@ -86,12 +79,7 @@ const char kInvalidURL[] = "http://%3";
 const char kTestURLString[] = "http://www.google.com/";
 const char kTestAppSpecificURL[] = "testwebui://test/";
 
-// Returns true if the current device is a large iPhone (6 or 6+).
-bool IsIPhone6Or6Plus() {
-  UIUserInterfaceIdiom idiom = [[UIDevice currentDevice] userInterfaceIdiom];
-  return (idiom == UIUserInterfaceIdiomPhone &&
-          CGRectGetHeight([[UIScreen mainScreen] nativeBounds]) >= 1334.0);
-}
+const char kTestMimeType[] = "application/vnd.test";
 
 // Returns HTML for an optionally zoomable test page with |zoom_state|.
 enum PageScalabilityType {
@@ -167,7 +155,7 @@ class CRWWebControllerTest : public WebTestWithWebController {
     }
 #endif
 
-    mock_wk_list_ = [[CRWTestBackForwardList alloc] init];
+    mock_wk_list_ = [[CRWFakeBackForwardList alloc] init];
     OCMStub([result backForwardList]).andReturn(mock_wk_list_);
     [[[result stub] andReturn:[NSURL URLWithString:@(kTestURLString)]] URL];
     [[result stub] setNavigationDelegate:[OCMArg checkWithBlock:^(id delegate) {
@@ -188,7 +176,7 @@ class CRWWebControllerTest : public WebTestWithWebController {
   __weak id<WKNavigationDelegate> navigation_delegate_;
   UIScrollView* scroll_view_;
   id mock_web_view_;
-  CRWTestBackForwardList* mock_wk_list_;
+  CRWFakeBackForwardList* mock_wk_list_;
 };
 
 // Tests that AllowCertificateError is called with correct arguments if
@@ -480,70 +468,8 @@ TEST_F(CRWWebControllerPageScrollStateTest,
                         final_zoom_state.minimum_zoom_scale());
 };
 
-// TODO(crbug/493427): Flaky on the bots.
-TEST_F(CRWWebControllerPageScrollStateTest, DISABLED_AtTop) {
-  // This test fails on iPhone 6/6+; skip until it's fixed. crbug.com/453105
-  if (IsIPhone6Or6Plus())
-    return;
-
-  PageZoomState zoom_state = PageZoomState(1.0, 5.0, 1.0);
-  LoadHtml(GetHTMLForZoomState(zoom_state, PAGE_SCALABILITY_ENABLED));
-  WaitForZoomRendering(web_controller(), zoom_state);
-  ASSERT_TRUE(web_controller().atTop);
-
-  NavigationManager* nagivation_manager = web_state()->GetNavigationManager();
-  nagivation_manager->GetLastCommittedItem()->SetPageDisplayState(
-      CreateTestPageDisplayState(CGPointMake(0.0, 30.0),  // scroll offset
-                                 5.0,                     // relative zoom scale
-                                 1.0,    // original minimum zoom scale
-                                 5.0,    // original maximum zoom scale
-                                 1.0));  // original zoom scale
-  [web_controller() restoreStateFromHistory];
-
-  // |-restoreStateFromHistory| is async; wait for its completion.
-  base::test::ios::WaitUntilCondition(^bool() {
-    return web_controller().pageDisplayState.scroll_state().offset_y() == 30.0;
-  });
-
-  ASSERT_FALSE(web_controller().atTop);
-};
-
 // Test fixture for testing visible security state.
 typedef WebTestWithWebState CRWWebStateSecurityStateTest;
-
-// Tests that OnPasswordInputShownOnHttp updates the SSLStatus to indicate that
-// a password field has been displayed on an HTTP page.
-TEST_F(CRWWebStateSecurityStateTest, HttpPassword) {
-  LoadHtml(@"<html><body></body></html>", GURL("http://chromium.test"));
-  NavigationManager* nav_manager = web_state()->GetNavigationManager();
-  EXPECT_FALSE(nav_manager->GetLastCommittedItem()->GetSSL().content_status &
-               SSLStatus::DISPLAYED_PASSWORD_FIELD_ON_HTTP);
-  TestWebStateObserver observer(web_state());
-  ASSERT_FALSE(observer.did_change_visible_security_state_info());
-  web_state()->OnPasswordInputShownOnHttp();
-  EXPECT_TRUE(nav_manager->GetLastCommittedItem()->GetSSL().content_status &
-              SSLStatus::DISPLAYED_PASSWORD_FIELD_ON_HTTP);
-  ASSERT_TRUE(observer.did_change_visible_security_state_info());
-  EXPECT_EQ(web_state(),
-            observer.did_change_visible_security_state_info()->web_state);
-}
-
-// Tests that OnCreditCardInputShownOnHttp updates the SSLStatus to indicate
-// that a credit card field has been displayed on an HTTP page.
-TEST_F(CRWWebStateSecurityStateTest, HttpCreditCard) {
-  LoadHtml(@"<html><body></body></html>", GURL("http://chromium.test"));
-  NavigationManager* nav_manager = web_state()->GetNavigationManager();
-  EXPECT_FALSE(nav_manager->GetLastCommittedItem()->GetSSL().content_status &
-               SSLStatus::DISPLAYED_CREDIT_CARD_FIELD_ON_HTTP);
-  TestWebStateObserver observer(web_state());
-  ASSERT_FALSE(observer.did_change_visible_security_state_info());
-  web_state()->OnCreditCardInputShownOnHttp();
-  EXPECT_TRUE(nav_manager->GetLastCommittedItem()->GetSSL().content_status &
-              SSLStatus::DISPLAYED_CREDIT_CARD_FIELD_ON_HTTP);
-  ASSERT_TRUE(observer.did_change_visible_security_state_info());
-  EXPECT_EQ(web_state(),
-            observer.did_change_visible_security_state_info()->web_state);
-}
 
 // Tests that loading HTTP page updates the SSLStatus.
 TEST_F(CRWWebStateSecurityStateTest, LoadHttpPage) {
@@ -583,8 +509,8 @@ TEST_F(CRWWebControllerFormActivityTest, KeyUpEvent) {
   ExecuteJavaScript(@"document.dispatchEvent(new KeyboardEvent('keyup'));");
   TestFormActivityInfo* info = observer.form_activity_info();
   ASSERT_TRUE(info);
-  EXPECT_EQ("keyup", info->type);
-  EXPECT_FALSE(info->input_missing);
+  EXPECT_EQ("keyup", info->form_activity.type);
+  EXPECT_FALSE(info->form_activity.input_missing);
 }
 
 // Real WKWebView is required for CRWWebControllerJSExecutionTest.
@@ -610,6 +536,88 @@ TEST_F(CRWWebControllerJSExecutionTest, WindowIdMissmatch) {
   // Script is not evaluated because of windowID mismatch.
   ExecuteJavaScript(@"window.test2 = '2';");
   EXPECT_FALSE(ExecuteJavaScript(@"window.test2"));
+}
+
+// Test fixture to test that DownloadControllerDelegate::OnDownloadCreated
+// callback is trigerred if CRWWebController can not display the response.
+class CRWWebControllerDownloadTest : public CRWWebControllerTest {
+ protected:
+  CRWWebControllerDownloadTest() : delegate_(download_controller()) {}
+
+  // Calls webView:decidePolicyForNavigationResponse:decisionHandler: callback
+  // and waits for decision handler call. Returns false if decision handler call
+  // times out.
+  bool CallDecidePolicyForNavigationResponseWithResponse(
+      NSURLResponse* response) WARN_UNUSED_RESULT {
+    CRWFakeWKNavigationResponse* navigation_response =
+        [[CRWFakeWKNavigationResponse alloc] init];
+    navigation_response.response = response;
+
+    // Wait for decidePolicyForNavigationResponse: callback.
+    __block bool callback_called = false;
+    [navigation_delegate_ webView:mock_web_view_
+        decidePolicyForNavigationResponse:navigation_response
+                          decisionHandler:^(WKNavigationResponsePolicy policy) {
+                            callback_called = true;
+                          }];
+    return WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+      return callback_called;
+    });
+  }
+
+  DownloadController* download_controller() {
+    return DownloadController::FromBrowserState(GetBrowserState());
+  }
+
+  FakeDownloadControllerDelegate delegate_;
+};
+
+// Tests that webView:decidePolicyForNavigationResponse:decisionHandler: creates
+// the DownloadTask for NSURLResponse.
+TEST_F(CRWWebControllerDownloadTest, CreationWithNSURLResponse) {
+  // Simulate download response.
+  int64_t content_length = 10;
+  NSURLResponse* response =
+      [[NSURLResponse alloc] initWithURL:[NSURL URLWithString:@(kTestURLString)]
+                                MIMEType:@(kTestMimeType)
+                   expectedContentLength:content_length
+                        textEncodingName:nil];
+  ASSERT_TRUE(CallDecidePolicyForNavigationResponseWithResponse(response));
+
+  // Verify that download task was created.
+  ASSERT_EQ(1U, delegate_.alive_download_tasks().size());
+  DownloadTask* task = delegate_.alive_download_tasks()[0].second.get();
+  ASSERT_TRUE(task);
+  EXPECT_TRUE(task->GetIndentifier());
+  EXPECT_EQ(kTestURLString, task->GetOriginalUrl());
+  EXPECT_EQ(content_length, task->GetTotalBytes());
+  EXPECT_EQ("", task->GetContentDisposition());
+  EXPECT_EQ(kTestMimeType, task->GetMimeType());
+}
+
+// Tests that webView:decidePolicyForNavigationResponse:decisionHandler: creates
+// the DownloadTask for NSHTTPURLResponse.
+TEST_F(CRWWebControllerDownloadTest, CreationWithNSHTTPURLResponse) {
+  // Simulate download response.
+  const char kContentDisposition[] = "attachment; filename=download.test";
+  NSURLResponse* response = [[NSHTTPURLResponse alloc]
+       initWithURL:[NSURL URLWithString:@(kTestURLString)]
+        statusCode:200
+       HTTPVersion:nil
+      headerFields:@{
+        @"content-disposition" : @(kContentDisposition),
+      }];
+  ASSERT_TRUE(CallDecidePolicyForNavigationResponseWithResponse(response));
+
+  // Verify that download task was created.
+  ASSERT_EQ(1U, delegate_.alive_download_tasks().size());
+  DownloadTask* task = delegate_.alive_download_tasks()[0].second.get();
+  ASSERT_TRUE(task);
+  EXPECT_TRUE(task->GetIndentifier());
+  EXPECT_EQ(kTestURLString, task->GetOriginalUrl());
+  EXPECT_EQ(-1, task->GetTotalBytes());
+  EXPECT_EQ(kContentDisposition, task->GetContentDisposition());
+  EXPECT_EQ("", task->GetMimeType());
 }
 
 // Tests |currentURLWithTrustLevel:| method.
@@ -659,10 +667,9 @@ class CRWWebControllerNativeContentTest : public WebTestWithWebController {
     // for navigation to finish before asserting.
     if (GetWebClient()->IsSlimNavigationManagerEnabled()) {
       TestWebStateObserver* observer_ptr = &observer;
-      ASSERT_TRUE(testing::WaitUntilConditionOrTimeout(
-          testing::kWaitForPageLoadTimeout, ^{
-            return observer_ptr->did_finish_navigation_info() != nullptr;
-          }));
+      ASSERT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+        return observer_ptr->did_finish_navigation_info() != nullptr;
+      }));
     }
   }
 
@@ -713,27 +720,6 @@ TEST_F(CRWWebControllerNativeContentTest, NativeContentVirtualURL) {
   EXPECT_EQ(navigationManager.GetLastCommittedItem()->GetVirtualURL(),
             virtual_url);
 }
-
-// A separate test class, as none of the |CRWUIWebViewWebControllerTest| setup
-// is needed;
-typedef WebTestWithWebController CRWWebControllerObserversTest;
-
-// Tests that CRWWebControllerObservers are called.
-TEST_F(CRWWebControllerObserversTest, Observers) {
-  CountingObserver* observer = [[CountingObserver alloc] init];
-  EXPECT_FALSE([web_controller() hasObservers]);
-  [web_controller() addObserver:observer];
-  EXPECT_TRUE([web_controller() hasObservers]);
-
-  EXPECT_EQ(0, [observer pageLoadedCount]);
-  [web_controller() webStateImpl]->OnPageLoaded(GURL("http://test"), false);
-  EXPECT_EQ(0, [observer pageLoadedCount]);
-  [web_controller() webStateImpl]->OnPageLoaded(GURL("http://test"), true);
-  EXPECT_EQ(1, [observer pageLoadedCount]);
-
-  [web_controller() removeObserver:observer];
-  EXPECT_FALSE([web_controller() hasObservers]);
-};
 
 // Test fixture for window.open tests.
 class WindowOpenByDomTest : public WebTestWithWebController {
@@ -829,17 +815,23 @@ TEST_F(CRWWebControllerTitleTest, TitleChange) {
   // Observes and waits for TitleWasSet call.
   class TitleObserver : public WebStateObserver {
    public:
-    explicit TitleObserver(WebState* web_state) : WebStateObserver(web_state) {}
+    TitleObserver() = default;
+
     // Returns number of times |TitleWasSet| was called.
     int title_change_count() { return title_change_count_; }
     // WebStateObserver overrides:
     void TitleWasSet(WebState* web_state) override { title_change_count_++; }
+    void WebStateDestroyed(WebState* web_state) override { NOTREACHED(); }
 
    private:
     int title_change_count_ = 0;
+
+    DISALLOW_COPY_AND_ASSIGN(TitleObserver);
   };
 
-  TitleObserver observer(web_state());
+  TitleObserver observer;
+  ScopedObserver<WebState, WebStateObserver> scoped_observer(&observer);
+  scoped_observer.Add(web_state());
   ASSERT_EQ(0, observer.title_change_count());
 
   // Expect TitleWasSet callback after the page is loaded.

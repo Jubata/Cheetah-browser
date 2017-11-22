@@ -12,7 +12,6 @@
 #include "chrome/browser/chromeos/arc/arc_migration_constants.h"
 #include "chrome/browser/chromeos/login/screens/encryption_migration_mode.h"
 #include "chrome/browser/chromeos/login/users/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/users/scoped_user_manager_enabler.h"
 #include "chrome/browser/ui/webui/chromeos/login/encryption_migration_screen_handler.h"
 #include "chromeos/cryptohome/homedir_methods.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
@@ -24,6 +23,7 @@
 #include "chromeos/login/auth/key.h"
 #include "chromeos/login/auth/user_context.h"
 #include "components/signin/core/account_id/account_id.h"
+#include "components/user_manager/scoped_user_manager.h"
 #include "components/user_manager/user_names.h"
 #include "content/public/test/test_web_ui.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -119,7 +119,8 @@ class EncryptionMigrationScreenHandlerTest : public testing::Test {
     // Set up a MockUserManager.
     MockUserManager* mock_user_manager = new NiceMock<MockUserManager>();
     scoped_user_manager_enabler_ =
-        base::MakeUnique<ScopedUserManagerEnabler>(mock_user_manager);
+        std::make_unique<user_manager::ScopedUserManager>(
+            base::WrapUnique(mock_user_manager));
 
     // This is used by EncryptionMigrationScreenHandler to mount the existing
     // cryptohome. Ownership of mock_homedir_methods_ is transferred to
@@ -205,10 +206,10 @@ class EncryptionMigrationScreenHandlerTest : public testing::Test {
                            _ /* 1: minimal_migration*/, _ /* 2: callback */))
         .WillOnce(WithArgs<1, 2>(
             Invoke([expect_minimal_migration](
-                       bool minimal_migration,
+                       const cryptohome::MigrateToDircryptoRequest request,
                        const cryptohome::HomedirMethods::DBusResultCallback&
                            callback) {
-              EXPECT_EQ(expect_minimal_migration, minimal_migration);
+              EXPECT_EQ(expect_minimal_migration, request.minimal_migration());
               // Call the callback immediately - actual result is sent later
               // using DircryptoMigrationProgressHandler.
               callback.Run(true /* success */);
@@ -219,7 +220,7 @@ class EncryptionMigrationScreenHandlerTest : public testing::Test {
   // Must be the first member.
   base::test::ScopedTaskEnvironment scoped_task_environment_;
 
-  std::unique_ptr<ScopedUserManagerEnabler> scoped_user_manager_enabler_;
+  std::unique_ptr<user_manager::ScopedUserManager> scoped_user_manager_enabler_;
   cryptohome::MockHomedirMethods* mock_homedir_methods_ = nullptr;
   FakeCryptohomeClient* fake_cryptohome_client_ = nullptr;
   cryptohome::MockAsyncMethodCaller* mock_async_method_caller_ = nullptr;
@@ -276,7 +277,7 @@ TEST_F(EncryptionMigrationScreenHandlerTest, MinimalMigration) {
 
   EXPECT_TRUE(
       encryption_migration_screen_handler_->fake_wake_lock()->HasWakeLock());
-  fake_cryptohome_client_->dircrypto_migration_progress_handler().Run(
+  fake_cryptohome_client_->NotifyDircryptoMigrationProgress(
       cryptohome::DircryptoMigrationStatus::DIRCRYPTO_MIGRATION_SUCCESS,
       0 /* current */, 0 /* total */);
 
@@ -299,7 +300,7 @@ TEST_F(EncryptionMigrationScreenHandlerTest, ResumeMinimalMigration) {
 
   Mock::VerifyAndClearExpectations(mock_homedir_methods_);
 
-  fake_cryptohome_client_->dircrypto_migration_progress_handler().Run(
+  fake_cryptohome_client_->NotifyDircryptoMigrationProgress(
       cryptohome::DircryptoMigrationStatus::DIRCRYPTO_MIGRATION_SUCCESS,
       0 /* current */, 0 /* total */);
 
@@ -322,7 +323,7 @@ TEST_F(EncryptionMigrationScreenHandlerTest, MinimalMigrationSlow) {
 
   encryption_migration_screen_handler_->testing_tick_clock()->Advance(
       base::TimeDelta::FromMinutes(1));
-  fake_cryptohome_client_->dircrypto_migration_progress_handler().Run(
+  fake_cryptohome_client_->NotifyDircryptoMigrationProgress(
       cryptohome::DircryptoMigrationStatus::DIRCRYPTO_MIGRATION_SUCCESS,
       0 /* current */, 0 /* total */);
 
@@ -347,7 +348,7 @@ TEST_F(EncryptionMigrationScreenHandlerTest, MinimalMigrationFails) {
                   _ /* callback */));
   encryption_migration_screen_handler_->testing_tick_clock()->Advance(
       base::TimeDelta::FromMinutes(1));
-  fake_cryptohome_client_->dircrypto_migration_progress_handler().Run(
+  fake_cryptohome_client_->NotifyDircryptoMigrationProgress(
       cryptohome::DircryptoMigrationStatus::DIRCRYPTO_MIGRATION_FAILED,
       0 /* current */, 0 /* total */);
 

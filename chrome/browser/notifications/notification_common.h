@@ -33,8 +33,10 @@ class NotificationCommon {
     PERSISTENT = 0,
     NON_PERSISTENT = 1,
     EXTENSION = 2,
-    PRODUCT_EOL = 3,
-    DOWNLOAD = 4,
+    DOWNLOAD = 3,
+    TRANSIENT = 4,  // A generic type for any notification that does not outlive
+                    // the browser instance and is controlled by a
+                    // NotificationDelegate.
     TYPE_MAX = DOWNLOAD,
   };
 
@@ -51,10 +53,6 @@ class NotificationCommon {
   // is updated.
   static void OpenNotificationSettings(
       content::BrowserContext* browser_context);
-
-  // Whether a web notification should be displayed when chrome is in full
-  // screen mode.
-  static bool ShouldDisplayOnFullScreen(Profile* profile, const GURL& origin);
 };
 
 // Metadata for PERSISTENT notifications.

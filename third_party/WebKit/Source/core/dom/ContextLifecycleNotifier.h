@@ -28,9 +28,9 @@
 #ifndef ContextLifecycleNotifier_h
 #define ContextLifecycleNotifier_h
 
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "platform/LifecycleNotifier.h"
-#include "platform/wtf/Noncopyable.h"
 
 namespace blink {
 
@@ -38,17 +38,13 @@ class ContextLifecycleObserver;
 class ExecutionContext;
 class PausableObject;
 
-using SuspendableObject = PausableObject;
-
 class CORE_EXPORT ContextLifecycleNotifier
     : public LifecycleNotifier<ExecutionContext, ContextLifecycleObserver> {
-  WTF_MAKE_NONCOPYABLE(ContextLifecycleNotifier);
-
  public:
-  void NotifyResumingSuspendableObjects();
-  void NotifySuspendingSuspendableObjects();
+  void NotifyResumingPausableObjects();
+  void NotifySuspendingPausableObjects();
 
-  unsigned SuspendableObjectCount() const;
+  unsigned PausableObjectCount() const;
 
  protected:
   // Need a default constructor to link core and modules separately.
@@ -61,6 +57,7 @@ class CORE_EXPORT ContextLifecycleNotifier
 #if DCHECK_IS_ON()
   bool Contains(PausableObject*) const;
 #endif
+  DISALLOW_COPY_AND_ASSIGN(ContextLifecycleNotifier);
 };
 
 }  // namespace blink

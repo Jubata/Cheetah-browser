@@ -57,7 +57,7 @@
         background-color: white;
         margin: auto;
         min-height: 100%;
-        width: 640px;
+        width: 680px;
       }
 
       #top-bar {
@@ -124,9 +124,9 @@
         cursor: pointer;
       }
 
-      #allow-incognito iron-icon {
+      #allow-incognito cr-tooltip-icon {
         -webkit-margin-start: 20px;
-        @apply --cr-icon-height-width;
+        display: inline;
       }
 
       .inspectable-view {
@@ -170,12 +170,20 @@
       #options-section .control-line:first-child {
         border-top: var(--cr-separator-line);
       }
+
+      #load-path {
+        word-break: break-all;
+      }
+
+      #load-path > a[is='action-link'] {
+        display: inline;
+      }
     </style>
     <div id="container">
       <div id="main">
         <div id="top-bar">
           <button id="close-button" is="paper-icon-button-light"
-              class="icon-arrow-back no-overlap"
+              aria-label="$i18n{back}" class="icon-arrow-back no-overlap"
               on-tap="onCloseButtonTap_"></button>
           <img id="icon" src="[[data.iconUrl]]"
               alt$="[[appOrExtension(
@@ -317,7 +325,11 @@
                   on-change="onAllowIncognitoChange_">
                 <span>
                   $i18n{itemAllowIncognito}
-                  <iron-icon icon="cr:error-outline"></iron-icon>
+                  <cr-tooltip-icon
+                      icon-class="cr:error-outline"
+                      tooltip-text="$i18n{incognitoInfoWarning}"
+                      on-click="onIconClick_">
+                  </cr-tooltip-icon>
                 </span>
               </extensions-toggle-row>
             </template>
@@ -347,21 +359,28 @@
         <div class="section control-line actionable" id="extensions-options"
             on-tap="onOptionsTap_"
             hidden$="[[!shouldShowOptionsLink_(data.*)]]">
-          <span>$i18n{itemOptions}</span>
+          <span id="optionLabel">$i18n{itemOptions}</span>
           <button class="icon-external" is="paper-icon-button-light"
-              actionable></button>
+              aria-labelledby="optionLabel" actionable></button>
+        </div>
+        <div class="section block">
+          <div class="section-title">$i18n{itemSource}</div>
+          <div class="section-content">
+            [[computeSourceString_(data.*)]]
+          </div>
+          <div id="load-path" class="section-content"
+              hidden$="[[!data.prettifiedPath]]">
+            <span>$i18n{itemExtensionPath}</span>
+            <a is="action-link" on-tap="onLoadPathTap_">
+              [[data.prettifiedPath]]
+            </a>
+          </div>
         </div>
         <button class="hr" is="cr-link-row"
             hidden="[[isControlled_(data.controlledInfo)]]"
             icon-class="subpage-arrow" id="remove-extension"
             label="$i18n{itemRemoveExtension}" on-tap="onRemoveTap_">
         </button>
-        <div class="section block">
-          <div class="section-title">$i18n{itemSource}</div>
-          <div class="section-content">
-            [[computeSourceString_(data.*)]]
-          </div>
-        </div>
       </div>
     </div>
   </template>

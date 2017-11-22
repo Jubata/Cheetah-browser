@@ -38,10 +38,10 @@
 #include "modules/geolocation/Coordinates.h"
 #include "modules/geolocation/GeolocationError.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebFeaturePolicyFeature.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
 
 namespace blink {
 namespace {
@@ -64,8 +64,8 @@ Geoposition* CreateGeoposition(
       position.altitude_accuracy >= 0., position.altitude_accuracy,
       position.heading >= 0. && position.heading <= 360., position.heading,
       position.speed >= 0., position.speed);
-  return Geoposition::Create(coordinates,
-                             ConvertSecondsToDOMTimeStamp(position.timestamp));
+  return Geoposition::Create(coordinates, ConvertSecondsToDOMTimeStamp(
+                                              position.timestamp.ToDoubleT()));
 }
 
 PositionError* CreatePositionError(
@@ -159,7 +159,7 @@ void Geolocation::RecordOriginTypeAccess() const {
         *document, WebFeature::kGeolocationSecureOriginIframe);
     if (!RuntimeEnabledFeatures::FeaturePolicyForPermissionsEnabled()) {
       Deprecation::CountDeprecationFeaturePolicy(
-          *document, WebFeaturePolicyFeature::kGeolocation);
+          *document, FeaturePolicyFeature::kGeolocation);
     }
   } else if (GetFrame()
                  ->GetSettings()
@@ -177,7 +177,7 @@ void Geolocation::RecordOriginTypeAccess() const {
         *document, HostsUsingFeatures::Feature::kGeolocationInsecureHost);
     if (!RuntimeEnabledFeatures::FeaturePolicyForPermissionsEnabled()) {
       Deprecation::CountDeprecationFeaturePolicy(
-          *document, WebFeaturePolicyFeature::kGeolocation);
+          *document, FeaturePolicyFeature::kGeolocation);
     }
   } else {
     Deprecation::CountDeprecation(document,
@@ -238,7 +238,7 @@ void Geolocation::StartRequest(GeoNotifier* notifier) {
   }
 
   if (RuntimeEnabledFeatures::FeaturePolicyForPermissionsEnabled()) {
-    if (!GetFrame()->IsFeatureEnabled(WebFeaturePolicyFeature::kGeolocation)) {
+    if (!GetFrame()->IsFeatureEnabled(FeaturePolicyFeature::kGeolocation)) {
       UseCounter::Count(GetDocument(),
                         WebFeature::kGeolocationDisabledByFeaturePolicy);
       GetDocument()->AddConsoleMessage(

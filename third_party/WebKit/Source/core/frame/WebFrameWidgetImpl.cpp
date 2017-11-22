@@ -78,6 +78,7 @@
 #include "public/web/WebPlugin.h"
 #include "public/web/WebRange.h"
 #include "public/web/WebWidgetClient.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 
 namespace blink {
 
@@ -257,6 +258,9 @@ void WebFrameWidgetImpl::BeginFrame(double last_frame_time_monotonic) {
     return;
 
   UpdateGestureAnimation(last_frame_time_monotonic);
+
+  DocumentLifecycle::AllowThrottlingScope throttling_scope(
+      local_root_->GetFrame()->GetDocument()->Lifecycle());
   PageWidgetDelegate::Animate(*GetPage(), last_frame_time_monotonic);
   GetPage()->GetValidationMessageClient().LayoutOverlay();
 }
@@ -268,6 +272,9 @@ void WebFrameWidgetImpl::UpdateAllLifecyclePhases() {
 
   if (WebDevToolsAgentImpl* devtools = local_root_->DevToolsAgentImpl())
     devtools->PaintOverlay();
+
+  DocumentLifecycle::AllowThrottlingScope throttling_scope(
+      local_root_->GetFrame()->GetDocument()->Lifecycle());
   PageWidgetDelegate::UpdateAllLifecyclePhases(*GetPage(),
                                                *local_root_->GetFrame());
   UpdateLayerTreeBackgroundColor();
@@ -565,29 +572,6 @@ void WebFrameWidgetImpl::SetFocus(bool enable) {
   }
 }
 
-// TODO(ekaramad):This method is almost duplicated in WebViewImpl as well. This
-// code needs to be refactored  (http://crbug.com/629721).
-WebRange WebFrameWidgetImpl::CompositionRange() {
-  LocalFrame* focused = FocusedLocalFrameAvailableForIme();
-  if (!focused)
-    return WebRange();
-
-  const EphemeralRange range =
-      focused->GetInputMethodController().CompositionEphemeralRange();
-  if (range.IsNull())
-    return WebRange();
-
-  Element* editable =
-      focused->Selection().RootEditableElementOrDocumentElement();
-  DCHECK(editable);
-
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  editable->GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  return PlainTextRange::Create(*editable, range);
-}
-
 WebColor WebFrameWidgetImpl::BackgroundColor() const {
   if (background_color_override_enabled_)
     return background_color_override_;
@@ -597,52 +581,21 @@ WebColor WebFrameWidgetImpl::BackgroundColor() const {
   return view->DocumentBackgroundColor().Rgb();
 }
 
-// TODO(ekaramad):This method is almost duplicated in WebViewImpl as well. This
-// code needs to be refactored  (http://crbug.com/629721).
-bool WebFrameWidgetImpl::SelectionBounds(WebRect& anchor,
-                                         WebRect& focus) const {
+bool WebFrameWidgetImpl::SelectionBounds(WebRect& anchor_web,
+                                         WebRect& focus_web) const {
   const LocalFrame* local_frame = FocusedLocalFrameInWidget();
   if (!local_frame)
     return false;
 
-  FrameSelection& selection = local_frame->Selection();
-  if (!selection.IsAvailable() || selection.GetSelectionInDOMTree().IsNone())
+  IntRect anchor;
+  IntRect focus;
+  if (!local_frame->Selection().ComputeAbsoluteBounds(anchor, focus))
     return false;
-
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  local_frame->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  DocumentLifecycle::DisallowTransitionScope disallow_transition(
-      local_frame->GetDocument()->Lifecycle());
-
-  if (selection.ComputeVisibleSelectionInDOMTree().IsNone())
-    return false;
-
-  if (selection.ComputeVisibleSelectionInDOMTree().IsCaret()) {
-    anchor = focus = selection.AbsoluteCaretBounds();
-  } else {
-    const EphemeralRange selected_range =
-        selection.ComputeVisibleSelectionInDOMTree()
-            .ToNormalizedEphemeralRange();
-    if (selected_range.IsNull())
-      return false;
-    anchor = local_frame->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.StartPosition()));
-    focus = local_frame->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.EndPosition()));
-  }
 
   // FIXME: This doesn't apply page scale. This should probably be contents to
   // viewport. crbug.com/459293.
-  IntRect scaled_anchor(local_frame->View()->ContentsToRootFrame(anchor));
-  IntRect scaled_focus(local_frame->View()->ContentsToRootFrame(focus));
-
-  anchor = scaled_anchor;
-  focus = scaled_focus;
-
-  if (!selection.ComputeVisibleSelectionInDOMTree().IsBaseFirst())
-    std::swap(anchor, focus);
+  anchor_web = local_frame->View()->ContentsToRootFrame(anchor);
+  focus_web = local_frame->View()->ContentsToRootFrame(focus);
   return true;
 }
 
@@ -737,13 +690,15 @@ void WebFrameWidgetImpl::WillCloseLayerTreeView() {
 // code needs to be refactored  (http://crbug.com/629721).
 bool WebFrameWidgetImpl::GetCompositionCharacterBounds(
     WebVector<WebRect>& bounds) {
-  WebRange range = CompositionRange();
+  WebInputMethodController* controller = GetActiveWebInputMethodController();
+  if (!controller)
+    return false;
+
+  WebRange range = controller->CompositionRange();
   if (range.IsEmpty())
     return false;
 
   LocalFrame* frame = FocusedLocalFrameInWidget();
-  if (!frame)
-    return false;
 
   WebLocalFrameImpl* web_local_frame = WebLocalFrameImpl::FromFrame(frame);
   size_t character_count = range.length();
@@ -776,6 +731,14 @@ void WebFrameWidgetImpl::SetIsInert(bool inert) {
   DCHECK(local_root_->Parent());
   DCHECK(local_root_->Parent()->IsWebRemoteFrame());
   local_root_->GetFrame()->SetIsInert(inert);
+}
+
+void WebFrameWidgetImpl::UpdateRenderThrottlingStatus(bool is_throttled,
+                                                      bool subtree_throttled) {
+  DCHECK(local_root_->Parent());
+  DCHECK(local_root_->Parent()->IsWebRemoteFrame());
+  local_root_->GetFrameView()->UpdateRenderThrottlingStatus(is_throttled,
+                                                            subtree_throttled);
 }
 
 void WebFrameWidgetImpl::HandleMouseLeave(LocalFrame& main_frame,
@@ -1078,7 +1041,7 @@ void WebFrameWidgetImpl::InitializeLayerTreeView() {
   DCHECK(!mutator_);
   layer_tree_view_ = client_->InitializeLayerTreeView();
   if (layer_tree_view_ && layer_tree_view_->CompositorAnimationHost()) {
-    animation_host_ = WTF::MakeUnique<CompositorAnimationHost>(
+    animation_host_ = std::make_unique<CompositorAnimationHost>(
         layer_tree_view_->CompositorAnimationHost());
   }
 
@@ -1187,10 +1150,10 @@ HitTestResult WebFrameWidgetImpl::CoreHitTestResultAt(
 }
 
 void WebFrameWidgetImpl::SetVisibilityState(
-    WebPageVisibilityState visibility_state) {
+    mojom::PageVisibilityState visibility_state) {
   if (layer_tree_view_) {
     layer_tree_view_->SetVisible(visibility_state ==
-                                 kWebPageVisibilityStateVisible);
+                                 mojom::PageVisibilityState::kVisible);
   }
 }
 

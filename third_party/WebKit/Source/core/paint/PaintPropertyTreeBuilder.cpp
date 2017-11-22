@@ -264,6 +264,15 @@ static bool NeedsSVGLocalToBorderBoxTransform(const LayoutObject& object) {
   return object.IsSVGRoot();
 }
 
+static bool NeedsPaintOffsetTranslationForScrollbars(
+    const LayoutBoxModelObject& object) {
+  if (auto* area = object.GetScrollableArea()) {
+    if (area->HorizontalScrollbar() || area->VerticalScrollbar())
+      return true;
+  }
+  return false;
+}
+
 static bool NeedsPaintOffsetTranslation(const LayoutObject& object) {
   if (!object.IsBoxModelObject())
     return false;
@@ -280,8 +289,27 @@ static bool NeedsPaintOffsetTranslation(const LayoutObject& object) {
   }
   if (NeedsScrollOrScrollTranslation(object))
     return true;
+  if (NeedsPaintOffsetTranslationForScrollbars(box_model))
+    return true;
   if (NeedsSVGLocalToBorderBoxTransform(object))
     return true;
+
+  // Don't let paint offset cross composited layer boundaries, to avoid
+  // unnecessary full layer paint/raster invalidation when paint offset in
+  // ancestor transform node changes which should not affect the descendants
+  // of the composited layer.
+  // TODO(wangxianzhu): For SPv2, we also need a avoid unnecessary paint/raster
+  // invalidation in composited layers when their paint offset changes.
+  if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
+      // For only LayoutBlocks that won't be escaped by floating objects and
+      // column spans when finding their containing blocks.
+      // TODO(crbug.com/780242): This can be avoided if we have fully correct
+      // paint property tree states for floating objects and column spans.
+      object.IsLayoutBlock() && object.HasLayer() &&
+      !ToLayoutBoxModelObject(object).Layer()->EnclosingPaginationLayer() &&
+      object.GetCompositingState() == kPaintsIntoOwnBacking)
+    return true;
+
   return false;
 }
 
@@ -319,7 +347,6 @@ Optional<IntPoint> PaintPropertyTreeBuilder::UpdateForPaintOffsetTranslation(
   if (NeedsPaintOffsetTranslation(object)) {
     paint_offset_translation =
         ApplyPaintOffsetTranslation(object, context.current.paint_offset);
-
     if (RuntimeEnabledFeatures::RootLayerScrollingEnabled() &&
         object.IsLayoutView()) {
       context.absolute_position.paint_offset = context.current.paint_offset;
@@ -873,38 +900,6 @@ void PaintPropertyTreeBuilder::UpdateLocalBorderBoxContext(
   }
 }
 
-static bool NeedsScrollbarPaintOffset(const LayoutObject& object) {
-  if (!object.IsBoxModelObject())
-    return false;
-  if (auto* area = ToLayoutBoxModelObject(object).GetScrollableArea()) {
-    if (area->HorizontalScrollbar() || area->VerticalScrollbar())
-      return true;
-  }
-  return false;
-}
-
-// TODO(trchen): Remove this once we bake the paint offset into frameRect.
-void PaintPropertyTreeBuilder::UpdateScrollbarPaintOffset(
-    const LayoutObject& object,
-    ObjectPaintProperties& properties,
-    PaintPropertyTreeBuilderFragmentContext& context,
-    bool& force_subtree_update) {
-  if (!object.NeedsPaintPropertyUpdate() && !force_subtree_update)
-    return;
-
-  if (NeedsScrollbarPaintOffset(object)) {
-    IntPoint rounded_paint_offset =
-        RoundedIntPoint(context.current.paint_offset);
-    auto paint_offset = TransformationMatrix().Translate(
-        rounded_paint_offset.X(), rounded_paint_offset.Y());
-    auto result = properties.UpdateScrollbarPaintOffset(
-        context.current.transform, paint_offset, FloatPoint3D());
-    force_subtree_update |= result.NewNodeCreated();
-  } else {
-    force_subtree_update |= properties.ClearScrollbarPaintOffset();
-  }
-}
-
 static bool NeedsOverflowClip(const LayoutObject& object) {
   return object.IsBox() && ToLayoutBox(object).ShouldClipOverflow();
 }
@@ -1233,7 +1228,9 @@ static LayoutRect BoundingBoxInPaginationContainer(
         paint_layer->PhysicalBoundingBox(&enclosing_pagination_layer);
   } else {
     // Compute the bounding box without transforms.
-    object_bounding_box_in_flow_thread = object.LocalVisualRect();
+    // The object is guaranteed to be a box due to the logic above.
+    DCHECK(object.IsBox());
+    object_bounding_box_in_flow_thread = ToLayoutBox(object).BorderBoxRect();
     TransformState transform_state(
         TransformState::kApplyTransformDirection,
         FloatPoint(object_bounding_box_in_flow_thread.Location()));
@@ -1493,8 +1490,8 @@ void PaintPropertyTreeBuilder::UpdateFragments(
       NeedsPaintOffsetTranslation(object) || NeedsTransform(object) ||
       NeedsEffect(object) || NeedsTransformForNonRootSVG(object) ||
       NeedsFilter(object) || NeedsCssClip(object) ||
-      NeedsScrollbarPaintOffset(object) || NeedsOverflowClip(object) ||
-      NeedsPerspective(object) || NeedsSVGLocalToBorderBoxTransform(object) ||
+      NeedsOverflowClip(object) || NeedsPerspective(object) ||
+      NeedsSVGLocalToBorderBoxTransform(object) ||
       NeedsScrollOrScrollTranslation(object) ||
       NeedsFragmentationClip(object, *full_context.painting_layer);
 
@@ -1594,12 +1591,15 @@ void PaintPropertyTreeBuilder::UpdateFragments(
     // SVG resources are painted within one or more other locations in the
     // SVG during paint, and hence have their own independent paint property
     // trees, paint offset, etc.
-    PaintPropertyTreeBuilderFragmentContext context;
-    context.current.paint_offset_root =
-        context.absolute_position.paint_offset_root =
-            context.fixed_position.paint_offset_root = &object;
+    full_context.fragments.clear();
+    full_context.fragments.Grow(1);
+    PaintPropertyTreeBuilderFragmentContext& fragment_context =
+        full_context.fragments[0];
 
-    full_context.fragments.Fill(context, 1);
+    fragment_context.current.paint_offset_root =
+        fragment_context.absolute_position.paint_offset_root =
+            fragment_context.fixed_position.paint_offset_root = &object;
+
     object.GetMutableForPainting().FirstFragment().ClearNextFragment();
   }
 }
@@ -1700,13 +1700,6 @@ void PaintPropertyTreeBuilder::UpdateFragmentPropertiesForSelf(
   }
   UpdateLocalBorderBoxContext(object, fragment_context, fragment_data,
                               full_context.force_subtree_update);
-  if (rare_paint_data && rare_paint_data->PaintProperties()) {
-    ObjectPaintProperties* properties = rare_paint_data->PaintProperties();
-    if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
-      UpdateScrollbarPaintOffset(object, *properties, fragment_context,
-                                 full_context.force_subtree_update);
-    }
-  }
 }
 
 void PaintPropertyTreeBuilder::UpdatePropertiesForChildren(

@@ -40,6 +40,7 @@
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "services/service_manager/embedder/switches.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/base/platform_window_defaults.h"
 #include "ui/base/test/material_design_controller_test_api.h"
@@ -74,7 +75,9 @@ namespace {
 int g_browser_process_pid;
 
 void DumpStackTraceSignalHandler(int signal) {
-  if (g_browser_process_pid == base::GetCurrentProcId()) {
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          service_manager::switches::kDisableInProcessStackTraces) &&
+      g_browser_process_pid == base::GetCurrentProcId()) {
     std::string message("BrowserTestBase received signal: ");
     message += strsignal(signal);
     message += ". Backtrace:\n";
@@ -238,6 +241,11 @@ void BrowserTestBase::SetUp() {
   ContentBrowserSanityChecker scoped_enable_sanity_checks;
 
   SetUpInProcessBrowserTestFixture();
+
+  // Should not use CommandLine to modify features. Please use ScopedFeatureList
+  // instead.
+  DCHECK(!command_line->HasSwitch(switches::kEnableFeatures));
+  DCHECK(!command_line->HasSwitch(switches::kDisableFeatures));
 
   // At this point, copy features to the command line, since BrowserMain will
   // wipe out the current feature list.

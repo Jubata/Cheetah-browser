@@ -36,12 +36,12 @@
 
 using std::string;
 using testing::CreateFunctor;
+using testing::_;
 using testing::AtLeast;
 using testing::InSequence;
 using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
-using testing::_;
 
 namespace net {
 namespace test {
@@ -230,8 +230,9 @@ class TestSession : public QuicSpdySession {
     return WritevData(stream, stream->id(), bytes, 0, FIN);
   }
 
-  using QuicSession::PostProcessAfterData;
   using QuicSession::closed_streams;
+  using QuicSession::next_outgoing_stream_id;
+  using QuicSession::PostProcessAfterData;
   using QuicSession::zombie_streams;
 
  private:
@@ -817,6 +818,45 @@ TEST_P(QuicSessionTestServer, SendGoAway) {
   EXPECT_TRUE(session_.GetOrCreateDynamicStream(kTestStreamId));
 }
 
+TEST_P(QuicSessionTestServer, InvalidGoAway) {
+  QuicGoAwayFrame go_away(QUIC_PEER_GOING_AWAY,
+                          session_.next_outgoing_stream_id(), "");
+  session_.OnGoAway(go_away);
+}
+
+// Test that server session will send a connectivity probe in response to a
+// connectivity probe on the same path.
+TEST_P(QuicSessionTestServer, ServerReplyToConnecitivityProbe) {
+  if (!FLAGS_quic_reloadable_flag_quic_server_reply_to_connectivity_probing) {
+    return;
+  }
+  QuicSocketAddress old_peer_address =
+      QuicSocketAddress(QuicIpAddress::Loopback4(), kTestPort);
+  EXPECT_EQ(old_peer_address, session_.peer_address());
+
+  QuicSocketAddress new_peer_address =
+      QuicSocketAddress(QuicIpAddress::Loopback4(), kTestPort + 1);
+
+  if (FLAGS_quic_reloadable_flag_quic_server_reply_to_connectivity_probing) {
+    MockPacketWriter* writer = static_cast<MockPacketWriter*>(
+        QuicConnectionPeer::GetWriter(session_.connection()));
+    EXPECT_CALL(*writer, WritePacket(_, _, _, new_peer_address, _))
+        .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
+    EXPECT_CALL(*connection_,
+                SendConnectivityProbingPacket(nullptr, new_peer_address))
+        .WillOnce(
+            Invoke(connection_,
+                   &MockQuicConnection::ReallySendConnectivityProbingPacket));
+  }
+  session_.OnConnectivityProbeReceived(session_.self_address(),
+                                       new_peer_address);
+  if (FLAGS_quic_reloadable_flag_quic_server_reply_to_connectivity_probing) {
+    EXPECT_EQ(old_peer_address, session_.peer_address());
+  } else {
+    EXPECT_EQ(new_peer_address, session_.peer_address());
+  }
+}
+
 TEST_P(QuicSessionTestServer, IncreasedTimeoutAfterCryptoHandshake) {
   EXPECT_EQ(kInitialIdleTimeoutSecs + 3,
             QuicConnectionPeer::GetNetworkTimeout(connection_).ToSeconds());
@@ -840,6 +880,46 @@ TEST_P(QuicSessionTestServer, RstStreamBeforeHeadersDecompressed) {
   EXPECT_EQ(0u, session_.GetNumOpenIncomingStreams());
   // Connection should remain alive.
   EXPECT_TRUE(connection_->connected());
+}
+
+TEST_P(QuicSessionTestServer, OnStreamFrameFinStaticStreamId) {
+  // Send two bytes of payload.
+  QuicStreamFrame data1(kCryptoStreamId, true, 0, QuicStringPiece("HT"));
+  EXPECT_CALL(*connection_,
+              CloseConnection(
+                  QUIC_INVALID_STREAM_ID, "Attempt to close a static stream",
+                  ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
+  session_.OnStreamFrame(data1);
+}
+
+TEST_P(QuicSessionTestServer, OnRstStreamStaticStreamId) {
+  // Send two bytes of payload.
+  QuicRstStreamFrame rst1(kCryptoStreamId, QUIC_ERROR_PROCESSING_STREAM, 0);
+  EXPECT_CALL(*connection_,
+              CloseConnection(
+                  QUIC_INVALID_STREAM_ID, "Attempt to reset a static stream",
+                  ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
+  session_.OnRstStream(rst1);
+}
+
+TEST_P(QuicSessionTestServer, OnStreamFrameInvalidStreamId) {
+  // Send two bytes of payload.
+  QuicStreamFrame data1(kInvalidStreamId, true, 0, QuicStringPiece("HT"));
+  EXPECT_CALL(*connection_,
+              CloseConnection(
+                  QUIC_INVALID_STREAM_ID, "Recevied data for an invalid stream",
+                  ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
+  session_.OnStreamFrame(data1);
+}
+
+TEST_P(QuicSessionTestServer, OnRstStreamInvalidStreamId) {
+  // Send two bytes of payload.
+  QuicRstStreamFrame rst1(kInvalidStreamId, QUIC_ERROR_PROCESSING_STREAM, 0);
+  EXPECT_CALL(*connection_,
+              CloseConnection(
+                  QUIC_INVALID_STREAM_ID, "Recevied data for an invalid stream",
+                  ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET));
+  session_.OnRstStream(rst1);
 }
 
 TEST_P(QuicSessionTestServer, HandshakeUnblocksFlowControlBlockedStream) {

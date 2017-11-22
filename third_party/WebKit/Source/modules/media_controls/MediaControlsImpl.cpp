@@ -27,6 +27,7 @@
 #include "modules/media_controls/MediaControlsImpl.h"
 
 #include "bindings/core/v8/ExceptionState.h"
+#include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/MutationObserver.h"
 #include "core/dom/MutationObserverInit.h"
 #include "core/dom/MutationRecord.h"
@@ -61,6 +62,7 @@
 #include "modules/media_controls/elements/MediaControlDownloadButtonElement.h"
 #include "modules/media_controls/elements/MediaControlElementsHelper.h"
 #include "modules/media_controls/elements/MediaControlFullscreenButtonElement.h"
+#include "modules/media_controls/elements/MediaControlLoadingPanelElement.h"
 #include "modules/media_controls/elements/MediaControlMuteButtonElement.h"
 #include "modules/media_controls/elements/MediaControlOverflowMenuButtonElement.h"
 #include "modules/media_controls/elements/MediaControlOverflowMenuListElement.h"
@@ -152,8 +154,9 @@ bool ShouldShowCastButton(HTMLMediaElement& media_element) {
   // false to make sure the overlay does not appear.
   Document& document = media_element.GetDocument();
   if (document.GetSettings() &&
-      !document.GetSettings()->GetMediaControlsEnabled())
+      !document.GetSettings()->GetMediaControlsEnabled()) {
     return false;
+  }
 
   // The page disabled the button via the attribute.
   if (media_element.ControlsListInternal()->ShouldHideRemotePlayback()) {
@@ -297,6 +300,7 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       text_track_list_(nullptr),
       overflow_list_(nullptr),
       media_button_panel_(nullptr),
+      loading_panel_(nullptr),
       cast_button_(nullptr),
       fullscreen_button_(nullptr),
       download_button_(nullptr),
@@ -367,6 +371,9 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
 //
 // MediaControlsImpl
 //     (-webkit-media-controls)
+// +-MediaControlLoadingPanelElement
+// |    (-internal-media-controls-loading-panel)
+// |    {if ModernMediaControlsEnabled}
 // +-MediaControlOverlayEnclosureElement
 // |    (-webkit-media-controls-overlay-enclosure)
 // | +-MediaControlOverlayPlayButtonElement
@@ -421,6 +428,11 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
 //  +-MediaControlTextTrackListItemSubtitles
 //       (-internal-media-controls-text-track-list-kind-subtitles)
 void MediaControlsImpl::InitializeControls() {
+  if (IsModern() && MediaElement().IsHTMLVideoElement()) {
+    loading_panel_ = new MediaControlLoadingPanelElement(*this);
+    AppendChild(loading_panel_);
+  }
+
   overlay_enclosure_ = new MediaControlOverlayEnclosureElement(*this);
 
   if (RuntimeEnabledFeatures::MediaControlsOverlayPlayButtonEnabled() ||
@@ -571,6 +583,9 @@ void MediaControlsImpl::UpdateCSSClassFromState() {
   const AtomicString& classes = builder.ToAtomicString();
   if (getAttribute("class") != classes)
     setAttribute("class", classes);
+
+  if (loading_panel_)
+    loading_panel_->UpdateDisplayState();
 }
 
 MediaControlsImpl::ControlsState MediaControlsImpl::State() const {
@@ -974,6 +989,9 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
   }
 
   MaybeRecordElementsDisplayed();
+
+  if (download_iph_manager_)
+    download_iph_manager_->UpdateInProductHelp();
 }
 
 void MediaControlsImpl::DefaultEventHandler(Event* event) {
@@ -1164,7 +1182,10 @@ void MediaControlsImpl::OnTimeUpdate() {
 }
 
 void MediaControlsImpl::OnDurationChange() {
+  BatchedControlUpdate batch(this);
+
   const double duration = MediaElement().duration();
+  bool was_finite_duration = std::isfinite(duration_display_->CurrentValue());
 
   // Update the displayed current time/duration.
   duration_display_->SetCurrentValue(duration);
@@ -1175,6 +1196,10 @@ void MediaControlsImpl::OnDurationChange() {
 
   // Update the timeline (the UI with the seek marker).
   timeline_->SetDuration(duration);
+  if (!was_finite_duration && std::isfinite(duration)) {
+    download_button_->SetIsWanted(
+        download_button_->ShouldDisplayDownloadButton());
+  }
 }
 
 void MediaControlsImpl::OnPlay() {
@@ -1393,6 +1418,9 @@ void MediaControlsImpl::ComputeWhichControlsFit() {
     overlay_play_button_->SetDoesFit(does_fit);
   }
 
+  if (download_iph_manager_)
+    download_iph_manager_->UpdateInProductHelp();
+
   MaybeRecordElementsDisplayed();
 }
 
@@ -1415,6 +1443,7 @@ void MediaControlsImpl::MaybeRecordElementsDisplayed() const {
       current_time_display_.Get(),
       duration_display_.Get(),
       overlay_play_button_.Get(),
+      overlay_cast_button_.Get(),
   };
 
   // Record which controls are used.
@@ -1423,9 +1452,6 @@ void MediaControlsImpl::MaybeRecordElementsDisplayed() const {
       element->MaybeRecordDisplayed();
   }
   overflow_menu_->MaybeRecordDisplayed();
-
-  if (download_iph_manager_)
-    download_iph_manager_->UpdateInProductHelp();
 }
 
 void MediaControlsImpl::PositionPopupMenu(Element* popup_menu) {
@@ -1454,10 +1480,10 @@ void MediaControlsImpl::PositionPopupMenu(Element* popup_menu) {
   bottom_str_value.append(kPx);
   right_str_value.append(kPx);
 
-  popup_menu->style()->setProperty("bottom", bottom_str_value, kImportant,
-                                   ASSERT_NO_EXCEPTION);
-  popup_menu->style()->setProperty("right", right_str_value, kImportant,
-                                   ASSERT_NO_EXCEPTION);
+  popup_menu->style()->setProperty(&GetDocument(), "bottom", bottom_str_value,
+                                   kImportant, ASSERT_NO_EXCEPTION);
+  popup_menu->style()->setProperty(&GetDocument(), "right", right_str_value,
+                                   kImportant, ASSERT_NO_EXCEPTION);
 }
 
 void MediaControlsImpl::Invalidate(Element* element) {
@@ -1574,6 +1600,7 @@ void MediaControlsImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(rotate_to_fullscreen_delegate_);
   visitor->Trace(download_iph_manager_);
   visitor->Trace(media_button_panel_);
+  visitor->Trace(loading_panel_);
   MediaControls::Trace(visitor);
   HTMLDivElement::Trace(visitor);
 }

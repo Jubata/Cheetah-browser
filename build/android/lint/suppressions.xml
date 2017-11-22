@@ -126,6 +126,7 @@ Still reading?
   </issue>
   <issue id="IconLauncherShape" severity="Error">
     <ignore regexp="chromecast/internal"/>
+    <ignore regexp="chrome/android/webapk/shell_apk/res/mipmap-mdpi/ic_launcher_background.png"/>
   </issue>
   <issue id="IconLocation">
     <ignore regexp="chromecast/internal"/>
@@ -195,6 +196,7 @@ Still reading?
     <ignore regexp="Call requires API level 19.*`java.util.Objects#requireNonNull`"/>
     <!-- AutoCloseable has been available since API 15, just hidden. -->
     <ignore regexp="Class requires API level 19.*java.lang.AutoCloseable"/>
+    <ignore regexp="Call requires API level 19.*java.lang.AutoCloseable#close"/>
     <!-- We support try-with-resources via desugar. -->
     <ignore regexp="Try-with-resources requires API level 19"/>
     <ignore regexp="Call requires API level 19.*`java.lang.Throwable#addSuppressed`"/>
@@ -349,7 +351,7 @@ Still reading?
   </issue>
   <issue id="ViewConstructor" severity="ignore"/>
   <issue id="VisibleForTests" severity="Error">
-    <ignore regexp="chrome/android/javatests"/>
+    <ignore regexp="/javatests/"/>
     <ignore regexp="/test/"/>
     <!-- TODO(crbug.com/757124): Remove all these specific Feedback files after underlying issue is resolved -->
     <!-- Underlying issue is that Android FeedbackOptions.Builder using @VisibleForTesting without 'otherwise='. -->

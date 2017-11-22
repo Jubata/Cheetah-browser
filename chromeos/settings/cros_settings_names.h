@@ -120,6 +120,7 @@ CHROMEOS_EXPORT extern const char kDeviceLoginScreenLocales[];
 CHROMEOS_EXPORT extern const char kDeviceLoginScreenInputMethods[];
 
 CHROMEOS_EXPORT extern const char kPerUserTimezoneEnabled[];
+CHROMEOS_EXPORT extern const char kFineGrainedTimeZoneResolveEnabled[];
 
 CHROMEOS_EXPORT extern const char kDeviceOffHours[];
 
@@ -133,6 +134,10 @@ CHROMEOS_EXPORT extern const char kTPMFirmwareUpdateSettings[];
 CHROMEOS_EXPORT extern const char kMinimumRequiredChromeVersion[];
 
 CHROMEOS_EXPORT extern const char kCastReceiverName[];
+
+CHROMEOS_EXPORT extern const char kDeviceEnrollmentIdNeeded[];
+
+CHROMEOS_EXPORT extern const char kUnaffiliatedArcAllowed[];
 
 }  // namespace chromeos
 

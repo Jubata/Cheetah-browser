@@ -248,9 +248,21 @@ class BookmarkItemsAdapter
         }
     }
 
-    // BookmarkUIObserver implementations.
-
     @Override
+    public void onViewRecycled(ViewHolder holder) {
+        switch (holder.getItemViewType()) {
+            case ViewType.PERSONALIZED_SIGNIN_PROMO:
+                mPromoHeaderManager.detachPersonalizePromoView();
+                break;
+            default:
+                // Other view holders don't have special recycling code.
+        }
+    }
+
+    /**
+     * Sets the delegate to use to handle UI actions related to this adapter.
+     * @param delegate A {@link BookmarkDelegate} instance to handle all backend interaction.
+     */
     public void onBookmarkDelegateInitialized(BookmarkDelegate delegate) {
         mDelegate = delegate;
         mDelegate.addUIObserver(this);
@@ -279,6 +291,7 @@ class BookmarkItemsAdapter
         populateTopLevelFoldersList();
     }
 
+    // BookmarkUIObserver implementations.
     @Override
     public void onDestroy() {
         mDelegate.removeUIObserver(this);

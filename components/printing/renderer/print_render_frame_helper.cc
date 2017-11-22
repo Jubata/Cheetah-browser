@@ -36,6 +36,8 @@
 #include "printing/metafile_skia_wrapper.h"
 #include "printing/pdf_metafile_skia.h"
 #include "printing/units.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/platform/WebDoubleSize.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -51,7 +53,6 @@
 #include "third_party/WebKit/public/web/WebPluginDocument.h"
 #include "third_party/WebKit/public/web/WebPrintParams.h"
 #include "third_party/WebKit/public/web/WebPrintPresetOptions.h"
-#include "third_party/WebKit/public/web/WebSandboxFlags.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -582,8 +583,8 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
                            page_layout.margin_top + page_layout.margin_bottom +
                                page_layout.content_height);
 
-  blink::WebView* web_view =
-      blink::WebView::Create(nullptr, blink::kWebPageVisibilityStateVisible);
+  blink::WebView* web_view = blink::WebView::Create(
+      nullptr, blink::mojom::PageVisibilityState::kVisible);
   web_view->GetSettings()->SetJavaScriptEnabled(true);
 
   class HeaderAndFooterClient final : public blink::WebFrameClient {
@@ -695,7 +696,7 @@ class PrepareFrameAndViewForPrint : public blink::WebViewClient,
       const blink::WebString& name,
       const blink::WebString& fallback_name,
       blink::WebSandboxFlags sandbox_flags,
-      const blink::WebParsedFeaturePolicy& container_policy,
+      const blink::ParsedFeaturePolicy& container_policy,
       const blink::WebFrameOwnerProperties& frame_owner_properties) override;
   void FrameDetached(DetachType detach_type) override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
@@ -792,11 +793,11 @@ void PrepareFrameAndViewForPrint::ResizeForPrinting() {
 }
 
 void PrepareFrameAndViewForPrint::StartPrinting() {
+  ResizeForPrinting();
   blink::WebView* web_view = frame_.view();
   web_view->GetSettings()->SetShouldPrintBackgrounds(should_print_backgrounds_);
   expected_pages_count_ =
       frame()->PrintBegin(web_print_params_, node_to_print_);
-  ResizeForPrinting();
   is_printing_started_ = true;
 }
 
@@ -826,7 +827,7 @@ void PrepareFrameAndViewForPrint::CopySelection(
   prefs.javascript_enabled = false;
 
   blink::WebView* web_view =
-      blink::WebView::Create(this, blink::kWebPageVisibilityStateVisible);
+      blink::WebView::Create(this, blink::mojom::PageVisibilityState::kVisible);
   owns_web_view_ = true;
   content::RenderView::ApplyWebPreferences(prefs, web_view);
   blink::WebLocalFrame* main_frame =
@@ -860,7 +861,7 @@ blink::WebLocalFrame* PrepareFrameAndViewForPrint::CreateChildFrame(
     const blink::WebString& name,
     const blink::WebString& fallback_name,
     blink::WebSandboxFlags sandbox_flags,
-    const blink::WebParsedFeaturePolicy& container_policy,
+    const blink::ParsedFeaturePolicy& container_policy,
     const blink::WebFrameOwnerProperties& frame_owner_properties) {
   // This is called when printing a selection and when this selection contains
   // an iframe. This is not supported yet. An empty rectangle will be displayed
@@ -933,12 +934,6 @@ bool PrintRenderFrameHelper::Delegate::IsAskPrintSettingsEnabled() {
 bool PrintRenderFrameHelper::Delegate::IsScriptedPrintEnabled() {
   return true;
 }
-
-#if defined(OS_MACOSX)
-bool PrintRenderFrameHelper::Delegate::UseSingleMetafile() {
-  return false;
-}
-#endif
 
 PrintRenderFrameHelper::PrintRenderFrameHelper(
     content::RenderFrame* render_frame,
@@ -1919,29 +1914,27 @@ void PrintRenderFrameHelper::PrintPageInternal(
     gfx::Size* page_size_in_dpi,
     gfx::Rect* content_area_in_dpi,
     gfx::Rect* printable_area_in_dpi) {
-  PageSizeMargins page_layout_in_points;
-
-  double css_scale_factor = 1.0f;
-  if (params.scale_factor >= kEpsilon)
-    css_scale_factor = params.scale_factor;
+  double css_scale_factor =
+      params.scale_factor >= kEpsilon ? params.scale_factor : 1.0f;
 
   // Save the original page size here to avoid rounding errors incurred by
   // converting to pixels and back and by scaling the page for reflow and
   // scaling back. Windows uses |page_size_in_dpi| for the actual page size
   // so requires an accurate value.
   gfx::Size original_page_size = params.page_size;
+  PageSizeMargins page_layout_in_points;
   ComputePageLayoutInPointsForCss(frame, page_number, params,
                                   ignore_css_margins_, &css_scale_factor,
                                   &page_layout_in_points);
+
   gfx::Size page_size;
   gfx::Rect content_area;
   GetPageSizeAndContentAreaFromPageLayout(page_layout_in_points, &page_size,
                                           &content_area);
 
   // Calculate the actual page size and content area in dpi.
-  if (page_size_in_dpi) {
+  if (page_size_in_dpi)
     *page_size_in_dpi = original_page_size;
-  }
 
   if (content_area_in_dpi) {
     // Output PDF matches paper size and should be printer edge to edge.
@@ -1989,8 +1982,8 @@ void PrintRenderFrameHelper::PrintPageInternal(
   DCHECK_GT(webkit_scale_factor, 0.0f);
 
   // Done printing. Close the canvas to retrieve the compiled metafile.
-  if (!metafile->FinishPage())
-    NOTREACHED() << "metafile failed";
+  bool ret = metafile->FinishPage();
+  DCHECK(ret);
 }
 #endif  // !defined(OS_MACOSX)
 

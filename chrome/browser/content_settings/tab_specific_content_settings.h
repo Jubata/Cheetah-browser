@@ -115,7 +115,7 @@ class TabSpecificContentSettings
       const base::Callback<content::WebContents*(void)>& wc_getter,
       const GURL& url,
       const GURL& first_party_url,
-      const std::string& cookie_line,
+      const net::CanonicalCookie& cookie,
       const net::CookieOptions& options,
       bool blocked_by_policy);
 
@@ -187,6 +187,9 @@ class TabSpecificContentSettings
 
   // Changes the |content_blocked_| entry for popups.
   void SetPopupsBlocked(bool blocked);
+
+  // Called when audio has been blocked on the page.
+  void OnAudioBlocked();
 
   // Returns whether a particular kind of content has been blocked for this
   // page.
@@ -312,7 +315,7 @@ class TabSpecificContentSettings
                      bool blocked_by_policy);
   void OnCookieChanged(const GURL& url,
                        const GURL& first_party_url,
-                       const std::string& cookie_line,
+                       const net::CanonicalCookie& cookie,
                        const net::CookieOptions& options,
                        bool blocked_by_policy);
   void OnFileSystemAccessed(const GURL& url,
@@ -361,9 +364,6 @@ class TabSpecificContentSettings
   // Block all content. Used for testing content setting bubbles.
   void BlockAllContentForTesting();
 
-  // This method is called to update the sound status.
-  void OnAudioStateChanged(bool is_audible);
-
  private:
   friend class content::WebContentsUserData<TabSpecificContentSettings>;
 
@@ -401,15 +401,6 @@ class TabSpecificContentSettings
 
   // Updates MIDI settings on navigation.
   void MidiDidNavigate(content::NavigationHandle* navigation_handle);
-
-  // Checks whether sound has been blocked when the sound setting is updated.
-  void OnSoundContentSettingUpdated();
-
-  // Sets sound as blocked if site is muted and sound is playing.
-  void CheckSoundBlocked(bool is_audible);
-
-  // Gets the current sound setting state.
-  ContentSetting GetSoundContentSetting() const;
 
   // All currently registered |SiteDataObserver|s.
   base::ObserverList<SiteDataObserver> observer_list_;
@@ -465,9 +456,6 @@ class TabSpecificContentSettings
   // request is requesting certain specific devices.
   std::string media_stream_requested_audio_device_;
   std::string media_stream_requested_video_device_;
-
-  // Holds the previous committed url during a navigation.
-  GURL previous_url_;
 
   // Observer to watch for content settings changed.
   ScopedObserver<HostContentSettingsMap, content_settings::Observer> observer_;

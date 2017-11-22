@@ -20,20 +20,22 @@ class ExtensionNotificationHandler : public NotificationHandler {
   ExtensionNotificationHandler();
   ~ExtensionNotificationHandler() override;
 
+  // Extracts an extension ID from the URL for an app window, or an empty string
+  // if the URL is not a valid app window URL.
+  static std::string GetExtensionId(const GURL& url);
+
   // NotificationHandler implementation.
-  void OnShow(Profile* profile, const std::string& notification_id) override;
   void OnClose(Profile* profile,
-               const std::string& origin,
+               const GURL& origin,
                const std::string& notification_id,
-               bool by_user) override;
+               bool by_user,
+               base::OnceClosure completed_closure) override;
   void OnClick(Profile* profile,
-               const std::string& origin,
+               const GURL& origin,
                const std::string& notification_id,
                const base::Optional<int>& action_index,
-               const base::Optional<base::string16>& reply) override;
-  void OpenSettings(Profile* profile) override;
-  bool ShouldDisplayOnFullScreen(Profile* profile,
-                                 const std::string& origin) override;
+               const base::Optional<base::string16>& reply,
+               base::OnceClosure completed_closure) override;
 
  protected:
   // Overriden in unit tests.

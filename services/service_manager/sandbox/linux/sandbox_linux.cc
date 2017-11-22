@@ -40,6 +40,9 @@
 #include "sandbox/linux/services/thread_helpers.h"
 #include "sandbox/linux/services/yama.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
+#include "sandbox/linux/syscall_broker/broker_process.h"
+#include "sandbox/sandbox_features.h"
+#include "services/service_manager/sandbox/linux/bpf_broker_policy_linux.h"
 #include "services/service_manager/sandbox/linux/sandbox_seccomp_bpf_linux.h"
 #include "services/service_manager/sandbox/sandbox.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
@@ -50,6 +53,8 @@
 #endif
 
 using sandbox::Yama;
+
+namespace service_manager {
 
 namespace {
 
@@ -64,7 +69,7 @@ struct FDCloser {
 void LogSandboxStarted(const std::string& sandbox_name) {
   const std::string process_type =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          service_manager::switches::kProcessType);
+          switches::kProcessType);
   const std::string activated_sandbox =
       "Activated " + sandbox_name +
       " sandbox for process type: " + process_type + ".";
@@ -98,14 +103,36 @@ base::ScopedFD OpenProc(int proc_fd) {
   return base::ScopedFD(ret_proc_fd);
 }
 
-}  // namespace
+bool UpdateProcessTypeAndEnableSandbox(
+    BPFBasePolicy* client_sandbox_policy,
+    SandboxLinux::PreSandboxHook broker_side_hook,
+    SandboxLinux::Options options) {
+  base::CommandLine::StringVector exec =
+      base::CommandLine::ForCurrentProcess()->GetArgs();
+  base::CommandLine::Reset();
+  base::CommandLine::Init(0, nullptr);
+  base::CommandLine::ForCurrentProcess()->InitFromArgv(exec);
 
-namespace service_manager {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  command_line->AppendSwitchASCII(
+      switches::kProcessType,
+      command_line->GetSwitchValueASCII(switches::kProcessType)
+          .append("-broker"));
+
+  auto broker_side_policy = std::make_unique<BrokerProcessPolicy>();
+  if (broker_side_hook)
+    CHECK(std::move(broker_side_hook).Run(broker_side_policy.get(), options));
+
+  return SandboxSeccompBPF::StartSandboxWithExternalPolicy(
+      std::move(broker_side_policy), base::ScopedFD());
+}
+
+}  // namespace
 
 SandboxLinux::SandboxLinux()
     : proc_fd_(-1),
       seccomp_bpf_started_(false),
-      sandbox_status_flags_(service_manager::Sandbox::kInvalid),
+      sandbox_status_flags_(kInvalid),
       pre_initialized_(false),
       seccomp_bpf_supported_(false),
       seccomp_bpf_with_tsync_supported_(false),
@@ -171,15 +198,18 @@ void SandboxLinux::PreinitializeSandbox() {
   pre_initialized_ = true;
 }
 
-void SandboxLinux::EngageNamespaceSandbox() {
+void SandboxLinux::EngageNamespaceSandbox(bool from_zygote) {
   CHECK(pre_initialized_);
-  // Check being in a new PID namespace created by the namespace sandbox and
-  // being the init process.
-  CHECK(sandbox::NamespaceSandbox::InNewPidNamespace());
-  const pid_t pid = getpid();
-  CHECK_EQ(1, pid);
+  if (from_zygote) {
+    // Check being in a new PID namespace created by the namespace sandbox and
+    // being the init process.
+    CHECK(sandbox::NamespaceSandbox::InNewPidNamespace());
+    const pid_t pid = getpid();
+    CHECK_EQ(1, pid);
+  }
 
   CHECK(sandbox::Credentials::MoveToNewUserNS());
+
   // Note: this requires SealSandbox() to be called later in this process to be
   // safe, as this class is keeping a file descriptor to /proc/.
   CHECK(sandbox::Credentials::DropFileSystemAccess(proc_fd_));
@@ -199,51 +229,39 @@ std::vector<int> SandboxLinux::GetFileDescriptorsToClose() {
   return fds;
 }
 
-bool SandboxLinux::InitializeSandbox(
-    SandboxType sandbox_type,
-    SandboxSeccompBPF::PreSandboxHook hook,
-    const SandboxSeccompBPF::Options& options) {
-  return SandboxLinux::GetInstance()->InitializeSandboxImpl(
-      sandbox_type, std::move(hook), options);
-}
-
-void SandboxLinux::StopThread(base::Thread* thread) {
-  SandboxLinux::GetInstance()->StopThreadImpl(thread);
-}
-
 int SandboxLinux::GetStatus() {
   if (!pre_initialized_) {
     return 0;
   }
-  if (sandbox_status_flags_ == service_manager::Sandbox::kInvalid) {
+  if (sandbox_status_flags_ == kInvalid) {
     // Initialize sandbox_status_flags_.
     sandbox_status_flags_ = 0;
     if (setuid_sandbox_client_->IsSandboxed()) {
-      sandbox_status_flags_ |= service_manager::Sandbox::kSUID;
+      sandbox_status_flags_ |= kSUID;
       if (setuid_sandbox_client_->IsInNewPIDNamespace())
-        sandbox_status_flags_ |= service_manager::Sandbox::kPIDNS;
+        sandbox_status_flags_ |= kPIDNS;
       if (setuid_sandbox_client_->IsInNewNETNamespace())
-        sandbox_status_flags_ |= service_manager::Sandbox::kNetNS;
+        sandbox_status_flags_ |= kNetNS;
     } else if (sandbox::NamespaceSandbox::InNewUserNamespace()) {
-      sandbox_status_flags_ |= service_manager::Sandbox::kUserNS;
+      sandbox_status_flags_ |= kUserNS;
       if (sandbox::NamespaceSandbox::InNewPidNamespace())
-        sandbox_status_flags_ |= service_manager::Sandbox::kPIDNS;
+        sandbox_status_flags_ |= kPIDNS;
       if (sandbox::NamespaceSandbox::InNewNetNamespace())
-        sandbox_status_flags_ |= service_manager::Sandbox::kNetNS;
+        sandbox_status_flags_ |= kNetNS;
     }
 
     // We report whether the sandbox will be activated when renderers, workers
     // and PPAPI plugins go through sandbox initialization.
     if (seccomp_bpf_supported()) {
-      sandbox_status_flags_ |= service_manager::Sandbox::kSeccompBPF;
+      sandbox_status_flags_ |= kSeccompBPF;
     }
 
     if (seccomp_bpf_with_tsync_supported()) {
-      sandbox_status_flags_ |= service_manager::Sandbox::kSeccompTSYNC;
+      sandbox_status_flags_ |= kSeccompTSYNC;
     }
 
     if (yama_is_enforcing_) {
-      sandbox_status_flags_ |= service_manager::Sandbox::kYama;
+      sandbox_status_flags_ |= kYama;
     }
   }
 
@@ -274,33 +292,49 @@ sandbox::SetuidSandboxClient* SandboxLinux::setuid_sandbox_client() const {
 }
 
 // For seccomp-bpf, we use the SandboxSeccompBPF class.
-bool SandboxLinux::StartSeccompBPF(service_manager::SandboxType sandbox_type,
-                                   SandboxSeccompBPF::PreSandboxHook hook,
-                                   const SandboxSeccompBPF::Options& opts) {
+bool SandboxLinux::StartSeccompBPF(SandboxType sandbox_type,
+                                   PreSandboxHook hook,
+                                   const Options& options) {
   CHECK(!seccomp_bpf_started_);
   CHECK(pre_initialized_);
+#if BUILDFLAG(USE_SECCOMP_BPF)
   if (!seccomp_bpf_supported())
     return false;
 
-  if (!SandboxSeccompBPF::StartSandbox(sandbox_type, OpenProc(proc_fd_),
-                                       std::move(hook), opts)) {
-    return false;
+  if (IsUnsandboxedSandboxType(sandbox_type) ||
+      !SandboxSeccompBPF::IsSeccompBPFDesired() ||
+      !SandboxSeccompBPF::SupportsSandbox()) {
+    return true;
   }
+
+  // If the kernel supports the sandbox, and if the command line says we
+  // should enable it, enable it or die.
+  std::unique_ptr<BPFBasePolicy> policy =
+      SandboxSeccompBPF::PolicyForSandboxType(sandbox_type, options);
+
+  if (hook)
+    CHECK(std::move(hook).Run(policy.get(), options));
+
+  SandboxSeccompBPF::StartSandboxWithExternalPolicy(std::move(policy),
+                                                    OpenProc(proc_fd_));
+  SandboxSeccompBPF::RunSandboxSanityChecks(sandbox_type, options);
   seccomp_bpf_started_ = true;
   LogSandboxStarted("seccomp-bpf");
   return true;
+#else
+  return false;
+#endif
 }
 
-bool SandboxLinux::InitializeSandboxImpl(
-    SandboxType sandbox_type,
-    SandboxSeccompBPF::PreSandboxHook hook,
-    const SandboxSeccompBPF::Options& options) {
+bool SandboxLinux::InitializeSandbox(SandboxType sandbox_type,
+                                     SandboxLinux::PreSandboxHook hook,
+                                     const Options& options) {
   DCHECK(!initialize_sandbox_ran_);
   initialize_sandbox_ran_ = true;
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  const std::string process_type = command_line->GetSwitchValueASCII(
-      service_manager::switches::kProcessType);
+  const std::string process_type =
+      command_line->GetSwitchValueASCII(switches::kProcessType);
 
   // We need to make absolutely sure that our sandbox is "sealed" before
   // returning.
@@ -326,22 +360,20 @@ bool SandboxLinux::InitializeSandboxImpl(
 
 #if defined(OS_CHROMEOS)
     if (base::SysInfo::IsRunningOnChromeOS() &&
-        process_type == service_manager::switches::kGpuProcess) {
+        process_type == switches::kGpuProcess) {
       error_message += " This error can be safely ignored in VMTests.";
     }
 #endif
 
     // The GPU process is allowed to call InitializeSandbox() with threads.
-    bool sandbox_failure_fatal =
-        process_type != service_manager::switches::kGpuProcess;
+    bool sandbox_failure_fatal = process_type != switches::kGpuProcess;
     // This can be disabled with the '--gpu-sandbox-failures-fatal' flag.
     // Setting the flag with no value or any value different than 'yes' or 'no'
     // is equal to setting '--gpu-sandbox-failures-fatal=yes'.
-    if (process_type == service_manager::switches::kGpuProcess &&
-        command_line->HasSwitch(
-            service_manager::switches::kGpuSandboxFailuresFatal)) {
-      const std::string switch_value = command_line->GetSwitchValueASCII(
-          service_manager::switches::kGpuSandboxFailuresFatal);
+    if (process_type == switches::kGpuProcess &&
+        command_line->HasSwitch(switches::kGpuSandboxFailuresFatal)) {
+      const std::string switch_value =
+          command_line->GetSwitchValueASCII(switches::kGpuSandboxFailuresFatal);
       sandbox_failure_fatal = switch_value != "no";
     }
 
@@ -356,6 +388,10 @@ bool SandboxLinux::InitializeSandboxImpl(
   if (!pre_initialized_)
     PreinitializeSandbox();
 
+  // Turn on the namespace sandbox if the zygote hasn't done so already.
+  if (options.engage_namespace_sandbox)
+    EngageNamespaceSandbox(false /* from_zygote */);
+
   DCHECK(!HasOpenDirectories())
       << "InitializeSandbox() called after unexpected directories have been "
       << "opened. This breaks the security of the setuid sandbox.";
@@ -366,7 +402,7 @@ bool SandboxLinux::InitializeSandboxImpl(
   return StartSeccompBPF(sandbox_type, std::move(hook), options);
 }
 
-void SandboxLinux::StopThreadImpl(base::Thread* thread) {
+void SandboxLinux::StopThread(base::Thread* thread) {
   DCHECK(thread);
   StopThreadAndEnsureNotCounted(thread);
 }
@@ -381,13 +417,11 @@ bool SandboxLinux::seccomp_bpf_with_tsync_supported() const {
   return seccomp_bpf_with_tsync_supported_;
 }
 
-bool SandboxLinux::LimitAddressSpace(
-    const std::string& process_type,
-    const SandboxSeccompBPF::Options& options) {
+bool SandboxLinux::LimitAddressSpace(const std::string& process_type,
+                                     const Options& options) {
 #if !defined(ANY_OF_AMTLU_SANITIZER)
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (service_manager::SandboxTypeFromCommandLine(*command_line) ==
-      service_manager::SANDBOX_TYPE_NO_SANDBOX) {
+  if (SandboxTypeFromCommandLine(*command_line) == SANDBOX_TYPE_NO_SANDBOX) {
     return false;
   }
   // Limit the address space to 4GB.
@@ -405,8 +439,8 @@ bool SandboxLinux::LimitAddressSpace(
     // space under normal usage, see crbug.com/271119.
     // For now, increase limit to 16GB for renderer, worker, and GPU processes
     // to accomodate.
-    if (process_type == service_manager::switches::kRendererProcess ||
-        process_type == service_manager::switches::kGpuProcess) {
+    if (process_type == switches::kRendererProcess ||
+        process_type == switches::kGpuProcess) {
       address_space_limit = 1ULL << 34;
       if (options.has_wasm_trap_handler) {
         // WebAssembly memory objects use a large amount of address space when
@@ -452,6 +486,23 @@ bool SandboxLinux::LimitAddressSpace(
         // !defined(THREAD_SANITIZER)
 }
 
+void SandboxLinux::StartBrokerProcess(
+    BPFBasePolicy* client_sandbox_policy,
+    std::vector<sandbox::syscall_broker::BrokerFilePermission> permissions,
+    PreSandboxHook broker_side_hook,
+    const Options& options) {
+  // Leaked at shutdown, so use bare |new|.
+  broker_process_ = new sandbox::syscall_broker::BrokerProcess(
+      BPFBasePolicy::GetFSDeniedErrno(), permissions);
+
+  // The initialization callback will perform generic initialization and then
+  // call broker_sandboxer_callback.
+  CHECK(broker_process_->Init(
+      base::Bind(&UpdateProcessTypeAndEnableSandbox,
+                 base::Unretained(client_sandbox_policy),
+                 base::Passed(std::move(broker_side_hook)), options)));
+}
+
 bool SandboxLinux::HasOpenDirectories() const {
   return sandbox::ProcUtil::HasOpenDirectory(proc_fd_);
 }
@@ -464,16 +515,14 @@ void SandboxLinux::SealSandbox() {
   }
 }
 
-void SandboxLinux::CheckForBrokenPromises(
-    service_manager::SandboxType sandbox_type) {
-  if (sandbox_type != service_manager::SANDBOX_TYPE_RENDERER &&
-      sandbox_type != service_manager::SANDBOX_TYPE_PPAPI) {
+void SandboxLinux::CheckForBrokenPromises(SandboxType sandbox_type) {
+  if (sandbox_type != SANDBOX_TYPE_RENDERER &&
+      sandbox_type != SANDBOX_TYPE_PPAPI) {
     return;
   }
   // Make sure that any promise made with GetStatus() wasn't broken.
   bool promised_seccomp_bpf_would_start =
-      (sandbox_status_flags_ != service_manager::Sandbox::kInvalid) &&
-      (GetStatus() & service_manager::Sandbox::kSeccompBPF);
+      (sandbox_status_flags_ != kInvalid) && (GetStatus() & kSeccompBPF);
   CHECK(!promised_seccomp_bpf_would_start || seccomp_bpf_started_);
 }
 

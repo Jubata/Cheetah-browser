@@ -200,17 +200,13 @@ class PrintPreviewHandler
   // Generates new token and sends back to UI.
   void HandleGetAccessToken(const base::ListValue* args);
 
-  // Brings up a web page to allow the user to configure cloud print.
-  // |args| is unused.
-  void HandleManageCloudPrint(const base::ListValue* args);
+  // Brings up Chrome printing setting page to allow the user to configure local
+  // printers or Google Cloud printers. |args| is unused.
+  void HandleManagePrinters(const base::ListValue* args);
 
   // Gathers UMA stats when the print preview dialog is about to close.
   // |args| is unused.
   void HandleClosePreviewDialog(const base::ListValue* args);
-
-  // Asks the browser to show the native printer management dialog.
-  // |args| is unused.
-  void HandleManagePrinters(const base::ListValue* args);
 
   // Asks the browser for several settings that are needed before the first
   // preview is displayed.
@@ -255,17 +251,11 @@ class PrintPreviewHandler
   // Closes the preview dialog.
   void ClosePreviewDialog();
 
-  // Adds all the recorded stats taken so far to histogram counts.
-  void ReportStats();
-
   // Clears initiator details for the print preview dialog.
   void ClearInitiatorDetails();
 
   // Populates |settings| according to the current locale.
   void GetNumberFormatAndMeasurementSystem(base::DictionaryValue* settings);
-
-  bool GetPreviewDataAndTitle(scoped_refptr<base::RefCountedBytes>* data,
-                              base::string16* title) const;
 
   PdfPrinterHandler* GetPdfPrinterHandler();
 
@@ -300,7 +290,6 @@ class PrintPreviewHandler
 
   // A count of how many requests received to show manage printers dialog.
   int manage_printers_dialog_request_count_;
-  int manage_cloud_printers_dialog_request_count_;
 
   // Whether we have already logged a failed print preview.
   bool reported_failed_preview_;

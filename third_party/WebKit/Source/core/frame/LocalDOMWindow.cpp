@@ -65,10 +65,10 @@
 #include "core/frame/LocalFrameClient.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/Navigator.h"
+#include "core/frame/PausableTimer.h"
 #include "core/frame/Screen.h"
 #include "core/frame/ScrollToOptions.h"
 #include "core/frame/Settings.h"
-#include "core/frame/SuspendableTimer.h"
 #include "core/frame/VisualViewport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLFrameOwnerElement.h"
@@ -105,7 +105,7 @@ static const int kUnusedPreloadTimeoutInSeconds = 3;
 
 class PostMessageTimer final
     : public GarbageCollectedFinalized<PostMessageTimer>,
-      public SuspendableTimer {
+      public PausableTimer {
   USING_GARBAGE_COLLECTED_MIXIN(PostMessageTimer);
 
  public:
@@ -114,7 +114,7 @@ class PostMessageTimer final
                    scoped_refptr<SecurityOrigin> target_origin,
                    std::unique_ptr<SourceLocation> location,
                    UserGestureToken* user_gesture_token)
-      : SuspendableTimer(window.document(), TaskType::kPostedMessage),
+      : PausableTimer(window.document(), TaskType::kPostedMessage),
         event_(event),
         window_(&window),
         target_origin_(std::move(target_origin)),
@@ -133,7 +133,7 @@ class PostMessageTimer final
     return user_gesture_token_.get();
   }
   void ContextDestroyed(ExecutionContext* destroyed_context) override {
-    SuspendableTimer::ContextDestroyed(destroyed_context);
+    PausableTimer::ContextDestroyed(destroyed_context);
 
     if (disposal_allowed_)
       Dispose();
@@ -145,7 +145,7 @@ class PostMessageTimer final
   virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(event_);
     visitor->Trace(window_);
-    SuspendableTimer::Trace(visitor);
+    PausableTimer::Trace(visitor);
   }
 
   // TODO(alexclarke): Override timerTaskRunner() to pass in a document specific
@@ -264,7 +264,7 @@ void LocalDOMWindow::ClearDocument() {
 
   DCHECK(!document_->IsActive());
 
-  // FIXME: This should be part of SuspendableObject shutdown
+  // FIXME: This should be part of PausableObject shutdown
   ClearEventQueue();
 
   unused_preloads_timer_.Stop();
@@ -1401,6 +1401,10 @@ void LocalDOMWindow::AddedEventListener(
       UseCounter::Count(document(),
                         WebFeature::kSubFrameBeforeUnloadRegistered);
     }
+  } else if (event_type == EventTypeNames::pagehide) {
+    UseCounter::Count(document(), WebFeature::kDocumentPageHideRegistered);
+  } else if (event_type == EventTypeNames::pageshow) {
+    UseCounter::Count(document(), WebFeature::kDocumentPageShowRegistered);
   }
 }
 

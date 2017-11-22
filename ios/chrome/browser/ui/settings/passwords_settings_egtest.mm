@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/mac/foundation_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
@@ -23,7 +24,7 @@
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/passwords/ios_chrome_password_store_factory.h"
 #import "ios/chrome/browser/ui/settings/reauthentication_module.h"
-#include "ios/chrome/browser/ui/tools_menu/tools_menu_constants.h"
+#include "ios/chrome/browser/ui/tools_menu/public/tools_menu_constants.h"
 #include "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
 #import "ios/chrome/test/app/password_test_util.h"
@@ -187,6 +188,27 @@ id<GREYMatcher> DeleteButton() {
                     grey_interactable(), nullptr);
 }
 
+// Matcher for the Delete button in the list view, located at the bottom of the
+// screen.
+id<GREYMatcher> DeleteButtonAtBottom() {
+  // Selecting the "Delete" button is tricky, because its text is defined in the
+  // private part of MD components library. But it is the unique
+  // almost-completely visible element which is aligned with the bottom edge of
+  // the screen.
+  GREYLayoutConstraint* equalBottom = [GREYLayoutConstraint
+      layoutConstraintWithAttribute:kGREYLayoutAttributeBottom
+                          relatedBy:kGREYLayoutRelationEqual
+               toReferenceAttribute:kGREYLayoutAttributeBottom
+                         multiplier:1.0
+                           constant:0.0];
+  id<GREYMatcher> wholeScreen =
+      grey_accessibilityID(@"SavePasswordsCollectionViewController");
+  return grey_allOf(grey_layout(@[ equalBottom ], wholeScreen),
+                    grey_accessibilityTrait(UIAccessibilityTraitButton),
+                    grey_accessibilityElement(),
+                    grey_minimumVisiblePercent(0.98), nil);
+}
+
 // This is similar to grey_ancestor, but only limited to the immediate parent.
 id<GREYMatcher> MatchParentWith(id<GREYMatcher> parentMatcher) {
   MatchesBlock matches = ^BOOL(id element) {
@@ -343,6 +365,19 @@ void TapEdit() {
       performAction:grey_tap()];
 }
 
+// Creates a PasswordForm with |index| being part of the username, password,
+// origin and realm.
+PasswordForm CreateSampleFormWithIndex(int index) {
+  PasswordForm form;
+  form.username_value =
+      base::ASCIIToUTF16(base::StringPrintf("concrete username %03d", index));
+  form.password_value =
+      base::ASCIIToUTF16(base::StringPrintf("concrete password %03d", index));
+  form.origin = GURL(base::StringPrintf("https://www%03d.example.com", index));
+  form.signon_realm = form.origin.spec();
+  return form;
+}
+
 }  // namespace
 
 // Various tests for the Save Passwords section of the settings.
@@ -432,6 +467,82 @@ void TapEdit() {
   // The tap checks the existence of the snackbar and also closes it.
   [[EarlGrey selectElementWithMatcher:grey_accessibilityLabel(snackbarLabel)]
       performAction:grey_tap()];
+
+  [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
+      performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
+      performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:NavigationBarDoneButton()]
+      performAction:grey_tap()];
+}
+
+// Checks that an attempt to show a password provides an appropriate feedback
+// when reauthentication succeeds.
+- (void)testShowPasswordToastAuthSucceeded {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      password_manager::features::kViewPasswords);
+
+  // Saving a form is needed for using the "password details" view.
+  SaveExamplePasswordForm();
+
+  OpenPasswordSettings();
+
+  [GetInteractionForPasswordEntry(@"example.com, concrete username")
+      performAction:grey_tap()];
+
+  MockReauthenticationModule* mock_reauthentication_module =
+      SetUpAndReturnMockReauthenticationModule();
+
+  // Check the snackbar in case of successful reauthentication.
+  mock_reauthentication_module.shouldSucceed = YES;
+  [GetInteractionForPasswordDetailItem(ShowPasswordButton())
+      performAction:grey_tap()];
+
+  // Check that the password is displayed.
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityLabel(@"concrete password")]
+      assertWithMatcher:grey_sufficientlyVisible()];
+
+  [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
+      performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
+      performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:NavigationBarDoneButton()]
+      performAction:grey_tap()];
+}
+
+// Checks that an attempt to show a password provides an appropriate feedback
+// when reauthentication fails.
+- (void)testShowPasswordToastAuthFailed {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      password_manager::features::kViewPasswords);
+
+  // Saving a form is needed for using the "password details" view.
+  SaveExamplePasswordForm();
+
+  OpenPasswordSettings();
+
+  [GetInteractionForPasswordEntry(@"example.com, concrete username")
+      performAction:grey_tap()];
+
+  MockReauthenticationModule* mock_reauthentication_module =
+      SetUpAndReturnMockReauthenticationModule();
+
+  // Check the snackbar in case of failed reauthentication.
+  mock_reauthentication_module.shouldSucceed = NO;
+  [GetInteractionForPasswordDetailItem(ShowPasswordButton())
+      performAction:grey_tap()];
+
+  // Check that the password is not displayed.
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityLabel(@"concrete password")]
+      assertWithMatcher:grey_nil()];
+
+  // Note that there is supposed to be no message (cf. the case of the copy
+  // button, which does need one). The reason is that the password not being
+  // shown is enough of a message that the action failed.
 
   [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
       performAction:grey_tap()];
@@ -550,6 +661,14 @@ void TapEdit() {
   // Also verify that the removed password is no longer in the list.
   [GetInteractionForPasswordEntry(@"example.com, concrete username")
       assertWithMatcher:grey_not(grey_sufficientlyVisible())];
+
+  // Finally, verify that the Edit button is visible and disabled, because there
+  // are no other password entries left for deletion via the "Edit" mode.
+  [[EarlGrey
+      selectElementWithMatcher:chrome_test_util::ButtonWithAccessibilityLabelId(
+                                   IDS_IOS_NAVIGATION_BAR_EDIT_BUTTON)]
+      assertWithMatcher:grey_allOf(grey_sufficientlyVisible(),
+                                   grey_not(grey_enabled()), nil)];
 
   [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
       performAction:grey_tap()];
@@ -1110,25 +1229,7 @@ void TapEdit() {
   [GetInteractionForPasswordEntry(@"example.com, concrete username")
       performAction:grey_tap()];
 
-  // Selecting the "Delete" button is tricky, because its text is defined in the
-  // private part of MD components library. But it is the unique
-  // almost-completely visible element which is aligned with the bottom edge of
-  // the screen.
-  GREYLayoutConstraint* equalBottom = [GREYLayoutConstraint
-      layoutConstraintWithAttribute:kGREYLayoutAttributeBottom
-                          relatedBy:kGREYLayoutRelationEqual
-               toReferenceAttribute:kGREYLayoutAttributeBottom
-                         multiplier:1.0
-                           constant:0.0];
-  id<GREYMatcher> wholeScreen =
-      grey_accessibilityID(@"SavePasswordsCollectionViewController");
-  [[EarlGrey
-      selectElementWithMatcher:grey_allOf(
-                                   grey_layout(@[ equalBottom ], wholeScreen),
-                                   grey_accessibilityTrait(
-                                       UIAccessibilityTraitButton),
-                                   grey_accessibilityElement(),
-                                   grey_minimumVisiblePercent(0.98), nil)]
+  [[EarlGrey selectElementWithMatcher:DeleteButtonAtBottom()]
       performAction:grey_tap()];
 
   // Verify that the deletion was propagated to the PasswordStore.
@@ -1221,6 +1322,96 @@ void TapEdit() {
       assertWithMatcher:grey_notNil()
                   error:&error];
   GREYAssertTrue(error, @"The settings page is still displayed");
+}
+
+// Test that even with many passwords the settings are still usable. In
+// particular, ensure that password entries "below the fold" are reachable and
+// their detail view is shown on tapping.
+// There are two bottlenecks potentially affecting the runtime of the test:
+// (1) Storing passwords on initialisation.
+// (2) Speed of EarlGrey UI operations such as scrolling.
+// To keep the test duration reasonable, the delay from (1) is eliminated in
+// storing just about enough passwords to ensure filling more than one page on
+// any device. To limit the effect of (2), custom large scrolling steps are
+// added to the usual scrolling actions.
+- (void)testManyPasswords {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      password_manager::features::kViewPasswords);
+
+  // Enough just to ensure filling more than one page on all devices.
+  constexpr int kPasswordsCount = 15;
+
+  // Send the passwords to the queue to be added to the PasswordStore.
+  for (int i = 1; i <= kPasswordsCount; ++i) {
+    GetPasswordStore()->AddLogin(CreateSampleFormWithIndex(i));
+  }
+
+  // Use TestStoreConsumer::GetStoreResults to wait for the background storing
+  // task to complete and to verify that the passwords have been stored.
+  TestStoreConsumer consumer;
+  GREYAssertEqual(kPasswordsCount, consumer.GetStoreResults().size(),
+                  @"Unexpected PasswordStore results.");
+
+  OpenPasswordSettings();
+
+  // Aim at an entry almost at the end of the list.
+  constexpr int kRemoteIndex = kPasswordsCount - 2;
+  // The scrolling in GetInteractionForPasswordEntry has too fine steps to
+  // reach the desired part of the list quickly. The following gives it a head
+  // start of almost the desired position, counting 30 points per entry and
+  // aiming 3 entries before |kRemoteIndex|.
+  constexpr int kJump = (kRemoteIndex - 3) * 30;
+  [[EarlGrey
+      selectElementWithMatcher:grey_accessibilityID(
+                                   @"SavePasswordsCollectionViewController")]
+      performAction:grey_scrollInDirection(kGREYDirectionDown, kJump)];
+  [GetInteractionForPasswordEntry([NSString
+      stringWithFormat:@"www%03d.example.com, concrete username %03d",
+                       kRemoteIndex, kRemoteIndex]) performAction:grey_tap()];
+
+  // Check that the detail view loaded correctly by verifying the site content.
+  id<GREYMatcher> siteCell = grey_accessibilityLabel([NSString
+      stringWithFormat:@"https://www%03d.example.com/", kRemoteIndex]);
+  [GetInteractionForPasswordDetailItem(siteCell)
+      assertWithMatcher:grey_notNil()];
+
+  [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
+      performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
+      performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:NavigationBarDoneButton()]
+      performAction:grey_tap()];
+}
+
+// Checks that if all passwords are deleted in the list view, the disabled Edit
+// button replaces the Done button.
+- (void)testEditButtonUpdateOnDeletion {
+  // Save a password to be deleted later.
+  SaveExamplePasswordForm();
+
+  OpenPasswordSettings();
+
+  TapEdit();
+
+  // Select password entry to be removed.
+  [GetInteractionForPasswordEntry(@"example.com, concrete username")
+      performAction:grey_tap()];
+
+  [[EarlGrey selectElementWithMatcher:DeleteButtonAtBottom()]
+      performAction:grey_tap()];
+
+  // Verify that the Edit button is visible and disabled.
+  [[EarlGrey
+      selectElementWithMatcher:chrome_test_util::ButtonWithAccessibilityLabelId(
+                                   IDS_IOS_NAVIGATION_BAR_EDIT_BUTTON)]
+      assertWithMatcher:grey_allOf(grey_sufficientlyVisible(),
+                                   grey_not(grey_enabled()), nil)];
+
+  [[EarlGrey selectElementWithMatcher:SettingsMenuBackButton()]
+      performAction:grey_tap()];
+  [[EarlGrey selectElementWithMatcher:NavigationBarDoneButton()]
+      performAction:grey_tap()];
 }
 
 @end

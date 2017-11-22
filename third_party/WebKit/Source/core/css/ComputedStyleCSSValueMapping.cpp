@@ -25,6 +25,7 @@
 
 #include "core/css/ComputedStyleCSSValueMapping.h"
 
+#include "base/macros.h"
 #include "core/StylePropertyShorthand.h"
 #include "core/animation/css/CSSAnimationData.h"
 #include "core/animation/css/CSSTransitionData.h"
@@ -300,7 +301,7 @@ static CSSValue* ValueForPositionOffset(const ComputedStyle& style,
   return ZoomAdjustedPixelValueForLength(offset, style);
 }
 
-static CSSBorderImageSliceValue* ValueForNinePieceImageSlice(
+static cssvalue::CSSBorderImageSliceValue* ValueForNinePieceImageSlice(
     const NinePieceImage& image) {
   // Create the slices.
   CSSPrimitiveValue* top = nullptr;
@@ -449,7 +450,8 @@ static CSSValue* ValueForNinePieceImage(const NinePieceImage& image,
     image_value = image.GetImage()->ComputedCSSValue();
 
   // Create the image slice.
-  CSSBorderImageSliceValue* image_slices = ValueForNinePieceImageSlice(image);
+  cssvalue::CSSBorderImageSliceValue* image_slices =
+      ValueForNinePieceImageSlice(image);
 
   // Create the border area slices.
   CSSValue* border_slices =
@@ -1010,7 +1012,6 @@ static CSSValue* SpecifiedValueForGridTrackSize(const GridTrackSize& track_size,
 
 class OrderedNamedLinesCollector {
   STACK_ALLOCATED();
-  WTF_MAKE_NONCOPYABLE(OrderedNamedLinesCollector);
 
  public:
   OrderedNamedLinesCollector(const ComputedStyle& style,
@@ -1045,6 +1046,7 @@ class OrderedNamedLinesCollector {
   size_t insertion_point_;
   size_t auto_repeat_total_tracks_;
   size_t auto_repeat_track_list_length_;
+  DISALLOW_COPY_AND_ASSIGN(OrderedNamedLinesCollector);
 };
 
 void OrderedNamedLinesCollector::AppendLines(
@@ -1253,16 +1255,11 @@ static CSSValue* ValueForTextDecorationStyle(
   return CSSInitialValue::Create();
 }
 
-static CSSValue* ValueForTextDecorationSkip(
-    TextDecorationSkip text_decoration_skip) {
-  CSSValueList* list = CSSValueList::CreateSpaceSeparated();
-  if (EnumHasFlags(text_decoration_skip, TextDecorationSkip::kObjects))
-    list->Append(*CSSIdentifierValue::Create(CSSValueObjects));
-  if (EnumHasFlags(text_decoration_skip, TextDecorationSkip::kInk))
-    list->Append(*CSSIdentifierValue::Create(CSSValueInk));
-
-  DCHECK(list->length());
-  return list;
+static CSSValue* ValueForTextDecorationSkipInk(
+    ETextDecorationSkipInk text_decoration_skip_ink) {
+  if (text_decoration_skip_ink == ETextDecorationSkipInk::kNone)
+    return CSSIdentifierValue::Create(CSSValueNone);
+  return CSSIdentifierValue::Create(CSSValueAuto);
 }
 
 static CSSValue* TouchActionFlagsToCSSValue(TouchAction touch_action) {
@@ -2241,7 +2238,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
   if (property_id == CSSPropertyInvalid)
     return nullptr;
   const SVGComputedStyle& svg_style = style.SvgStyle();
-  property_id = CSSPropertyAPI::Get(property_id)
+  property_id = CSSProperty::Get(property_id)
                     .ResolveDirectionAwareProperty(style.Direction(),
                                                    style.GetWritingMode());
   DCHECK_NE(property_id, CSSPropertyInvalid);
@@ -2313,12 +2310,9 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
     }
     case CSSPropertyBackgroundClip:
     case CSSPropertyBackgroundOrigin:
-    case CSSPropertyWebkitBackgroundClip:
-    case CSSPropertyWebkitBackgroundOrigin:
     case CSSPropertyWebkitMaskClip:
     case CSSPropertyWebkitMaskOrigin: {
       bool is_clip = property_id == CSSPropertyBackgroundClip ||
-                     property_id == CSSPropertyWebkitBackgroundClip ||
                      property_id == CSSPropertyWebkitMaskClip;
       CSSValueList* list = CSSValueList::CreateCommaSeparated();
       const FillLayer* curr_layer = (property_id == CSSPropertyWebkitMaskClip ||
@@ -2766,7 +2760,7 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
     case CSSPropertyJustifyItems:
       return ValueForItemPositionWithOverflowAlignment(
           style.JustifyItems().GetPosition() == kItemPositionAuto
-              ? ComputedStyle::InitialDefaultAlignment()
+              ? ComputedStyleInitialValues::InitialDefaultAlignment()
               : style.JustifyItems());
     case CSSPropertyJustifySelf:
       return ValueForItemPositionWithOverflowAlignment(style.JustifySelf());
@@ -2987,8 +2981,8 @@ const CSSValue* ComputedStyleCSSValueMapping::Get(
                                         allow_visited_style);
     case CSSPropertyTextDecorationLine:
       return RenderTextDecorationFlagsToCSSValue(style.GetTextDecoration());
-    case CSSPropertyTextDecorationSkip:
-      return ValueForTextDecorationSkip(style.GetTextDecorationSkip());
+    case CSSPropertyTextDecorationSkipInk:
+      return ValueForTextDecorationSkipInk(style.TextDecorationSkipInk());
     case CSSPropertyTextDecorationStyle:
       return ValueForTextDecorationStyle(style.TextDecorationStyle());
     case CSSPropertyTextDecorationColor:

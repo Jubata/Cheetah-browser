@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
+#include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
@@ -180,7 +181,6 @@ void PermissionDialogTest::ShowDialog(const std::string& name) {
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC:
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA:
     case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
-    case CONTENT_SETTINGS_TYPE_PUSH_MESSAGING:  // Same as notifications.
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
     case CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER:  // ChromeOS only.

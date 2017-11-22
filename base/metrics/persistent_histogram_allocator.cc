@@ -662,7 +662,7 @@ std::unique_ptr<HistogramBase> PersistentHistogramAllocator::CreateHistogram(
       /*make_iterable=*/false);
 
   // Create the right type of histogram.
-  std::string name(histogram_data_ptr->name);
+  const char* name = histogram_data_ptr->name;
   std::unique_ptr<HistogramBase> histogram;
   switch (histogram_type) {
     case HISTOGRAM:
@@ -787,7 +787,7 @@ bool GlobalHistogramAllocator::CreateWithFile(
     size = saturated_cast<size_t>(file.GetLength());
     mmfile->Initialize(std::move(file), MemoryMappedFile::READ_WRITE);
   } else {
-    mmfile->Initialize(std::move(file), {0, static_cast<int64_t>(size)},
+    mmfile->Initialize(std::move(file), {0, size},
                        MemoryMappedFile::READ_WRITE_EXTEND);
   }
   if (!mmfile->IsValid() ||
@@ -941,7 +941,7 @@ bool GlobalHistogramAllocator::CreateSpareFile(const FilePath& spare_path,
       return false;
 
     MemoryMappedFile mmfile;
-    mmfile.Initialize(std::move(spare_file), {0, static_cast<int64_t>(size)},
+    mmfile.Initialize(std::move(spare_file), {0, size},
                       MemoryMappedFile::READ_WRITE_EXTEND);
     success = mmfile.IsValid();
   }

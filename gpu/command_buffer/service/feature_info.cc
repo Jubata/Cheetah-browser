@@ -271,6 +271,7 @@ void FeatureInfo::InitializeForTesting(ContextType context_type) {
 }
 
 bool IsGL_REDSupportedOnFBOs() {
+  DCHECK(glGetError() == GL_NO_ERROR);
   // Skia uses GL_RED with frame buffers, unfortunately, Mesa claims to support
   // GL_EXT_texture_rg, but it doesn't support it on frame buffers.  To fix
   // this, we try it, and if it fails, we don't expose GL_EXT_texture_rg.
@@ -431,13 +432,10 @@ void FeatureInfo::InitializeFeatures() {
   // so the extension string is always exposed.
   AddExtensionString("GL_OES_vertex_array_object");
 
-// Texture storage image is only usable with native gpu memory buffer support,
-// and should be disabled if we aren't supposed to use GMBs as render targets.
+// Texture storage image is only usable with native gpu memory buffer support.
 #if defined(OS_MACOSX) || (defined(OS_LINUX) && defined(USE_OZONE))
-  if (!workarounds_.disable_gpu_memory_buffers_as_render_targets) {
-    feature_flags_.chromium_texture_storage_image = true;
-    AddExtensionString("GL_CHROMIUM_texture_storage_image");
-  }
+  feature_flags_.chromium_texture_storage_image = true;
+  AddExtensionString("GL_CHROMIUM_texture_storage_image");
 #endif
 
   if (!disallowed_features_.gpu_memory_manager)
@@ -1334,6 +1332,15 @@ void FeatureInfo::InitializeFeatures() {
   UMA_HISTOGRAM_ENUMERATION(
       "GPU.TextureR16Ext_LuminanceF16", GpuTextureUMAHelper(),
       static_cast<int>(GpuTextureResultR16_L16::kMax) + 1);
+
+  if (enable_es3 && gl::HasExtension(extensions, "GL_EXT_window_rectangles")) {
+    AddExtensionString("GL_EXT_window_rectangles");
+    feature_flags_.ext_window_rectangles = true;
+    validators_.g_l_state.AddValue(GL_WINDOW_RECTANGLE_MODE_EXT);
+    validators_.g_l_state.AddValue(GL_MAX_WINDOW_RECTANGLES_EXT);
+    validators_.g_l_state.AddValue(GL_NUM_WINDOW_RECTANGLES_EXT);
+    validators_.indexed_g_l_state.AddValue(GL_WINDOW_RECTANGLE_EXT);
+  }
 
   bool has_opengl_dual_source_blending =
       gl_version_info_->IsAtLeastGL(3, 3) ||

@@ -78,7 +78,7 @@
 #include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/TransformDisplayItem.h"
 #include "platform/runtime_enabled_features.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "public/platform/WebLayerStickyPositionConstraint.h"
 #include "public/platform/WebScrollBoundaryBehavior.h"
@@ -2198,13 +2198,31 @@ enum ApplyToGraphicsLayersModeFlags {
 };
 typedef unsigned ApplyToGraphicsLayersMode;
 
+// Flags to layers mapping matrix:
+//                  bit 0 1 2 3 4 5 6 7 8 9
+// ChildTransform       *           *
+// Main                 *         *   *
+// Clipping             *           *
+// Scrolling            *           *
+// ScrollingContents    *         * *   *
+// Foreground           *         *     *
+// Squashing              *
+// Mask                         * *   *
+// ChildClippingMask            * *   *
+// AncestorClippingMask         * *   *
+// Background                 * *     *
+// HorizontalScrollbar      *
+// VerticalScrollbar        *
+// ScrollCorner             *
+// DecorationOutline                  *   *
 template <typename Func>
 static void ApplyToGraphicsLayers(const CompositedLayerMapping* mapping,
                                   const Func& f,
                                   ApplyToGraphicsLayersMode mode) {
   DCHECK(mode);
 
-  if ((mode & kApplyToLayersAffectedByPreserve3D) &&
+  if (((mode & kApplyToLayersAffectedByPreserve3D) ||
+       (mode & kApplyToChildContainingLayers)) &&
       mapping->ChildTransformLayer())
     f(mapping->ChildTransformLayer());
   if (((mode & kApplyToLayersAffectedByPreserve3D) ||
@@ -2231,9 +2249,6 @@ static void ApplyToGraphicsLayers(const CompositedLayerMapping* mapping,
        (mode & kApplyToScrollingContentLayers)) &&
       mapping->ForegroundLayer())
     f(mapping->ForegroundLayer());
-
-  if ((mode & kApplyToChildContainingLayers) && mapping->ChildTransformLayer())
-    f(mapping->ChildTransformLayer());
 
   if ((mode & kApplyToSquashingLayer) && mapping->SquashingLayer())
     f(mapping->SquashingLayer());
@@ -3266,9 +3281,6 @@ IntRect CompositedLayerMapping::RecomputeInterestRect(
   // If the visible content rect is empty, then it makes no sense to map it back
   // since there is nothing to map.
   if (!visible_content_rect.IsEmpty()) {
-    // Expand by interest rect padding amount.
-    visible_content_rect.Inflate(kPixelDistanceToRecord);
-
     local_interest_rect =
         anchor_layout_object
             ->AbsoluteToLocalQuad(visible_content_rect,
@@ -3282,6 +3294,21 @@ IntRect CompositedLayerMapping::RecomputeInterestRect(
     // issues. Examples include rotation near 90 degrees or perspective. In such
     // cases, fall back to painting the first kPixelDistanceToRecord pixels in
     // each direction.
+
+    // Expand by interest rect padding amount, scaled by the approximate scale
+    // of the GraphicsLayer relative to screen pixels. If width or height
+    // are zero or nearly zero, fall back to kPixelDistanceToRecord.
+    // This is the same as the else clause below.
+    float x_scale =
+        visible_content_rect.Width() > std::numeric_limits<float>::epsilon()
+            ? local_interest_rect.Width() / visible_content_rect.Width()
+            : 1.0f;
+    float y_scale =
+        visible_content_rect.Height() > std::numeric_limits<float>::epsilon()
+            ? local_interest_rect.Height() / visible_content_rect.Height()
+            : 1.0f;
+    local_interest_rect.InflateX(kPixelDistanceToRecord * x_scale);
+    local_interest_rect.InflateY(kPixelDistanceToRecord * y_scale);
     local_interest_rect.Intersect(enclosing_graphics_layer_bounds);
   } else {
     // Expand by interest rect padding amount.

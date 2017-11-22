@@ -16,9 +16,9 @@
 #include "core/page/Page.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
 #include "platform/runtime_enabled_features.h"
-#include "public/platform/WebFeaturePolicyFeature.h"
 #include "public/platform/reporting.mojom-blink.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
 
 namespace {
 
@@ -235,9 +235,8 @@ void Deprecation::CountDeprecationCrossOriginIframe(const Document& document,
   CountDeprecationCrossOriginIframe(frame, feature);
 }
 
-void Deprecation::CountDeprecationFeaturePolicy(
-    const Document& document,
-    WebFeaturePolicyFeature feature) {
+void Deprecation::CountDeprecationFeaturePolicy(const Document& document,
+                                                FeaturePolicyFeature feature) {
   // If feature policy is not enabled, don't do anything.
   if (!RuntimeEnabledFeatures::FeaturePolicyEnabled())
     return;
@@ -257,30 +256,30 @@ void Deprecation::CountDeprecationFeaturePolicy(
   // (until the general syntax is shipped) and this is also a good enough
   // approximation for deprecation messages.
   switch (feature) {
-    case WebFeaturePolicyFeature::kEncryptedMedia:
+    case FeaturePolicyFeature::kEncryptedMedia:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
               kEncryptedMediaDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case WebFeaturePolicyFeature::kGeolocation:
+    case FeaturePolicyFeature::kGeolocation:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::kGeolocationDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case WebFeaturePolicyFeature::kMicrophone:
+    case FeaturePolicyFeature::kMicrophone:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
               kGetUserMediaMicDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case WebFeaturePolicyFeature::kCamera:
+    case FeaturePolicyFeature::kCamera:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
               kGetUserMediaCameraDisallowedByFeaturePolicyInCrossOriginIframe);
       break;
-    case WebFeaturePolicyFeature::kMidiFeature:
+    case FeaturePolicyFeature::kMidiFeature:
       CountDeprecationCrossOriginIframe(
           frame,
           WebFeature::
@@ -539,12 +538,6 @@ String Deprecation::DeprecationMessage(WebFeature feature) {
              "https://www.chromestatus.com/feature/5735596811091968 for more "
              "details.";
 
-    case WebFeature::kCredentialManagerCredentialRequestOptionsUnmediated:
-      return replacedWillBeRemoved(
-          "The boolean flag CredentialRequestOptions.unmediated",
-          "the CredentialRequestOptions.mediation enum", M62,
-          "6076479909658624");
-
     case WebFeature::kCredentialManagerIdName:
     case WebFeature::kCredentialManagerPasswordName:
     case WebFeature::kCredentialManagerAdditionalData:
@@ -563,11 +556,6 @@ String Deprecation::DeprecationMessage(WebFeature feature) {
           "payment method name \"basic-card\" with issuer network in the "
           "\"supportedNetworks\" field",
           M64, "5725727580225536");
-    case WebFeature::kCredentialManagerRequireUserMediation:
-      return replacedWillBeRemoved(
-          "The CredentialsContainer.requireUserMediation method",
-          "the CredentialsContainer.preventSilentAccess method", M62,
-          "4781762488041472");
     case WebFeature::kDeprecatedTimingFunctionStepMiddle:
       return replacedWillBeRemoved(
           "The step timing function with step position 'middle'",

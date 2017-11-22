@@ -23,6 +23,8 @@
 #ifndef StyleResolver_h
 #define StyleResolver_h
 
+#include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/animation/Interpolation.h"
 #include "core/animation/PropertyHandle.h"
@@ -37,9 +39,6 @@
 #include "platform/wtf/Deque.h"
 #include "platform/wtf/HashMap.h"
 #include "platform/wtf/HashSet.h"
-#include "platform/wtf/ListHashSet.h"
-#include "platform/wtf/RefPtr.h"
-#include "platform/wtf/Vector.h"
 
 namespace blink {
 
@@ -51,7 +50,7 @@ class Element;
 class Interpolation;
 class MatchResult;
 class RuleSet;
-class StylePropertySet;
+class CSSPropertyValueSet;
 class StyleRuleUsageTracker;
 class CSSVariableResolver;
 
@@ -61,7 +60,6 @@ enum RuleMatchingBehavior { kMatchAllRules, kMatchAllRulesExcludingSMIL };
 // of stylesheets.
 class CORE_EXPORT StyleResolver final
     : public GarbageCollectedFinalized<StyleResolver> {
-  WTF_MAKE_NONCOPYABLE(StyleResolver);
 
  public:
   static StyleResolver* Create(Document& document) {
@@ -80,7 +78,7 @@ class CORE_EXPORT StyleResolver final
       Element&,
       const ComputedStyle& base_style,
       const ComputedStyle* parent_style,
-      CSSPropertyID,
+      const CSSProperty&,
       const CSSValue*);
 
   scoped_refptr<ComputedStyle> PseudoStyleForElement(
@@ -121,7 +119,7 @@ class CORE_EXPORT StyleResolver final
       unsigned rules_to_include = kAllButEmptyCSSRules);
   StyleRuleList* StyleRulesForElement(Element*, unsigned rules_to_include);
 
-  void ComputeFont(ComputedStyle*, const StylePropertySet&);
+  void ComputeFont(ComputedStyle*, const CSSPropertyValueSet&);
 
   // FIXME: Rename to reflect the purpose, like didChangeFontSize or something.
   void InvalidateMatchedPropertiesCache();
@@ -260,7 +258,7 @@ class CORE_EXPORT StyleResolver final
                               NeedsApplyPass&);
   template <CSSPropertyPriority priority, ShouldUpdateNeedsApplyPass>
   void ApplyProperties(StyleResolverState&,
-                       const StylePropertySet* properties,
+                       const CSSPropertyValueSet* properties,
                        bool is_important,
                        bool inherited_only,
                        NeedsApplyPass&,
@@ -273,12 +271,6 @@ class CORE_EXPORT StyleResolver final
                         const CSSValue&,
                         bool inherited_only,
                         PropertyWhitelistType);
-  template <CSSPropertyPriority priority, ShouldUpdateNeedsApplyPass>
-  void ApplyPropertiesForApplyAtRule(StyleResolverState&,
-                                     const CSSValue&,
-                                     bool is_important,
-                                     NeedsApplyPass&,
-                                     PropertyWhitelistType);
 
   bool PseudoStyleForElementInternal(Element&,
                                      const PseudoStyleRequest&,
@@ -303,6 +295,7 @@ class CORE_EXPORT StyleResolver final
 
   bool print_media_type_ = false;
   bool was_viewport_resized_ = false;
+  DISALLOW_COPY_AND_ASSIGN(StyleResolver);
 };
 
 }  // namespace blink

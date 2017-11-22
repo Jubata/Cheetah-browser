@@ -7,6 +7,7 @@ package org.chromium.android_webview.test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -556,6 +557,7 @@ public class AwAutofillTest {
     public void testBasicAutofill() throws Throwable {
         TestWebServer webServer = TestWebServer.start();
         final String data = "<html><head></head><body><form action='a.html' name='formname'>"
+                + "<label>User Name:</label>"
                 + "<input type='text' id='text1' name='username'"
                 + " placeholder='placeholder@placeholder.com' autocomplete='username name'>"
                 + "<input type='checkbox' id='checkbox1' name='showpassword'>"
@@ -608,7 +610,9 @@ public class AwAutofillTest {
             assertEquals("name", child0.getAutofillHints()[1]);
             TestViewStructure.AwHtmlInfo htmlInfo0 = child0.getHtmlInfo();
             assertEquals("text", htmlInfo0.getAttribute("type"));
+            assertEquals("text1", htmlInfo0.getAttribute("id"));
             assertEquals("username", htmlInfo0.getAttribute("name"));
+            assertEquals("User Name:", htmlInfo0.getAttribute("label"));
 
             // Verify checkbox control filled correctly in ViewStructure.
             TestViewStructure child1 = viewStructure.getChild(1);
@@ -617,7 +621,9 @@ public class AwAutofillTest {
             assertNull(child1.getAutofillHints());
             TestViewStructure.AwHtmlInfo htmlInfo1 = child1.getHtmlInfo();
             assertEquals("checkbox", htmlInfo1.getAttribute("type"));
+            assertEquals("checkbox1", htmlInfo1.getAttribute("id"));
             assertEquals("showpassword", htmlInfo1.getAttribute("name"));
+            assertEquals("", htmlInfo1.getAttribute("label"));
 
             // Verify select control filled correctly in ViewStructure.
             TestViewStructure child2 = viewStructure.getChild(2);
@@ -626,6 +632,7 @@ public class AwAutofillTest {
             assertNull(child2.getAutofillHints());
             TestViewStructure.AwHtmlInfo htmlInfo2 = child2.getHtmlInfo();
             assertEquals("month", htmlInfo2.getAttribute("name"));
+            assertEquals("select1", htmlInfo2.getAttribute("id"));
             CharSequence[] options = child2.getAutofillOptions();
             assertEquals("Jan", options[0]);
             assertEquals("Feb", options[1]);
@@ -645,6 +652,7 @@ public class AwAutofillTest {
             values.append(child2.getId(), AutofillValue.forList(1));
             values.append(child3.getId(), AutofillValue.forText("aaa"));
             cnt = getCallbackCount();
+            clearChangedValues();
             invokeAutofill(values);
             waitForCallbackAndVerifyTypes(cnt,
                     new Integer[] {AUTOFILL_VALUE_CHANGED, AUTOFILL_VALUE_CHANGED,
@@ -663,6 +671,10 @@ public class AwAutofillTest {
             String value3 = executeJavaScriptAndWaitForResult(
                     "document.getElementById('textarea1').value;");
             assertEquals("\"aaa\"", value3);
+            ArrayList<Pair<Integer, AutofillValue>> changedValues = getChangedValues();
+            assertEquals("example@example.com", changedValues.get(0).second.getTextValue());
+            assertTrue(changedValues.get(1).second.getToggleValue());
+            assertEquals(1, changedValues.get(2).second.getListValue());
         } finally {
             webServer.shutdown();
         }

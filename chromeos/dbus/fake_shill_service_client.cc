@@ -30,11 +30,6 @@ namespace chromeos {
 
 namespace {
 
-void PassStubListValue(const ShillServiceClient::ListValueCallback& callback,
-                       base::ListValue* value) {
-  callback.Run(*value);
-}
-
 void PassStubServiceProperties(
     const ShillServiceClient::DictionaryValueCallback& callback,
     DBusMethodCallStatus call_status,
@@ -154,22 +149,20 @@ void FakeShillServiceClient::ClearProperties(
     const std::vector<std::string>& names,
     const ListValueCallback& callback,
     const ErrorCallback& error_callback) {
-  base::DictionaryValue* dict = NULL;
-  if (!stub_services_.GetDictionaryWithoutPathExpansion(
-      service_path.value(), &dict)) {
+  base::Value* dict = stub_services_.FindKeyOfType(
+      service_path.value(), base::Value::Type::DICTIONARY);
+  if (!dict) {
     error_callback.Run("Error.InvalidService", "Invalid Service");
     return;
   }
-  std::unique_ptr<base::ListValue> results(new base::ListValue);
-  for (std::vector<std::string>::const_iterator iter = names.begin();
-      iter != names.end(); ++iter) {
-    dict->RemoveWithoutPathExpansion(*iter, NULL);
+
+  base::ListValue result;
+  for (const auto& name : names) {
     // Note: Shill does not send notifications when properties are cleared.
-    results->AppendBoolean(true);
+    result.AppendBoolean(dict->RemoveKey(name));
   }
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE,
-      base::Bind(&PassStubListValue, callback, base::Owned(results.release())));
+      FROM_HERE, base::BindOnce(callback, std::move(result)));
 }
 
 void FakeShillServiceClient::Connect(const dbus::ObjectPath& service_path,
@@ -409,13 +402,11 @@ bool FakeShillServiceClient::SetServiceProperty(const std::string& service_path,
     std::string key = property;
     if (base::StartsWith(property, "Provider.", case_sensitive))
       key = property.substr(strlen("Provider."));
-    base::DictionaryValue* provider =
-        new_properties.SetDictionaryWithoutPathExpansion(
-            shill::kProviderProperty,
-            std::make_unique<base::DictionaryValue>());
+    base::Value* provider = new_properties.SetKey(
+        shill::kProviderProperty, base::Value(base::Value::Type::DICTIONARY));
     provider->SetKey(key, value.Clone());
     changed_property = shill::kProviderProperty;
-  } else if (value.GetType() == base::Value::Type::DICTIONARY) {
+  } else if (value.is_dict()) {
     const base::DictionaryValue* new_dict = NULL;
     value.GetAsDictionary(&new_dict);
     CHECK(new_dict);

@@ -138,6 +138,10 @@ constexpr base::TimeDelta kMaxProgressivePaintTime =
 constexpr base::TimeDelta kMaxInitialProgressivePaintTime =
     base::TimeDelta::FromMilliseconds(250);
 
+// Flag to turn edit mode tracking on.
+// Do not flip until form saving is completely functional.
+constexpr bool kIsEditModeTracked = false;
+
 PDFiumEngine* g_engine_for_fontmapper = nullptr;
 
 std::vector<uint32_t> GetPageNumbersFromPrintPageNumberRange(
@@ -476,6 +480,12 @@ bool IsAboveOrDirectlyLeftOf(const S& lhs, const S& rhs) {
   return lhs.y() < rhs.y() || (lhs.y() == rhs.y() && lhs.x() < rhs.x());
 }
 
+int CalculateCenterForZoom(int center, int length, double zoom) {
+  int adjusted_center =
+      static_cast<int>(center * zoom) - static_cast<int>(length * zoom / 2);
+  return std::max(adjusted_center, 0);
+}
+
 // This formats a string with special 0xfffe end-of-line hyphens the same way
 // as Adobe Reader. When a hyphen is encountered, the next non-CR/LF whitespace
 // becomes CR+LF and the hyphen is erased. If there is no whitespace between
@@ -726,7 +736,8 @@ PDFiumEngine::PDFiumEngine(PDFEngine::Client* client)
       most_visible_page_(-1),
       called_do_document_action_(false),
       render_grayscale_(false),
-      render_annots_(true) {
+      render_annots_(true),
+      edit_mode_(false) {
   find_factory_.Initialize(this);
   password_factory_.Initialize(this);
 
@@ -1399,9 +1410,15 @@ bool PDFiumEngine::HandleEvent(const pp::InputEvent& event) {
 
   DCHECK(defer_page_unload_);
   defer_page_unload_ = false;
-  for (int page_index : deferred_page_unloads_)
+
+  // Store the pages to unload away because the act of unloading pages can cause
+  // there to be more pages to unload. We leave those extra pages to be unloaded
+  // on the next go around.
+  std::vector<int> pages_to_unload;
+  std::swap(pages_to_unload, deferred_page_unloads_);
+  for (int page_index : pages_to_unload)
     pages_[page_index]->Unload();
-  deferred_page_unloads_.clear();
+
   return rv;
 }
 
@@ -1525,7 +1542,7 @@ pp::Buffer_Dev PDFiumEngine::PrintPagesAsRasterPDF(
   if (!output_doc)
     return pp::Buffer_Dev();
 
-  SaveSelectedFormForPrint();
+  KillFormFocus();
 
   std::vector<PDFiumPage> pages_to_print;
   // width and height of source PDF pages.
@@ -1625,7 +1642,7 @@ pp::Buffer_Dev PDFiumEngine::PrintPagesAsPDF(
   if (!output_doc)
     return pp::Buffer_Dev();
 
-  SaveSelectedFormForPrint();
+  KillFormFocus();
 
   std::string page_number_str;
   for (uint32_t index = 0; index < page_range_count; ++index) {
@@ -1679,7 +1696,7 @@ void PDFiumEngine::FitContentsToPrintableAreaIfRequired(
   }
 }
 
-void PDFiumEngine::SaveSelectedFormForPrint() {
+void PDFiumEngine::KillFormFocus() {
   FORM_ForceToKillFocus(form_);
   SetInFormTextArea(false);
 }
@@ -2421,8 +2438,8 @@ bool PDFiumEngine::SelectFindResult(bool forward) {
   // If the result is not in view, scroll to it.
   pp::Rect bounding_rect;
   pp::Rect visible_rect = GetVisibleRect();
-  // Use zoom of 1.0 since visible_rect is without zoom.
-  std::vector<pp::Rect> rects =
+  // Use zoom of 1.0 since |visible_rect| is without zoom.
+  const std::vector<pp::Rect>& rects =
       find_results_[current_find_index_.GetIndex()].GetScreenRects(
           pp::Point(), 1.0, current_rotation_);
   for (const auto& rect : rects)
@@ -2430,18 +2447,14 @@ bool PDFiumEngine::SelectFindResult(bool forward) {
   if (!visible_rect.Contains(bounding_rect)) {
     pp::Point center = bounding_rect.CenterPoint();
     // Make the page centered.
-    int new_y = static_cast<int>(center.y() * current_zoom_) -
-                static_cast<int>(visible_rect.height() * current_zoom_ / 2);
-    if (new_y < 0)
-      new_y = 0;
+    int new_y = CalculateCenterForZoom(center.y(), visible_rect.height(),
+                                       current_zoom_);
     client_->ScrollToY(new_y, /*compensate_for_toolbar=*/false);
 
     // Only move horizontally if it's not visible.
     if (center.x() < visible_rect.x() || center.x() > visible_rect.right()) {
-      int new_x = static_cast<int>(center.x() * current_zoom_) -
-                  static_cast<int>(visible_rect.width() * current_zoom_ / 2);
-      if (new_x < 0)
-        new_x = 0;
+      int new_x = CalculateCenterForZoom(center.x(), visible_rect.width(),
+                                         current_zoom_);
       client_->ScrollToX(new_x);
     }
   }
@@ -2471,7 +2484,7 @@ void PDFiumEngine::GetAllScreenRectsUnion(std::vector<PDFiumRange>* rect_range,
                                           std::vector<pp::Rect>* rect_vector) {
   for (auto& range : *rect_range) {
     pp::Rect result_rect;
-    std::vector<pp::Rect> rects =
+    const std::vector<pp::Rect>& rects =
         range.GetScreenRects(offset_point, current_zoom_, current_rotation_);
     for (const auto& rect : rects)
       result_rect = result_rect.Union(rect);
@@ -3373,7 +3386,7 @@ void PDFiumEngine::DrawSelections(int progressive_index,
     if (range.page_index() != page_index)
       continue;
 
-    std::vector<pp::Rect> rects = range.GetScreenRects(
+    const std::vector<pp::Rect>& rects = range.GetScreenRects(
         visible_rect.point(), current_zoom_, current_rotation_);
     for (const auto& rect : rects) {
       pp::Rect visible_selection = rect.Intersect(dirty_in_screen);
@@ -3590,7 +3603,7 @@ PDFiumEngine::SelectionChangeInvalidator::GetVisibleSelections() const {
     if (!engine_->IsPageVisible(range.page_index()))
       continue;
 
-    std::vector<pp::Rect> selection_rects = range.GetScreenRects(
+    const std::vector<pp::Rect>& selection_rects = range.GetScreenRects(
         visible_point, engine_->current_zoom_, engine_->current_rotation_);
     rects.insert(rects.end(), selection_rects.begin(), selection_rects.end());
   }
@@ -3861,7 +3874,7 @@ void PDFiumEngine::OnSelectionChanged() {
                 std::numeric_limits<int32_t>::max(), 0, 0);
   pp::Rect right;
   for (auto& sel : selection_) {
-    std::vector<pp::Rect> screen_rects = sel.GetScreenRects(
+    const std::vector<pp::Rect>& screen_rects = sel.GetScreenRects(
         GetVisibleRect().point(), current_zoom_, current_rotation_);
     for (const auto& rect : screen_rects) {
       if (IsAboveOrDirectlyLeftOf(rect, left))
@@ -3910,6 +3923,14 @@ void PDFiumEngine::SetSelecting(bool selecting) {
   selecting_ = selecting;
   if (selecting_ != was_selecting)
     client_->IsSelectingChanged(selecting);
+}
+
+void PDFiumEngine::SetEditMode(bool edit_mode) {
+  if (!kIsEditModeTracked || edit_mode_ == edit_mode)
+    return;
+
+  edit_mode_ = edit_mode;
+  client_->IsEditModeChanged(edit_mode_);
 }
 
 void PDFiumEngine::SetInFormTextArea(bool in_form_text_area) {
@@ -3996,6 +4017,9 @@ void PDFiumEngine::Form_OutputSelectedRect(FPDF_FORMFILLINFO* param,
   pp::Rect rect = engine->pages_[page_index]->PageToScreen(
       engine->GetVisibleRect().point(), engine->current_zoom_, left, top, right,
       bottom, engine->current_rotation_);
+  if (rect.IsEmpty())
+    return;
+
   engine->form_highlights_.push_back(rect);
 }
 
@@ -4041,7 +4065,8 @@ FPDF_SYSTEMTIME PDFiumEngine::Form_GetLocalTime(FPDF_FORMFILLINFO* param) {
 }
 
 void PDFiumEngine::Form_OnChange(FPDF_FORMFILLINFO* param) {
-  // Don't care about.
+  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
+  engine->SetEditMode(true);
 }
 
 FPDF_PAGE PDFiumEngine::Form_GetPage(FPDF_FORMFILLINFO* param,

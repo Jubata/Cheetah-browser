@@ -190,6 +190,7 @@ TextIteratorAlgorithm<Strategy>::TextIteratorAlgorithm(
       shadow_depth_(
           ShadowDepthOf<Strategy>(*start_container_, *end_container_)),
       behavior_(AdjustBehaviorFlags<Strategy>(behavior)),
+      text_state_(behavior_),
       text_node_handler_(behavior_, &text_state_) {
   DCHECK(start_container_);
   DCHECK(end_container_);
@@ -340,23 +341,25 @@ void TextIteratorAlgorithm<Strategy>::Advance() {
 
       // Handle the current node according to its type.
       if (iteration_progress_ < kHandledNode) {
-        if (layout_object->IsText() &&
-            node_->getNodeType() ==
-                Node::kTextNode) {  // FIXME: What about kCdataSectionNode?
-          if (!fully_clipped_stack_.Top() || IgnoresStyleVisibility())
-            HandleTextNode();
-        } else if (layout_object &&
-                   (layout_object->IsImage() ||
-                    layout_object->IsLayoutEmbeddedContent() ||
-                    (node_ && node_->IsHTMLElement() &&
-                     (IsHTMLFormControlElement(ToHTMLElement(*node_)) ||
-                      IsHTMLLegendElement(ToHTMLElement(*node_)) ||
-                      IsHTMLImageElement(ToHTMLElement(*node_)) ||
-                      IsHTMLMeterElement(ToHTMLElement(*node_)) ||
-                      IsHTMLProgressElement(ToHTMLElement(*node_)))))) {
-          HandleReplacedElement();
-        } else {
-          HandleNonTextNode();
+        if (!SkipsUnselectableContent() || layout_object->IsSelectable()) {
+          if (layout_object->IsText() &&
+              node_->getNodeType() ==
+                  Node::kTextNode) {  // FIXME: What about kCdataSectionNode?
+            if (!fully_clipped_stack_.Top() || IgnoresStyleVisibility())
+              HandleTextNode();
+          } else if (layout_object &&
+                     (layout_object->IsImage() ||
+                      layout_object->IsLayoutEmbeddedContent() ||
+                      (node_ && node_->IsHTMLElement() &&
+                       (IsHTMLFormControlElement(ToHTMLElement(*node_)) ||
+                        IsHTMLLegendElement(ToHTMLElement(*node_)) ||
+                        IsHTMLImageElement(ToHTMLElement(*node_)) ||
+                        IsHTMLMeterElement(ToHTMLElement(*node_)) ||
+                        IsHTMLProgressElement(ToHTMLElement(*node_)))))) {
+            HandleReplacedElement();
+          } else {
+            HandleNonTextNode();
+          }
         }
         iteration_progress_ = kHandledNode;
         if (text_state_.PositionNode())
@@ -921,11 +924,6 @@ int TextIteratorAlgorithm<Strategy>::RangeLength(
     const EphemeralRangeTemplate<Strategy>& range,
     const TextIteratorBehavior& behavior) {
   return RangeLength(range.StartPosition(), range.EndPosition(), behavior);
-}
-
-template <typename Strategy>
-bool TextIteratorAlgorithm<Strategy>::IsInTextSecurityMode() const {
-  return IsTextSecurityNode(GetNode());
 }
 
 template <typename Strategy>

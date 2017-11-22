@@ -32,7 +32,6 @@
 #include "core/css/StyleEngine.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/HostsUsingFeatures.h"
 #include "core/frame/LocalFrame.h"
@@ -51,6 +50,7 @@
 #include "platform/ScopedOrientationChangeIndicator.h"
 #include "platform/bindings/Microtask.h"
 #include "platform/feature_policy/FeaturePolicy.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -65,7 +65,7 @@ bool AllowedToUseFullscreen(const Frame* frame) {
   if (!frame)
     return false;
 
-  if (!IsSupportedInFeaturePolicy(WebFeaturePolicyFeature::kFullscreen)) {
+  if (!IsSupportedInFeaturePolicy(FeaturePolicyFeature::kFullscreen)) {
     // 2. If |document|'s browsing context is a top-level browsing context, then
     // return true.
     if (frame->IsMainFrame())
@@ -84,7 +84,7 @@ bool AllowedToUseFullscreen(const Frame* frame) {
 
   // 2. If Feature Policy is enabled, return the policy for "fullscreen"
   // feature.
-  return frame->IsFeatureEnabled(WebFeaturePolicyFeature::kFullscreen);
+  return frame->IsFeatureEnabled(FeaturePolicyFeature::kFullscreen);
 }
 
 bool AllowedToRequestFullscreen(Document& document) {

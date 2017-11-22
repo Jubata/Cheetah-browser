@@ -49,12 +49,12 @@ const base::Feature kBrotliEncoding{"brotli-encoding",
 const base::Feature kBrowserSideNavigation{"browser-side-navigation",
                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Toggles whether the buggy RSA parser is used.
-//
-// TODO(davidben): Remove this after Chrome 61 is released to
-// stable. https://crbug.com/735616.
-const base::Feature kBuggyRSAParser{"BuggyRSAParser",
-                                    base::FEATURE_DISABLED_BY_DEFAULT};
+// Browser side navigation (aka PlzNavigate) is using blob URLs to deliver
+// the body of the main resource to the renderer process. When enabled, the
+// NavigationMojoResponse feature replaces this mechanism by a Mojo DataPipe.
+// Design doc: https://goo.gl/Rrrc7n.
+const base::Feature kNavigationMojoResponse{"NavigationMojoResponse",
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 // If Canvas2D Image Chromium is allowed, this feature controls whether it is
 // enabled.
@@ -168,13 +168,13 @@ const base::Feature kMojoBlobs{"MojoBlobs", base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kMojoInputMessages{"MojoInputMessages",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Mojo-based Session Storage.
+const base::Feature kMojoSessionStorage{"MojoSessionStorage",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables/disables hardware video encode acceleration using Mojo (falls back).
 const base::Feature kMojoVideoEncodeAccelerator{
     "MojoVideoEncodeAccelerator", base::FEATURE_ENABLED_BY_DEFAULT};
-
-// ES6 Modules.
-const base::Feature kModuleScripts{"ModuleScripts",
-                                   base::FEATURE_ENABLED_BY_DEFAULT};
 
 // ES6 Modules dynamic imports.
 const base::Feature kModuleScriptsDynamicImport{
@@ -241,6 +241,14 @@ const base::Feature kPepper3DImageChromium {
       base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 };
+
+// Generate V8 full code cache for PWAs.
+const base::Feature kPWAFullCodeCache{"PWAFullCodeCache",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Port some content::ResourceScheduler functionalities to renderer.
+const base::Feature kRendererSideResourceScheduler{
+    "RendererSideResourceSchduler", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Throttle Blink's rendering pipeline based on frame visibility.
 const base::Feature kRenderingPipelineThrottling{
@@ -403,9 +411,13 @@ const base::Feature kImageCaptureAPI{"ImageCaptureAPI",
 const base::Feature kKeepAliveRendererForKeepaliveRequests{
     "KeepAliveRendererForKeepaliveRequests", base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Enables WebVR experimental rendering optimizations.
-const base::Feature kWebVRExperimentalRendering{
+// Controls whether WebVR experimental rendering optimizations is enabled.
+const base::Feature kWebVrExperimentalRendering{
     "WebVRExperimentalRendering", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Controls whether WebVR VSync-aligned render loop timing is enabled.
+const base::Feature kWebVrVsyncAlign{"WebVrVsyncAlign",
+                                     base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enabled "work stealing" in the script runner.
 const base::Feature kWorkStealingInScriptRunner{
@@ -424,10 +436,6 @@ const base::Feature kHideIncorrectlySizedFullscreenFrames{
 // Controls whether the WebNFC API is enabled:
 // https://w3c.github.io/web-nfc/
 const base::Feature kWebNfc{"WebNFC", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Enables WebVR VSync-aligned render loop timing.
-const base::Feature kWebVrVsyncAlign{"WebVrVsyncAlign",
-                                     base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_ANDROID)
 
 #if defined(OS_MACOSX)

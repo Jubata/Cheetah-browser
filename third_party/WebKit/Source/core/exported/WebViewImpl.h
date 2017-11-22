@@ -35,7 +35,6 @@
 
 #include "build/build_config.h"
 #include "core/CoreExport.h"
-#include "core/editing/spellcheck/SpellCheckerClientImpl.h"
 #include "core/exported/WebPagePopupImpl.h"
 #include "core/frame/ResizeViewportAnchor.h"
 #include "core/page/ChromeClient.h"
@@ -103,7 +102,7 @@ class CORE_EXPORT WebViewImpl final
       public WebScheduler::InterventionReporter,
       public WebViewScheduler::WebViewSchedulerDelegate {
  public:
-  static WebViewImpl* Create(WebViewClient*, WebPageVisibilityState);
+  static WebViewImpl* Create(WebViewClient*, mojom::PageVisibilityState);
   static HashSet<WebViewImpl*>& AllInstances();
   static const WebInputEvent* CurrentInputEvent();
   // Returns true if popup menus should be rendered by the browser, false if
@@ -143,7 +142,6 @@ class CORE_EXPORT WebViewImpl final
                                          bool has_scrolled_by_touch) override;
   void MouseCaptureLost() override;
   void SetFocus(bool enable) override;
-  WebRange CompositionRange() override;
   WebColor BackgroundColor() const override;
   WebPagePopupImpl* GetPagePopup() const override;
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
@@ -247,7 +245,10 @@ class CORE_EXPORT WebViewImpl final
   // WebScheduler::InterventionReporter implementation:
   void ReportIntervention(const WebString& message) override;
 
+  // WebViewScheduler::WebViewSchedulerDelegate implementation:
   void RequestBeginMainFrameNotExpected(bool new_state) override;
+  void SetPageStopped(bool stopped) override;
+
   void DidUpdateFullscreenSize();
 
   float DefaultMinimumPageScaleFactor() const;
@@ -362,7 +363,7 @@ class CORE_EXPORT WebViewImpl final
   }
 
   WebViewScheduler* Scheduler() const override;
-  void SetVisibilityState(WebPageVisibilityState, bool) override;
+  void SetVisibilityState(mojom::PageVisibilityState, bool) override;
 
   bool HasOpenedPopup() const { return page_popup_.get(); }
 
@@ -510,7 +511,7 @@ class CORE_EXPORT WebViewImpl final
   friend class WebViewFrameWidget;
   friend class WTF::RefCounted<WebViewImpl>;
 
-  explicit WebViewImpl(WebViewClient*, WebPageVisibilityState);
+  explicit WebViewImpl(WebViewClient*, mojom::PageVisibilityState);
   ~WebViewImpl() override;
 
   void HideSelectPopup();
@@ -572,7 +573,6 @@ class CORE_EXPORT WebViewImpl final
   Persistent<ChromeClient> chrome_client_;
   ContextMenuClient context_menu_client_;
   EditorClient editor_client_;
-  SpellCheckerClientImpl spell_checker_client_impl_;
 
   WebSize size_;
   // If true, automatically resize the layout view around its content.

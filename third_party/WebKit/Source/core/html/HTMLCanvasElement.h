@@ -200,7 +200,9 @@ class CORE_EXPORT HTMLCanvasElement final
   bool IsAccelerated() const override;
 
   // SurfaceLayerBridgeObserver implementation
-  void OnWebLayerReplaced() override;
+  void OnWebLayerUpdated() override;
+  void RegisterContentsLayer(WebLayer*) override;
+  void UnregisterContentsLayer(WebLayer*) override;
 
   // ImageBufferClient implementation
   void NotifySurfaceInvalid() override;

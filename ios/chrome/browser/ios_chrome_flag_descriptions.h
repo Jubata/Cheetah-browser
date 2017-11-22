@@ -20,6 +20,10 @@ extern const char kBrowserTaskSchedulerDescription[];
 extern const char kCaptivePortalName[];
 extern const char kCaptivePortalDescription[];
 
+// Title and description for the flag to enable Clean Toolbar.
+extern const char kCleanToolbarName[];
+extern const char kCleanToolbarDescription[];
+
 // Title and description for the flag to enable Contextual Search.
 extern const char kContextualSearch[];
 extern const char kContextualSearchDescription[];
@@ -46,6 +50,11 @@ extern const char kInProductHelpDemoModeDescription[];
 extern const char kMarkHttpAsName[];
 extern const char kMarkHttpAsDescription[];
 extern const char kMarkHttpAsDangerous[];
+
+// Title and description for the flag to enable the new fullscreen
+// implementation.
+extern const char kNewFullscreenName[];
+extern const char kNewFullscreenDescription[];
 
 // Title and description for the flag to enable elision of the URL path, query,
 // and ref in omnibox URL suggestions.
@@ -84,6 +93,16 @@ extern const char kShareCanonicalURLDescription[];
 // navigation manager.
 extern const char kSlimNavigationManagerName[];
 extern const char kSlimNavigationManagerDescription[];
+
+// Title and description for the flag to enable PassKit with ios/web Donwload
+// API.
+extern const char kNewPassKitDownloadName[];
+extern const char kNewPassKitDownloadDescription[];
+
+// Title and description for the flag to enable new Download Manager UI and
+// backend.
+extern const char kNewFileDownloadName[];
+extern const char kNewFileDownloadDescription[];
 
 // Title and description for the flag to enable the TabSwitcher to present the
 // BVC.

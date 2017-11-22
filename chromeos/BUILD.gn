@@ -63,8 +63,6 @@ component("chromeos") {
     "attestation/attestation_constants.h",
     "attestation/attestation_flow.cc",
     "attestation/attestation_flow.h",
-    "audio/audio_a11y_controller.cc",
-    "audio/audio_a11y_controller.h",
     "audio/audio_device.cc",
     "audio/audio_device.h",
     "audio/audio_devices_pref_handler.h",
@@ -449,6 +447,8 @@ component("chromeos") {
     "network/tether_constants.h",
     "printing/ppd_cache.cc",
     "printing/ppd_cache.h",
+    "printing/ppd_line_reader.cc",
+    "printing/ppd_line_reader.h",
     "printing/ppd_provider.cc",
     "printing/ppd_provider.h",
     "printing/printer_configuration.cc",
@@ -709,6 +709,7 @@ test("chromeos_unittests") {
     "network/proxy/proxy_config_service_impl_unittest.cc",
     "network/shill_property_handler_unittest.cc",
     "printing/ppd_cache_unittest.cc",
+    "printing/ppd_line_reader_unittest.cc",
     "printing/ppd_provider_unittest.cc",
     "printing/printer_translator_unittest.cc",
     "process_proxy/process_output_watcher_unittest.cc",
@@ -768,6 +769,7 @@ proto_library("cryptohome_proto") {
 proto_library("login_manager_proto") {
   sources = [
     "//third_party/cros_system_api/dbus/login_manager/arc.proto",
+    "//third_party/cros_system_api/dbus/login_manager/policy_descriptor.proto",
   ]
 
   proto_out_dir = "chromeos/dbus/login_manager"

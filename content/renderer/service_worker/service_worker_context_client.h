@@ -31,6 +31,7 @@
 #include "third_party/WebKit/common/blob/blob_registry.mojom.h"
 #include "third_party/WebKit/public/platform/modules/payments/payment_app.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerError.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_event_status.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
@@ -92,6 +93,7 @@ class ServiceWorkerContextClient : public blink::WebServiceWorkerContextClient,
       bool is_script_streaming,
       mojom::ServiceWorkerEventDispatcherRequest dispatcher_request,
       mojom::ControllerServiceWorkerRequest controller_request,
+      blink::mojom::ServiceWorkerHostAssociatedPtrInfo service_worker_host,
       mojom::EmbeddedWorkerInstanceHostAssociatedPtrInfo instance_host,
       mojom::ServiceWorkerProviderInfoForStartWorkerPtr provider_info,
       std::unique_ptr<EmbeddedWorkerInstanceClientImpl> embedded_worker_client);
@@ -263,8 +265,6 @@ class ServiceWorkerContextClient : public blink::WebServiceWorkerContextClient,
 
   void Send(IPC::Message* message);
   void SendWorkerStarted();
-  void SetRegistrationInServiceWorkerGlobalScope(
-      blink::mojom::ServiceWorkerRegistrationObjectInfoPtr info);
 
   // mojom::ServiceWorkerEventDispatcher
   void DispatchInstallEvent(
@@ -382,6 +382,9 @@ class ServiceWorkerContextClient : public blink::WebServiceWorkerContextClient,
                               const GURL& url,
                               mojom::FetchEventPreloadHandlePtr preload_handle);
 
+  // Called when a certain time has passed since the last task finished.
+  void OnIdle();
+
   base::WeakPtr<ServiceWorkerContextClient> GetWeakPtr();
 
   const int embedded_worker_id_;
@@ -399,9 +402,10 @@ class ServiceWorkerContextClient : public blink::WebServiceWorkerContextClient,
   // Not owned; |this| is destroyed when |proxy_| becomes invalid.
   blink::WebServiceWorkerContextProxy* proxy_;
 
-  // This is bound on the worker thread.
+  // These Mojo objects are bound on the worker thread.
   mojom::ServiceWorkerEventDispatcherRequest pending_dispatcher_request_;
   mojom::ControllerServiceWorkerRequest pending_controller_request_;
+  blink::mojom::ServiceWorkerHostAssociatedPtrInfo pending_service_worker_host_;
 
   // This is bound on the main thread.
   scoped_refptr<mojom::ThreadSafeEmbeddedWorkerInstanceHostAssociatedPtr>

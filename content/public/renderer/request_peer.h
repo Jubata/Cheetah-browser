@@ -12,12 +12,12 @@
 
 #include "content/common/content_export.h"
 
-namespace base {
-class TimeTicks;
-}
-
 namespace net {
 struct RedirectInfo;
+}
+
+namespace network {
+struct URLLoaderCompletionStatus;
 }
 
 namespace content {
@@ -93,12 +93,8 @@ class CONTENT_EXPORT RequestPeer {
 
   // Called when the response is complete.  This method signals completion of
   // the resource load.
-  virtual void OnCompletedRequest(int error_code,
-                                  bool stale_copy_in_cache,
-                                  const base::TimeTicks& completion_time,
-                                  int64_t total_transfer_size,
-                                  int64_t encoded_body_size,
-                                  int64_t decoded_body_size) = 0;
+  virtual void OnCompletedRequest(
+      const network::URLLoaderCompletionStatus& status) = 0;
 
   virtual ~RequestPeer() {}
 };

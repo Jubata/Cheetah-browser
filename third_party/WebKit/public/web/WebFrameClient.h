@@ -46,7 +46,6 @@
 #include "WebNavigationPolicy.h"
 #include "WebNavigationType.h"
 #include "WebNavigatorContentUtilsClient.h"
-#include "WebSandboxFlags.h"
 #include "WebTextDirection.h"
 #include "WebTriggeringEventInfo.h"
 #include "public/platform/BlameContext.h"
@@ -57,12 +56,10 @@
 #include "public/platform/WebContentSecurityPolicyStruct.h"
 #include "public/platform/WebContentSettingsClient.h"
 #include "public/platform/WebEffectiveConnectionType.h"
-#include "public/platform/WebFeaturePolicy.h"
 #include "public/platform/WebFileSystem.h"
 #include "public/platform/WebFileSystemType.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/platform/WebLoadingBehaviorFlag.h"
-#include "public/platform/WebPageVisibilityState.h"
 #include "public/platform/WebSecurityOrigin.h"
 #include "public/platform/WebSetSinkIdCallbacks.h"
 #include "public/platform/WebSourceLocation.h"
@@ -74,6 +71,9 @@
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebWorkerFetchContext.h"
 #include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-shared.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 #include "v8/include/v8.h"
 
 namespace service_manager {
@@ -221,7 +221,7 @@ class BLINK_EXPORT WebFrameClient {
       const WebString& name,
       const WebString& fallback_name,
       WebSandboxFlags sandbox_flags,
-      const WebParsedFeaturePolicy& container_policy,
+      const ParsedFeaturePolicy& container_policy,
       const WebFrameOwnerProperties&) {
     return nullptr;
   }
@@ -265,12 +265,12 @@ class BLINK_EXPORT WebFrameClient {
   virtual void DidChangeFramePolicy(
       WebFrame* child_frame,
       WebSandboxFlags flags,
-      const WebParsedFeaturePolicy& container_policy) {}
+      const ParsedFeaturePolicy& container_policy) {}
 
   // Called when a Feature-Policy HTTP header is encountered while loading the
   // frame's document.
   virtual void DidSetFeaturePolicyHeader(
-      const WebParsedFeaturePolicy& parsed_header) {}
+      const ParsedFeaturePolicy& parsed_header) {}
 
   // Called when a new Content Security Policy is added to the frame's
   // document.  This can be triggered by handling of HTTP headers, handling
@@ -509,7 +509,7 @@ class BLINK_EXPORT WebFrameClient {
   // Returns string to be used as a frame id in the devtools protocol.
   // It is derived from the content's devtools_frame_token, is
   // defined by the browser and passed into Blink upon frame creation.
-  virtual WebString GetInstrumentationToken() { return ""; }
+  virtual WebString GetInstrumentationToken() { return WebString(); }
 
   // PlzNavigate
   // Called to abort a navigation that is being handled by the browser process.
@@ -658,9 +658,14 @@ class BLINK_EXPORT WebFrameClient {
   // A performance timing event (e.g. first paint) occurred
   virtual void DidChangePerformanceTiming() {}
 
+  // UseCounter ----------------------------------------------------------
   // Blink exhibited a certain loading behavior that the browser process will
   // use for segregated histograms.
   virtual void DidObserveLoadingBehavior(WebLoadingBehaviorFlag) {}
+  // Blink UseCounter should only track feature usage for non NTP activities.
+  // ShouldTrackUseCounter checks the url of a page's main frame is not a new
+  // tab page url.
+  virtual bool ShouldTrackUseCounter(const WebURL&) { return true; }
 
   // Blink hit the code path for a certain feature for the first time on this
   // frame. As a performance optimization, features already hit on other frames
@@ -836,8 +841,8 @@ class BLINK_EXPORT WebFrameClient {
   // Visibility ----------------------------------------------------------
 
   // Returns the current visibility of the WebFrame.
-  virtual WebPageVisibilityState VisibilityState() const {
-    return kWebPageVisibilityStateVisible;
+  virtual mojom::PageVisibilityState VisibilityState() const {
+    return mojom::PageVisibilityState::kVisible;
   }
 
   // Overwrites the given URL to use an HTML5 embed if possible.

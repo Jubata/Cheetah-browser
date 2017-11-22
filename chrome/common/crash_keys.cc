@@ -84,8 +84,6 @@ const char kToolbarNibInfo[] = "toolbar-nib-info";
 
 const char kViewCount[] = "view-count";
 
-const char kZeroEncodeDetails[] = "zero-encode-details";
-
 const char kUserCloudPolicyManagerConnectTrace[] =
     "user-cloud-policy-manager-connect-trace";
 
@@ -167,20 +165,10 @@ size_t RegisterChromeCrashKeys() {
     {mac::kZombie, kMediumSize},
     {mac::kZombieTrace, kMediumSize},
     // content/:
-    {"channel_error_bt", kMediumSize},
-    {"remove_route_bt", kMediumSize},
-    {"rwhvm_window", kMediumSize},
     {"text-input-context-client", kMediumSize},
 // media/:
 #endif
-    {kBug464926CrashKey, kSmallSize},
     {kViewCount, kSmallSize},
-
-    // media/:
-    {kZeroEncodeDetails, kSmallSize},
-
-    // gin/:
-    {"v8-ignition", kSmallSize},
 
     // sandbox/:
 #if defined(OS_LINUX)
@@ -206,27 +194,15 @@ size_t RegisterChromeCrashKeys() {
     // Temporary for https://crbug.com/612711.
     {"aci_wrong_sp_extension_id", kSmallSize},
 
-    // Temporary for https://crbug.com/697745.
-    {"engine_params", crash_keys::kMediumSize},
-    {"engine1_params", crash_keys::kMediumSize},
-    {"engine2_params", crash_keys::kMediumSize},
-
     // Temporary for https://crbug.com/685996.
     {kUserCloudPolicyManagerConnectTrace, kMediumSize},
 
     // TODO(asvitkine): Remove after fixing https://crbug.com/736675
     {"bad_histogram", kMediumSize},
 
-    // Temporary for https://crbug.com/752914.
-    {"blink_scheduler_task_function_name", kMediumSize},
-    {"blink_scheduler_task_file_name", kMediumSize},
-
     // Accessibility keys. Temporary for http://crbug.com/765490.
     {"ax_tree_error", kSmallSize},
     {"ax_tree_update", kMediumSize},
-
-    // Temporary for crbug.com/756624.
-    {"break_iterator", kSmallSize},
   };
 
   // This dynamic set of keys is used for sets of key value pairs when gathering

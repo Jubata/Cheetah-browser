@@ -35,10 +35,8 @@
 #include "ui/gl/sync_control_vsync_provider.h"
 
 #if defined(USE_X11)
-extern "C" {
-#include <X11/Xlib.h>
-#define Status int
-}
+#include "ui/gfx/x/x11.h"
+
 #include "ui/base/x/x11_util_internal.h"  // nogncheck
 #endif
 
@@ -159,9 +157,9 @@ constexpr size_t kMaxTimestampsSupportable = 9;
 
 struct TraceSwapEventsInitializer {
   TraceSwapEventsInitializer()
-      : value(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+      : value(*TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
             kSwapEventTraceCategories)) {}
-  const unsigned char* value;
+  const unsigned char& value;
 };
 
 static base::LazyInstance<TraceSwapEventsInitializer>::Leaky
@@ -837,7 +835,8 @@ NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(
       supports_post_sub_buffer_(false),
       supports_swap_buffer_with_damage_(false),
       flips_vertically_(false),
-      vsync_provider_external_(std::move(vsync_provider)) {
+      vsync_provider_external_(std::move(vsync_provider)),
+      use_egl_timestamps_(false) {
 #if defined(OS_ANDROID)
   if (window)
     ANativeWindow_acquire(window);
@@ -957,6 +956,16 @@ bool NativeViewGLSurfaceEGL::Initialize(GLSurfaceFormat format) {
         std::make_unique<EGLSyncControlVSyncProvider>(surface_);
   }
 
+  return true;
+}
+
+bool NativeViewGLSurfaceEGL::SupportsSwapTimestamps() const {
+  return g_driver_egl.ext.b_EGL_ANDROID_get_frame_timestamps;
+}
+
+void NativeViewGLSurfaceEGL::SetEnableSwapTimestamps() {
+  DCHECK(g_driver_egl.ext.b_EGL_ANDROID_get_frame_timestamps);
+
   // If frame timestamps are supported, set the proper attribute to enable the
   // feature and then cache the timestamps supported by the underlying
   // implementation. EGL_DISPLAY_PRESENT_TIME_ANDROID support, in particular,
@@ -965,39 +974,38 @@ bool NativeViewGLSurfaceEGL::Initialize(GLSurfaceFormat format) {
   // called twice.
   supported_egl_timestamps_.clear();
   supported_event_names_.clear();
-  if (g_driver_egl.ext.b_EGL_ANDROID_get_frame_timestamps) {
-    eglSurfaceAttrib(GetDisplay(), surface_, EGL_TIMESTAMPS_ANDROID, EGL_TRUE);
 
-    static const struct {
-      EGLint egl_name;
-      const char* name;
-    } all_timestamps[kMaxTimestampsSupportable] = {
-        {EGL_REQUESTED_PRESENT_TIME_ANDROID, "Queue"},
-        {EGL_RENDERING_COMPLETE_TIME_ANDROID, "WritesDone"},
-        {EGL_COMPOSITION_LATCH_TIME_ANDROID, "LatchedForDisplay"},
-        {EGL_FIRST_COMPOSITION_START_TIME_ANDROID, "1stCompositeCpu"},
-        {EGL_LAST_COMPOSITION_START_TIME_ANDROID, "NthCompositeCpu"},
-        {EGL_FIRST_COMPOSITION_GPU_FINISHED_TIME_ANDROID, "GpuCompositeDone"},
-        {EGL_DISPLAY_PRESENT_TIME_ANDROID, "ScanOutStart"},
-        {EGL_DEQUEUE_READY_TIME_ANDROID, "DequeueReady"},
-        {EGL_READS_DONE_TIME_ANDROID, "ReadsDone"},
-    };
+  eglSurfaceAttrib(GetDisplay(), surface_, EGL_TIMESTAMPS_ANDROID, EGL_TRUE);
 
-    supported_egl_timestamps_.reserve(kMaxTimestampsSupportable);
-    supported_event_names_.reserve(kMaxTimestampsSupportable);
-    for (const auto& ts : all_timestamps) {
-      if (!eglGetFrameTimestampSupportedANDROID(GetDisplay(), surface_,
-                                                ts.egl_name))
-        continue;
+  static const struct {
+    EGLint egl_name;
+    const char* name;
+  } all_timestamps[kMaxTimestampsSupportable] = {
+      {EGL_REQUESTED_PRESENT_TIME_ANDROID, "Queue"},
+      {EGL_RENDERING_COMPLETE_TIME_ANDROID, "WritesDone"},
+      {EGL_COMPOSITION_LATCH_TIME_ANDROID, "LatchedForDisplay"},
+      {EGL_FIRST_COMPOSITION_START_TIME_ANDROID, "1stCompositeCpu"},
+      {EGL_LAST_COMPOSITION_START_TIME_ANDROID, "NthCompositeCpu"},
+      {EGL_FIRST_COMPOSITION_GPU_FINISHED_TIME_ANDROID, "GpuCompositeDone"},
+      {EGL_DISPLAY_PRESENT_TIME_ANDROID, "ScanOutStart"},
+      {EGL_DEQUEUE_READY_TIME_ANDROID, "DequeueReady"},
+      {EGL_READS_DONE_TIME_ANDROID, "ReadsDone"},
+  };
 
-      // Stored in separate vectors so we can pass the egl timestamps
-      // directly to the EGL functions.
-      supported_egl_timestamps_.push_back(ts.egl_name);
-      supported_event_names_.push_back(ts.name);
-    }
+  supported_egl_timestamps_.reserve(kMaxTimestampsSupportable);
+  supported_event_names_.reserve(kMaxTimestampsSupportable);
+  for (const auto& ts : all_timestamps) {
+    if (!eglGetFrameTimestampSupportedANDROID(GetDisplay(), surface_,
+                                              ts.egl_name))
+      continue;
+
+    // Stored in separate vectors so we can pass the egl timestamps
+    // directly to the EGL functions.
+    supported_egl_timestamps_.push_back(ts.egl_name);
+    supported_event_names_.push_back(ts.name);
   }
 
-  return true;
+  use_egl_timestamps_ = !supported_egl_timestamps_.empty();
 }
 
 bool NativeViewGLSurfaceEGL::InitializeNativeWindow() {
@@ -1032,7 +1040,7 @@ gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers() {
 
   EGLuint64KHR newFrameId = 0;
   bool newFrameIdIsValid = true;
-  if (g_driver_egl.ext.b_EGL_ANDROID_get_frame_timestamps) {
+  if (use_egl_timestamps_) {
     newFrameIdIsValid =
         !!eglGetNextFrameIdANDROID(GetDisplay(), surface_, &newFrameId);
   }
@@ -1043,7 +1051,7 @@ gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers() {
     return gfx::SwapResult::SWAP_FAILED;
   }
 
-  if (g_driver_egl.ext.b_EGL_ANDROID_get_frame_timestamps) {
+  if (use_egl_timestamps_) {
     UpdateSwapEvents(newFrameId, newFrameIdIsValid);
   }
 
@@ -1072,19 +1080,17 @@ void NativeViewGLSurfaceEGL::UpdateSwapEvents(EGLuint64KHR newFrameId,
 }
 
 void NativeViewGLSurfaceEGL::TraceSwapEvents(EGLuint64KHR oldFrameId) {
-  // Protect against unexpected stack overflow.
+  // We shouldn't be calling eglGetFrameTimestampsANDROID with more timestamps
+  // than it supports.
   DCHECK_LE(supported_egl_timestamps_.size(), kMaxTimestampsSupportable);
-  size_t supported_count =
-      std::min(supported_egl_timestamps_.size(), kMaxTimestampsSupportable);
 
   // Get the timestamps.
-  EGLnsecsANDROID egl_timestamps[kMaxTimestampsSupportable];
-  std::fill(egl_timestamps, egl_timestamps + supported_count,
-            EGL_TIMESTAMP_INVALID_ANDROID);
-  if (!eglGetFrameTimestampsANDROID(GetDisplay(), surface_, oldFrameId,
-                                    static_cast<EGLint>(supported_count),
-                                    supported_egl_timestamps_.data(),
-                                    egl_timestamps)) {
+  std::vector<EGLnsecsANDROID> egl_timestamps(supported_egl_timestamps_.size(),
+                                              EGL_TIMESTAMP_INVALID_ANDROID);
+  if (!eglGetFrameTimestampsANDROID(
+          GetDisplay(), surface_, oldFrameId,
+          static_cast<EGLint>(supported_egl_timestamps_.size()),
+          supported_egl_timestamps_.data(), egl_timestamps.data())) {
     TRACE_EVENT_INSTANT0("gpu", "eglGetFrameTimestamps:Failed",
                          TRACE_EVENT_SCOPE_THREAD);
     return;
@@ -1096,9 +1102,9 @@ void NativeViewGLSurfaceEGL::TraceSwapEvents(EGLuint64KHR oldFrameId) {
     const char* name;
   };
 
-  TimeNamePair tracePairs[kMaxTimestampsSupportable];
-  size_t valid_pairs = 0;
-  for (size_t i = 0; i < supported_count; i++) {
+  std::vector<TimeNamePair> tracePairs;
+  tracePairs.reserve(supported_egl_timestamps_.size());
+  for (size_t i = 0; i < egl_timestamps.size(); i++) {
     // Although a timestamp of 0 is technically valid, we shouldn't expect to
     // see it in practice. 0's are more likely due to a known linux kernel bug
     // that inadvertently discards timestamp information when merging two
@@ -1109,20 +1115,19 @@ void NativeViewGLSurfaceEGL::TraceSwapEvents(EGLuint64KHR oldFrameId) {
       continue;
     }
     // TODO(brianderson): Replace FromInternalValue usage.
-    tracePairs[valid_pairs] = TimeNamePair(
+    tracePairs.push_back(
         {base::TimeTicks::FromInternalValue(
              egl_timestamps[i] / base::TimeTicks::kNanosecondsPerMicrosecond),
          supported_event_names_[i]});
-    valid_pairs++;
   }
-  if (valid_pairs == 0) {
+  if (tracePairs.empty()) {
     TRACE_EVENT_INSTANT0("gpu", "TraceSwapEvents:NoValidTimestamps",
                          TRACE_EVENT_SCOPE_THREAD);
     return;
   }
 
   // Sort the pairs so we can trace them in order.
-  std::sort(tracePairs, tracePairs + valid_pairs,
+  std::sort(tracePairs.begin(), tracePairs.end(),
             [](auto& a, auto& b) { return a.time < b.time; });
 
   // Trace the overall range under which the sub events will be nested.
@@ -1133,15 +1138,15 @@ void NativeViewGLSurfaceEGL::TraceSwapEvents(EGLuint64KHR oldFrameId) {
   static const char* SwapEvents = "SwapEvents";
   const int64_t trace_id = oldFrameId;
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
-      kSwapEventTraceCategories, SwapEvents, trace_id, tracePairs[0].time);
+      kSwapEventTraceCategories, SwapEvents, trace_id, tracePairs.front().time);
   TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP1(
       kSwapEventTraceCategories, SwapEvents, trace_id,
-      tracePairs[valid_pairs - 1].time + epsilon, "id", trace_id);
+      tracePairs.back().time + epsilon, "id", trace_id);
 
   // Trace the first event, which does not have a range before it.
   TRACE_EVENT_NESTABLE_ASYNC_INSTANT_WITH_TIMESTAMP0(
-      kSwapEventTraceCategories, tracePairs[0].name, trace_id,
-      tracePairs[0].time);
+      kSwapEventTraceCategories, tracePairs.front().name, trace_id,
+      tracePairs.front().time);
 
   // Trace remaining events and their ranges.
   // Use the first characters to represent events still pending.
@@ -1149,13 +1154,12 @@ void NativeViewGLSurfaceEGL::TraceSwapEvents(EGLuint64KHR oldFrameId) {
   // it obvious:
   //   1) when the order of events are different between frames and
   //   2) if multiple events occurred very close together.
-  char valid_symbols[kMaxTimestampsSupportable + 1];
-  for (size_t i = 0; i < valid_pairs; i++)
+  std::string valid_symbols(tracePairs.size(), '\0');
+  for (size_t i = 0; i < valid_symbols.size(); i++)
     valid_symbols[i] = tracePairs[i].name[0];
-  valid_symbols[valid_pairs] = '\0';
 
-  const char* pending_symbols = valid_symbols;
-  for (size_t i = 1; i < valid_pairs; i++) {
+  const char* pending_symbols = valid_symbols.c_str();
+  for (size_t i = 1; i < tracePairs.size(); i++) {
     pending_symbols++;
     TRACE_EVENT_COPY_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
         kSwapEventTraceCategories, pending_symbols, trace_id,

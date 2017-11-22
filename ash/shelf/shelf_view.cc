@@ -23,6 +23,7 @@
 #include "ash/shelf/shelf_button.h"
 #include "ash/shelf/shelf_constants.h"
 #include "ash/shelf/shelf_context_menu_model.h"
+#include "ash/shelf/shelf_controller.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
@@ -164,22 +165,14 @@ class FadeInAnimationDelegate : public gfx::AnimationDelegate {
 void ReflectItemStatus(const ShelfItem& item, ShelfButton* button) {
   switch (item.status) {
     case STATUS_CLOSED:
-      button->ClearState(ShelfButton::STATE_ACTIVE);
       button->ClearState(ShelfButton::STATE_RUNNING);
       button->ClearState(ShelfButton::STATE_ATTENTION);
       break;
     case STATUS_RUNNING:
-      button->ClearState(ShelfButton::STATE_ACTIVE);
       button->AddState(ShelfButton::STATE_RUNNING);
       button->ClearState(ShelfButton::STATE_ATTENTION);
       break;
-    case STATUS_ACTIVE:
-      button->AddState(ShelfButton::STATE_ACTIVE);
-      button->ClearState(ShelfButton::STATE_RUNNING);
-      button->ClearState(ShelfButton::STATE_ATTENTION);
-      break;
     case STATUS_ATTENTION:
-      button->ClearState(ShelfButton::STATE_ACTIVE);
       button->ClearState(ShelfButton::STATE_RUNNING);
       button->AddState(ShelfButton::STATE_ATTENTION);
       break;
@@ -256,7 +249,6 @@ ShelfView::ShelfView(ShelfModel* model, Shelf* shelf, ShelfWidget* shelf_widget)
   DCHECK(model_);
   DCHECK(shelf_);
   DCHECK(shelf_widget_);
-  Shell::Get()->tablet_mode_controller()->AddObserver(this);
   bounds_animator_.reset(new views::BoundsAnimator(this));
   bounds_animator_->AddObserver(this);
   set_context_menu_controller(this);
@@ -264,8 +256,6 @@ ShelfView::ShelfView(ShelfModel* model, Shelf* shelf, ShelfWidget* shelf_widget)
 }
 
 ShelfView::~ShelfView() {
-  if (Shell::Get()->tablet_mode_controller())
-    Shell::Get()->tablet_mode_controller()->RemoveObserver(this);
   bounds_animator_->RemoveObserver(this);
   model_->RemoveObserver(this);
 }
@@ -686,10 +676,11 @@ bool ShelfView::ShouldEventActivateButton(View* view, const ui::Event& event) {
 void ShelfView::PointerPressedOnButton(views::View* view,
                                        Pointer pointer,
                                        const ui::LocatedEvent& event) {
-  if (IsShowingMenu())
-    launcher_menu_runner_->Cancel();
   if (drag_view_)
     return;
+
+  if (IsShowingMenu())
+    launcher_menu_runner_->Cancel();
 
   int index = view_model_->GetIndexOfView(view);
   if (index == -1 || view_model_->view_size() <= 1)
@@ -1510,14 +1501,6 @@ gfx::Size ShelfView::CalculatePreferredSize() const {
   return gfx::Size(kShelfSize, last_button_bounds.bottom());
 }
 
-void ShelfView::OnTabletModeStarted() {
-  is_tablet_mode_animation_running_ = true;
-}
-
-void ShelfView::OnTabletModeEnded() {
-  is_tablet_mode_animation_running_ = true;
-}
-
 void ShelfView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   // This bounds change is produced by the shelf movement (rotation, alignment
   // change, etc.) and all content has to follow. Using an animation at that
@@ -1525,7 +1508,7 @@ void ShelfView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   // itself a delay before it arrives at the required location. As such we tell
   // the animator to go there immediately. We still want to use an animation
   // when the bounds change is caused by entering or exiting tablet mode.
-  if (is_tablet_mode_animation_running_) {
+  if (shelf_->is_tablet_mode_animation_running()) {
     AnimateToIdealBounds();
     return;
   }
@@ -1566,9 +1549,6 @@ void ShelfView::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 bool ShelfView::OnMouseWheel(const ui::MouseWheelEvent& event) {
-  if (!app_list::features::IsFullscreenAppListEnabled())
-    return false;
-
   shelf_->ProcessMouseWheelEvent(event);
   return true;
 }
@@ -1898,8 +1878,7 @@ void ShelfView::OnBoundsAnimatorProgressed(views::BoundsAnimator* animator) {
 }
 
 void ShelfView::OnBoundsAnimatorDone(views::BoundsAnimator* animator) {
-  if (is_tablet_mode_animation_running_)
-    is_tablet_mode_animation_running_ = false;
+  shelf_->set_is_tablet_mode_animation_running(false);
 
   if (snap_back_from_rip_off_view_ && animator == bounds_animator_.get()) {
     if (!animator->IsAnimating(snap_back_from_rip_off_view_)) {

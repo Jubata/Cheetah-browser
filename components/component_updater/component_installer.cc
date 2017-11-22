@@ -75,7 +75,7 @@ void ComponentInstaller::Register(ComponentUpdateService* cus,
   task_runner_->PostTaskAndReply(
       FROM_HERE,
       base::BindOnce(&ComponentInstaller::StartRegistration, this,
-                     registration_info, cus),
+                     registration_info),
       base::BindOnce(&ComponentInstaller::FinishRegistration, this,
                      registration_info, cus, std::move(callback)));
 }
@@ -248,8 +248,7 @@ bool ComponentInstaller::FindPreinstallation(
 }
 
 void ComponentInstaller::StartRegistration(
-    const scoped_refptr<RegistrationInfo>& registration_info,
-    ComponentUpdateService* cus) {
+    const scoped_refptr<RegistrationInfo>& registration_info) {
   VLOG(1) << __func__ << " for " << installer_policy_->GetName();
   DCHECK(task_runner_.get());
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
@@ -378,6 +377,9 @@ void ComponentInstaller::UninstallOnTaskRunner() {
     if (!base::DeleteFile(base_dir, false))
       DLOG(ERROR) << "Couldn't delete " << base_dir.value();
   }
+
+  // Customized operations for individual component.
+  installer_policy_->OnCustomUninstall();
 }
 
 void ComponentInstaller::FinishRegistration(

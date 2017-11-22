@@ -5,6 +5,8 @@
 #include "chrome/browser/component_updater/pnacl_component_installer.h"
 
 #include <stdint.h>
+
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,7 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/task_scheduler/post_task.h"
@@ -69,10 +72,9 @@ std::string SanitizeForPath(const std::string& input) {
 // If we don't have Pnacl installed, this is the version we claim.
 const char kMinPnaclVersion[] = "0.46.0.4";
 
-// Initially say that we do not need OnDemand updates. This should be
-// updated by CheckVersionCompatiblity(), before doing any URLRequests
-// that depend on PNaCl.
-volatile base::subtle::Atomic32 needs_on_demand_update = 0;
+// Initially say that we do need OnDemand updates. If there is a version of
+// PNaCl on disk, this will be updated by CheckVersionCompatiblity().
+volatile base::subtle::Atomic32 needs_on_demand_update = 1;
 
 void CheckVersionCompatiblity(const base::Version& current_version) {
   // Using NoBarrier, since needs_on_demand_update is standalone and does
@@ -172,6 +174,7 @@ class PnaclComponentInstallerPolicy : public ComponentInstallerPolicy {
   update_client::CrxInstaller::Result OnCustomInstall(
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) override;
+  void OnCustomUninstall() override;
   bool VerifyInstallation(const base::DictionaryValue& manifest,
                           const base::FilePath& install_dir) const override;
   void ComponentReady(const base::Version& version,
@@ -204,6 +207,8 @@ PnaclComponentInstallerPolicy::OnCustomInstall(
     const base::FilePath& install_dir) {
   return update_client::CrxInstaller::Result(0);  // Nothing custom here.
 }
+
+void PnaclComponentInstallerPolicy::OnCustomUninstall() {}
 
 bool PnaclComponentInstallerPolicy::VerifyInstallation(
     const base::DictionaryValue& manifest,
@@ -250,10 +255,10 @@ std::vector<std::string> PnaclComponentInstallerPolicy::GetMimeTypes() const {
 }  // namespace
 
 void RegisterPnaclComponent(ComponentUpdateService* cus) {
-  // |cus| will take ownership of |installer| during installer->Register(cus).
-  ComponentInstaller* installer =
-      new ComponentInstaller(base::MakeUnique<PnaclComponentInstallerPolicy>());
-  installer->Register(cus, base::Closure());
+  // |cus| takes ownership of |installer| through the CrxComponent instance.
+  auto installer = base::MakeRefCounted<ComponentInstaller>(
+      std::make_unique<PnaclComponentInstallerPolicy>());
+  installer->Register(cus, base::OnceClosure());
 }
 
 }  // namespace component_updater

@@ -14,8 +14,8 @@
 #include "modules/mediarecorder/BlobEvent.h"
 #include "platform/blob/BlobData.h"
 #include "platform/network/mime/ContentType.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebMediaStream.h"
 
@@ -161,7 +161,7 @@ MediaRecorder::MediaRecorder(ExecutionContext* context,
                              MediaStream* stream,
                              const MediaRecorderOptions& options,
                              ExceptionState& exception_state)
-    : SuspendableObject(context),
+    : PausableObject(context),
       stream_(stream),
       mime_type_(options.hasMimeType() ? options.mimeType() : kDefaultMimeType),
       stopped_(true),
@@ -303,14 +303,14 @@ const AtomicString& MediaRecorder::InterfaceName() const {
 }
 
 ExecutionContext* MediaRecorder::GetExecutionContext() const {
-  return SuspendableObject::GetExecutionContext();
+  return PausableObject::GetExecutionContext();
 }
 
-void MediaRecorder::Suspend() {
+void MediaRecorder::Pause() {
   dispatch_scheduled_event_runner_->Pause();
 }
 
-void MediaRecorder::Resume() {
+void MediaRecorder::Unpause() {
   dispatch_scheduled_event_runner_->Unpause();
 }
 
@@ -390,7 +390,7 @@ void MediaRecorder::Trace(blink::Visitor* visitor) {
   visitor->Trace(dispatch_scheduled_event_runner_);
   visitor->Trace(scheduled_events_);
   EventTargetWithInlineData::Trace(visitor);
-  SuspendableObject::Trace(visitor);
+  PausableObject::Trace(visitor);
 }
 
 }  // namespace blink

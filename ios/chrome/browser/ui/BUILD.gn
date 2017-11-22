@@ -31,7 +31,6 @@ source_set("ui") {
   ]
   public_deps = [
     ":ui_util",
-    "//ios/chrome/browser/ui/captive_portal",
     "//ios/chrome/browser/ui/util:constraints_ui",
   ]
   deps = [
@@ -60,6 +59,7 @@ source_set("ui_util") {
     "//base",
     "//base:i18n",
     "//ios/chrome/browser",
+    "//ios/chrome/browser/ui/toolbar:feature",
     "//ios/chrome/browser/ui/toolbar/public:toolbar_base_feature",
     "//ios/web",
     "//ui/base",
@@ -107,8 +107,10 @@ source_set("unit_tests") {
     "//ios/chrome/app/strings",
     "//ios/chrome/browser",
     "//ios/chrome/browser/bookmarks",
+    "//ios/chrome/browser/bookmarks:features",
     "//ios/chrome/browser/browser_state",
     "//ios/chrome/browser/browser_state:test_support",
+    "//ios/chrome/browser/favicon",
     "//ios/chrome/browser/find_in_page",
     "//ios/chrome/browser/search_engines",
     "//ios/chrome/browser/sessions",
@@ -256,6 +258,7 @@ source_set("ui_internal") {
     "//components/image_fetcher/ios",
     "//components/infobars/core",
     "//components/keyed_service/ios",
+    "//components/language/ios/browser",
     "//components/payments/core",
     "//components/prefs",
     "//components/reading_list/core",
@@ -279,6 +282,7 @@ source_set("ui_internal") {
     "//ios/chrome/browser/first_run",
     "//ios/chrome/browser/geolocation:geolocation_internal",
     "//ios/chrome/browser/infobars",
+    "//ios/chrome/browser/language",
     "//ios/chrome/browser/metrics:metrics_internal",
     "//ios/chrome/browser/net",
     "//ios/chrome/browser/passwords",
@@ -294,6 +298,7 @@ source_set("ui_internal") {
     "//ios/chrome/browser/ssl",
     "//ios/chrome/browser/store_kit",
     "//ios/chrome/browser/tabs",
+    "//ios/chrome/browser/translate",
     "//ios/chrome/browser/ui/activity_services:coordinator",
     "//ios/chrome/browser/ui/activity_services/requirements",
     "//ios/chrome/browser/ui/alert_coordinator",
@@ -326,12 +331,14 @@ source_set("ui_internal") {
     "//ios/chrome/browser/ui/page_info:coordinator",
     "//ios/chrome/browser/ui/page_info/requirements",
     "//ios/chrome/browser/ui/payments",
+    "//ios/chrome/browser/ui/presenters",
     "//ios/chrome/browser/ui/print",
     "//ios/chrome/browser/ui/qr_scanner:coordinator",
     "//ios/chrome/browser/ui/qr_scanner/requirements",
     "//ios/chrome/browser/ui/reading_list",
     "//ios/chrome/browser/ui/sad_tab:coordinator",
     "//ios/chrome/browser/ui/settings/sync_utils",
+    "//ios/chrome/browser/ui/signin_interaction/public",
     "//ios/chrome/browser/ui/snackbar",
     "//ios/chrome/browser/ui/stack_view",
     "//ios/chrome/browser/ui/static_content",
@@ -341,6 +348,8 @@ source_set("ui_internal") {
     "//ios/chrome/browser/ui/toolbar/public:toolbar_base_feature",
     "//ios/chrome/browser/ui/tools_menu",
     "//ios/chrome/browser/ui/tools_menu:configuration",
+    "//ios/chrome/browser/ui/tools_menu/public",
+    "//ios/chrome/browser/ui/translate",
     "//ios/chrome/browser/ui/util",
     "//ios/chrome/browser/ui/voice",
     "//ios/chrome/browser/upgrade",
@@ -450,6 +459,7 @@ source_set("eg_tests") {
   testonly = true
   sources = [
     "browser_view_controller_egtest.mm",
+    "keyboard_commands_egtest.mm",
   ]
   deps = [
     ":ui",
@@ -460,7 +470,6 @@ source_set("eg_tests") {
     "//ios/chrome/browser/bookmarks:features",
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/ntp:ntp_controller",
-    "//ios/chrome/browser/ui/tools_menu",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/testing:ios_test_support",

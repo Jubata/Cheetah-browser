@@ -20,10 +20,10 @@
 #include "content/public/common/request_context_type.h"
 #include "content/public/common/service_worker_modes.h"
 #include "services/network/public/interfaces/fetch_api.mojom.h"
-#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
+#include "third_party/WebKit/public/platform/modules/cache_storage/cache_storage.mojom.h"
 #include "third_party/WebKit/public/platform/modules/fetch/fetch_api_request.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerClientType.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerResponseError.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_object.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_state.mojom.h"
@@ -110,7 +110,7 @@ struct CONTENT_EXPORT ServiceWorkerFetchRequest {
 
   static blink::mojom::FetchCacheMode GetCacheModeFromLoadFlags(int load_flags);
 
-  // Be sure to update EstimatedSize() when adding members.
+  // Be sure to update EstimatedStructSize() when adding members.
   network::mojom::FetchRequestMode mode =
       network::mojom::FetchRequestMode::kNoCORS;
   bool is_main_resource_load = false;
@@ -147,7 +147,7 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
       const std::string& blob_uuid,
       uint64_t blob_size,
       scoped_refptr<storage::BlobHandle> blob,
-      blink::WebServiceWorkerResponseError error,
+      blink::mojom::ServiceWorkerResponseError error,
       base::Time response_time,
       bool is_in_cache_storage,
       const std::string& cache_storage_cache_name,
@@ -157,7 +157,7 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   ~ServiceWorkerResponse();
   size_t EstimatedStructSize();
 
-  // Be sure to update EstimatedSize() when adding members.
+  // Be sure to update EstimatedStructSize() when adding members.
   std::vector<GURL> url_list;
   int status_code;
   std::string status_text;
@@ -170,11 +170,17 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   uint64_t blob_size;
   // |blob| is only used when features::kMojoBlobs is enabled.
   scoped_refptr<storage::BlobHandle> blob;
-  blink::WebServiceWorkerResponseError error;
+  blink::mojom::ServiceWorkerResponseError error;
   base::Time response_time;
   bool is_in_cache_storage = false;
   std::string cache_storage_cache_name;
   ServiceWorkerHeaderList cors_exposed_header_names;
+
+  // Side data is used to pass the metadata of the response (eg: V8 code cache).
+  std::string side_data_blob_uuid;
+  uint64_t side_data_blob_size = 0;
+  // |side_data_blob| is only used when features::kMojoBlobs is enabled.
+  scoped_refptr<storage::BlobHandle> side_data_blob;
 };
 
 class ChangedVersionAttributesMask {

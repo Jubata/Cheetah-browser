@@ -6,9 +6,11 @@
 
 #include "base/metrics/histogram_macros.h"
 #include "base/trace_event/memory_dump_request_args.h"
+#include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
 #include "extensions/features/features.h"
@@ -30,6 +32,15 @@ using ProcessMemoryDumpPtr =
 
 namespace {
 
+void AddCommonGpuMetricsToBuilder(ukm::builders::Memory_Experimental* builder,
+                                  const ProcessMemoryDumpPtr& pmd) {
+  DCHECK(builder);
+  UMA_HISTOGRAM_MEMORY_LARGE_MB(
+      "Memory.Experimental.Gpu2.CommandBuffer",
+      pmd->chrome_dump->command_buffer_total_kb / 1024);
+  builder->SetCommandBuffer(pmd->chrome_dump->command_buffer_total_kb / 1024);
+}
+
 void EmitBrowserMemoryMetrics(const ProcessMemoryDumpPtr& pmd,
                               ukm::SourceId ukm_source_id,
                               ukm::UkmRecorder* ukm_recorder,
@@ -42,16 +53,29 @@ void EmitBrowserMemoryMetrics(const ProcessMemoryDumpPtr& pmd,
                                 pmd->os_dump->resident_set_kb / 1024);
   builder.SetResident(pmd->os_dump->resident_set_kb / 1024);
 
+#if !defined(OS_WIN)
   UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Experimental.Browser2.Malloc",
                                 pmd->chrome_dump->malloc_total_kb / 1024);
   builder.SetMalloc(pmd->chrome_dump->malloc_total_kb / 1024);
+#endif
 
   UMA_HISTOGRAM_MEMORY_LARGE_MB(
       "Memory.Experimental.Browser2.PrivateMemoryFootprint",
       pmd->os_dump->private_footprint_kb / 1024);
   UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Browser.PrivateMemoryFootprint",
                                 pmd->os_dump->private_footprint_kb / 1024);
+  UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Browser.SharedMemoryFootprint",
+                                pmd->os_dump->shared_footprint_kb / 1024);
   builder.SetPrivateMemoryFootprint(pmd->os_dump->private_footprint_kb / 1024);
+  builder.SetSharedMemoryFootprint(pmd->os_dump->shared_footprint_kb / 1024);
+
+  // It is possible to run without a separate GPU process.
+  // When that happens, we should log common GPU metrics from the browser proc.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kInProcessGPU)) {
+    AddCommonGpuMetricsToBuilder(&builder, pmd);
+  }
+
   if (uptime)
     builder.SetUptime(uptime.value().InSeconds());
   builder.Record(ukm_recorder);
@@ -61,13 +85,13 @@ void EmitBrowserMemoryMetrics(const ProcessMemoryDumpPtr& pmd,
   do {                                                                         \
     UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Experimental." type "2.Resident",    \
                                   pmd->os_dump->resident_set_kb / 1024);       \
-    UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Experimental." type "2.Malloc",      \
-                                  pmd->chrome_dump->malloc_total_kb / 1024);   \
     UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Experimental." type                  \
                                   "2.PrivateMemoryFootprint",                  \
                                   pmd->os_dump->private_footprint_kb / 1024);  \
     UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory." type ".PrivateMemoryFootprint",    \
                                   pmd->os_dump->private_footprint_kb / 1024);  \
+    UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory." type ".SharedMemoryFootprint",     \
+                                  pmd->os_dump->shared_footprint_kb / 1024);   \
     UMA_HISTOGRAM_MEMORY_LARGE_MB(                                             \
         "Memory.Experimental." type "2.PartitionAlloc",                        \
         pmd->chrome_dump->partition_alloc_total_kb / 1024);                    \
@@ -86,8 +110,16 @@ void EmitRendererMemoryMetrics(
   // UMA
   if (number_of_extensions == 0) {
     RENDERER_MEMORY_UMA_HISTOGRAMS("Renderer");
+#if !defined(OS_WIN)
+    UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Experimental.Renderer2.Malloc",
+                                  pmd->chrome_dump->malloc_total_kb / 1024);
+#endif
   } else {
     RENDERER_MEMORY_UMA_HISTOGRAMS("Extension");
+#if !defined(OS_WIN)
+    UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Experimental.Extension2.Malloc",
+                                  pmd->chrome_dump->malloc_total_kb / 1024);
+#endif
   }
   // UKM
   ukm::SourceId ukm_source_id = page_info.is_null()
@@ -97,8 +129,11 @@ void EmitRendererMemoryMetrics(
   builder.SetProcessType(static_cast<int64_t>(
       memory_instrumentation::mojom::ProcessType::RENDERER));
   builder.SetResident(pmd->os_dump->resident_set_kb / 1024);
+#if !defined(OS_WIN)
   builder.SetMalloc(pmd->chrome_dump->malloc_total_kb / 1024);
+#endif
   builder.SetPrivateMemoryFootprint(pmd->os_dump->private_footprint_kb / 1024);
+  builder.SetSharedMemoryFootprint(pmd->os_dump->shared_footprint_kb / 1024);
   builder.SetPartitionAlloc(pmd->chrome_dump->partition_alloc_total_kb / 1024);
   builder.SetBlinkGC(pmd->chrome_dump->blink_gc_total_kb / 1024);
   builder.SetV8(pmd->chrome_dump->v8_total_kb / 1024);
@@ -130,21 +165,23 @@ void EmitGpuMemoryMetrics(const ProcessMemoryDumpPtr& pmd,
                                 pmd->os_dump->resident_set_kb / 1024);
   builder.SetResident(pmd->os_dump->resident_set_kb / 1024);
 
+#if !defined(OS_WIN)
   UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Experimental.Gpu2.Malloc",
                                 pmd->chrome_dump->malloc_total_kb / 1024);
   builder.SetMalloc(pmd->chrome_dump->malloc_total_kb / 1024);
+#endif
 
-  UMA_HISTOGRAM_MEMORY_LARGE_MB(
-      "Memory.Experimental.Gpu2.CommandBuffer",
-      pmd->chrome_dump->command_buffer_total_kb / 1024);
-  builder.SetCommandBuffer(pmd->chrome_dump->command_buffer_total_kb / 1024);
+  AddCommonGpuMetricsToBuilder(&builder, pmd);
 
   UMA_HISTOGRAM_MEMORY_LARGE_MB(
       "Memory.Experimental.Gpu2.PrivateMemoryFootprint",
       pmd->os_dump->private_footprint_kb / 1024);
   UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Gpu.PrivateMemoryFootprint",
                                 pmd->os_dump->private_footprint_kb / 1024);
+  UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Gpu.SharedMemoryFootprint",
+                                pmd->os_dump->shared_footprint_kb / 1024);
   builder.SetPrivateMemoryFootprint(pmd->os_dump->private_footprint_kb / 1024);
+  builder.SetSharedMemoryFootprint(pmd->os_dump->shared_footprint_kb / 1024);
   if (uptime)
     builder.SetUptime(uptime.value().InSeconds());
   builder.Record(ukm_recorder);
@@ -277,9 +314,11 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
     return;
 
   uint32_t private_footprint_total_kb = 0;
+  uint32_t shared_footprint_total_kb = 0;
   base::Time now = base::Time::Now();
   for (const ProcessMemoryDumpPtr& pmd : global_dump_->process_dumps) {
     private_footprint_total_kb += pmd->os_dump->private_footprint_kb;
+    shared_footprint_total_kb += pmd->os_dump->shared_footprint_kb;
     switch (pmd->process_type) {
       case memory_instrumentation::mojom::ProcessType::BROWSER: {
         EmitBrowserMemoryMetrics(pmd, ukm::UkmRecorder::GetNewSourceID(),
@@ -322,8 +361,11 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
       private_footprint_total_kb / 1024);
   UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Total.PrivateMemoryFootprint",
                                 private_footprint_total_kb / 1024);
+  UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Total.SharedMemoryFootprint",
+                                shared_footprint_total_kb / 1024);
 
   ukm::builders::Memory_Experimental(ukm::UkmRecorder::GetNewSourceID())
       .SetTotal2_PrivateMemoryFootprint(private_footprint_total_kb / 1024)
+      .SetTotal2_SharedMemoryFootprint(shared_footprint_total_kb / 1024)
       .Record(GetUkmRecorder());
 }

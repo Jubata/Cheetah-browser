@@ -29,6 +29,7 @@
 #include "services/ui/public/interfaces/constants.mojom.h"
 #include "services/ui/public/interfaces/window_manager.mojom.h"
 #include "services/ui/public/interfaces/window_manager_window_tree_factory.mojom.h"
+#include "services/ui/public/interfaces/window_tree_host_factory.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/transient_window_client.h"
@@ -177,8 +178,8 @@ void DispatchEventToTarget(ui::Event* event, WindowMus* target) {
 
 // Use for acks from mus that are expected to always succeed and if they don't
 // a crash is triggered.
-void OnAckMustSucceed(bool success) {
-  CHECK(success);
+void OnAckMustSucceed(const base::Location& from_here, bool success) {
+  CHECK(success) << "Context: " << from_here.ToString();
 }
 
 Id GetServerIdForWindow(Window* window) {
@@ -307,6 +308,18 @@ void WindowTreeClient::ConnectAsWindowManager(
   factory->CreateWindowTree(MakeRequest(&window_tree), std::move(client),
                             automatically_create_display_roots);
   SetWindowTree(std::move(window_tree));
+}
+
+void WindowTreeClient::ConnectViaWindowTreeHostFactory() {
+  ui::mojom::WindowTreeHostFactoryPtr factory;
+  connector_->BindInterface(ui::mojom::kServiceName, &factory);
+
+  ui::mojom::WindowTreeHostPtr window_tree_host;
+  ui::mojom::WindowTreeClientPtr client;
+  binding_.Bind(MakeRequest(&client));
+  factory->CreateWindowTreeHost(MakeRequest(&window_tree_host),
+                                std::move(client));
+  WaitForInitialDisplays();
 }
 
 void WindowTreeClient::SetCanFocus(Window* window, bool can_focus) {
@@ -843,7 +856,8 @@ void WindowTreeClient::OnWindowMusCreated(WindowMus* window) {
       window_manager_client_->SetDisplayRoot(
           display, display_init_params->viewport_metrics.Clone(),
           display_init_params->is_primary_display, window->server_id(),
-          display_init_params->mirrors, base::Bind(&OnAckMustSucceed));
+          display_init_params->mirrors,
+          base::Bind(&OnAckMustSucceed, FROM_HERE));
     }
   }
 }
@@ -1125,6 +1139,7 @@ void WindowTreeClient::OnEmbed(
   tree_ptr_ = std::move(tree);
 
   is_from_embed_ = true;
+  got_initial_displays_ = true;
 
   if (window_manager_delegate_) {
     tree_ptr_->GetWindowManagerClient(
@@ -1653,7 +1668,7 @@ void WindowTreeClient::SetBlockingContainers(
   }
   window_manager_client_->SetBlockingContainers(
       std::move(transport_all_blocking_containers),
-      base::Bind(&OnAckMustSucceed));
+      base::Bind(&OnAckMustSucceed, FROM_HERE));
 }
 
 void WindowTreeClient::GetWindowManager(
@@ -1697,6 +1712,12 @@ void WindowTreeClient::OnConnect() {
   got_initial_displays_ = true;
   if (window_manager_delegate_)
     window_manager_delegate_->OnWmConnected();
+}
+
+void WindowTreeClient::WmOnAcceleratedWidgetForDisplay(
+    int64_t display,
+    gpu::SurfaceHandle surface_handle) {
+  // TODO(crbug.com/786453): Implement this.
 }
 
 void WindowTreeClient::WmNewDisplayAdded(
@@ -1783,9 +1804,10 @@ void WindowTreeClient::WmSetCanFocus(Id window_id, bool can_focus) {
 
 void WindowTreeClient::WmCreateTopLevelWindow(
     uint32_t change_id,
-    ClientSpecificId requesting_client_id,
+    const viz::FrameSinkId& frame_sink_id,
     const std::unordered_map<std::string, std::vector<uint8_t>>&
         transport_properties) {
+  DCHECK(frame_sink_id.is_valid());
   std::map<std::string, std::vector<uint8_t>> properties =
       mojo::UnorderedMapToMap(transport_properties);
   ui::mojom::WindowType window_type = ui::mojom::WindowType::UNKNOWN;
@@ -1803,10 +1825,13 @@ void WindowTreeClient::WmCreateTopLevelWindow(
                                                       kInvalidServerId);
     return;
   }
-  embedded_windows_[requesting_client_id].insert(window);
+  embedded_windows_[base::checked_cast<ClientSpecificId>(
+                        frame_sink_id.client_id())]
+      .insert(window);
   if (window_manager_client_) {
     window_manager_client_->OnWmCreatedTopLevelWindow(
         change_id, WindowMus::Get(window)->server_id());
+    OnFrameSinkIdAllocated(WindowMus::Get(window)->server_id(), frame_sink_id);
   }
 }
 
@@ -2112,7 +2137,7 @@ void WindowTreeClient::SetDisplayConfiguration(
     std::vector<ui::mojom::WmViewportMetricsPtr> viewport_metrics,
     int64_t primary_display_id,
     const std::vector<display::Display>& mirrors) {
-  DCHECK_EQ(displays.size(), viewport_metrics.size());
+  DCHECK_EQ(displays.size() + mirrors.size(), viewport_metrics.size());
   if (window_manager_client_) {
     const int64_t internal_display_id =
         display::Display::HasInternalDisplay()
@@ -2120,7 +2145,7 @@ void WindowTreeClient::SetDisplayConfiguration(
             : display::kInvalidDisplayId;
     window_manager_client_->SetDisplayConfiguration(
         displays, std::move(viewport_metrics), primary_display_id,
-        internal_display_id, mirrors, base::Bind(&OnAckMustSucceed));
+        internal_display_id, mirrors, base::Bind(&OnAckMustSucceed, FROM_HERE));
   }
 }
 
@@ -2139,7 +2164,7 @@ void WindowTreeClient::AddDisplayReusingWindowTreeHost(
     window_manager_client_->SetDisplayRoot(
         display, std::move(viewport_metrics), is_primary_display,
         display_root_window->server_id(), mirrors,
-        base::Bind(&OnAckMustSucceed));
+        base::Bind(&OnAckMustSucceed, FROM_HERE));
     window_tree_host->compositor()->SetLocalSurfaceId(
         display_root_window->GetOrAllocateLocalSurfaceId(
             window_tree_host->GetBoundsInPixels().size()));
@@ -2155,8 +2180,8 @@ void WindowTreeClient::SwapDisplayRoots(WindowTreeHostMus* window_tree_host1,
   window_tree_host1->set_display_id(display_id2);
   window_tree_host2->set_display_id(display_id1);
   if (window_manager_client_) {
-    window_manager_client_->SwapDisplayRoots(display_id1, display_id2,
-                                             base::Bind(&OnAckMustSucceed));
+    window_manager_client_->SwapDisplayRoots(
+        display_id1, display_id2, base::Bind(&OnAckMustSucceed, FROM_HERE));
   }
 }
 

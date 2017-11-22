@@ -35,10 +35,10 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image_unittest_util.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
+#include "ui/message_center/ui_controller.h"
 #include "ui/message_center/views/message_popup_collection.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
@@ -204,9 +204,9 @@ TEST_F(WebNotificationTrayTest, WebNotificationPopupBubble) {
   AddNotification("test_id5");
   EXPECT_TRUE(GetTray()->IsPopupVisible());
 
-  GetTray()->message_center_tray_->ShowMessageCenterBubble(
+  GetTray()->message_center_ui_controller_->ShowMessageCenterBubble(
       false /* show_by_click */);
-  GetTray()->message_center_tray_->HideMessageCenterBubble();
+  GetTray()->message_center_ui_controller_->HideMessageCenterBubble();
 
   EXPECT_FALSE(GetTray()->IsPopupVisible());
 }
@@ -220,8 +220,9 @@ TEST_F(WebNotificationTrayTest, ManyMessageCenterNotifications) {
     std::string id = base::StringPrintf("test_id%d", static_cast<int>(i));
     AddNotification(id);
   }
-  bool shown = GetTray()->message_center_tray_->ShowMessageCenterBubble(
-      false /* show_by_click */);
+  bool shown =
+      GetTray()->message_center_ui_controller_->ShowMessageCenterBubble(
+          false /* show_by_click */);
   EXPECT_TRUE(shown);
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(GetTray()->message_center_bubble() != NULL);
@@ -393,7 +394,7 @@ TEST_F(WebNotificationTrayTest, PopupAndSystemTrayMultiDisplay) {
 
 TEST_F(WebNotificationTrayTest, VisibleSmallIcon) {
   EXPECT_EQ(0u, GetTray()->visible_small_icons_.size());
-  EXPECT_EQ(2, GetTray()->tray_container()->child_count());
+  EXPECT_EQ(3, GetTray()->tray_container()->child_count());
   std::unique_ptr<message_center::Notification> notification =
       std::make_unique<message_center::Notification>(
           message_center::NOTIFICATION_TYPE_SIMPLE, "test",
@@ -408,7 +409,44 @@ TEST_F(WebNotificationTrayTest, VisibleSmallIcon) {
   GetMessageCenter()->AddNotification(std::move(notification));
   RunAllPendingInMessageLoop();
   EXPECT_EQ(1u, GetTray()->visible_small_icons_.size());
-  EXPECT_EQ(3, GetTray()->tray_container()->child_count());
+  EXPECT_EQ(4, GetTray()->tray_container()->child_count());
+}
+
+TEST_F(WebNotificationTrayTest, QuietModeIcon) {
+  WebNotificationTray::DisableAnimationsForTest(true);
+
+  AddNotification("test");
+  RunAllPendingInMessageLoop();
+
+  // There is a notification, so no bell & quiet mode icons are shown.
+  EXPECT_FALSE(GetTray()->bell_icon_->visible());
+  EXPECT_FALSE(GetTray()->quiet_mode_icon_->visible());
+
+  GetMessageCenter()->SetQuietMode(true);
+  RunAllPendingInMessageLoop();
+
+  // If there is a notification, setting quiet mode shouldn't change tray icons.
+  EXPECT_FALSE(GetTray()->bell_icon_->visible());
+  EXPECT_FALSE(GetTray()->quiet_mode_icon_->visible());
+
+  GetMessageCenter()->SetQuietMode(false);
+  GetMessageCenter()->RemoveAllNotifications(
+      false /* by_user */, message_center::MessageCenter::RemoveType::ALL);
+  RunAllPendingInMessageLoop();
+
+  // If there is no notification, bell icon should be shown.
+  EXPECT_TRUE(GetTray()->bell_icon_->visible());
+  EXPECT_FALSE(GetTray()->quiet_mode_icon_->visible());
+
+  GetMessageCenter()->SetQuietMode(true);
+  RunAllPendingInMessageLoop();
+
+  // If there is no notification and quiet mode is set, it should show quiet
+  // mode icon.
+  EXPECT_FALSE(GetTray()->bell_icon_->visible());
+  EXPECT_TRUE(GetTray()->quiet_mode_icon_->visible());
+
+  WebNotificationTray::DisableAnimationsForTest(false);
 }
 
 // Makes sure that the system tray bubble closes when another window is

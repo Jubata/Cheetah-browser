@@ -28,19 +28,19 @@
 #define HTMLMediaElement_h
 
 #include <memory>
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "core/CoreExport.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "core/dom/events/MediaElementEventQueue.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/media/MediaControls.h"
 #include "platform/Supplementable.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/audio/AudioSourceProvider.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
 #include "public/platform/WebAudioSourceProviderClient.h"
@@ -81,7 +81,7 @@ class CORE_EXPORT HTMLMediaElement
     : public HTMLElement,
       public Supplementable<HTMLMediaElement>,
       public ActiveScriptWrappable<HTMLMediaElement>,
-      public SuspendableObject,
+      public PausableObject,
       private WebMediaPlayerClient {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(HTMLMediaElement);
@@ -251,7 +251,7 @@ class CORE_EXPORT HTMLMediaElement
   void DisableAutomaticTextTrackSelection();
 
   // EventTarget function.
-  // Both Node (via HTMLElement) and SuspendableObject define this method, which
+  // Both Node (via HTMLElement) and PausableObject define this method, which
   // causes an ambiguity error at compile time. This class's constructor
   // ensures that both implementations return document, so return the result
   // of one of them here.
@@ -325,6 +325,8 @@ class CORE_EXPORT HTMLMediaElement
 
   WebMediaPlayer::LoadType GetLoadType() const;
 
+  bool HasMediaSource() const { return media_source_; }
+
  protected:
   HTMLMediaElement(const QualifiedName&, Document&);
   ~HTMLMediaElement() override;
@@ -368,7 +370,7 @@ class CORE_EXPORT HTMLMediaElement
 
   bool IsInteractiveContent() const final;
 
-  // SuspendableObject functions.
+  // PausableObject functions.
   void ContextDestroyed(ExecutionContext*) override;
 
   virtual void UpdateDisplayState() {}
@@ -724,6 +726,7 @@ class CORE_EXPORT HTMLMediaElement
   friend class MediaControlInputElementTest;
   friend class MediaControlsOrientationLockDelegateTest;
   friend class MediaControlsRotateToFullscreenDelegateTest;
+  friend class MediaControlLoadingPanelElementTest;
 
   Member<AutoplayPolicy> autoplay_policy_;
 

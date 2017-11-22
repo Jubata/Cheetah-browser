@@ -677,6 +677,34 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Accel_Move_Window_To_Above_Display">
+  <owner>warx@chromium.org</owner>
+  <description>
+    User presses accelerator trying to move active window to above display.
+  </description>
+</action>
+
+<action name="Accel_Move_Window_To_Below_Display">
+  <owner>warx@chromium.org</owner>
+  <description>
+    User presses accelerator trying to move active window to below display.
+  </description>
+</action>
+
+<action name="Accel_Move_Window_To_Left_Display">
+  <owner>warx@chromium.org</owner>
+  <description>
+    User presses accelerator trying to move active window to left display.
+  </description>
+</action>
+
+<action name="Accel_Move_Window_To_Right_Display">
+  <owner>warx@chromium.org</owner>
+  <description>
+    User presses accelerator trying to move active window to right display.
+  </description>
+</action>
+
 <action name="Accel_NewTab_T">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -819,7 +847,7 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Accel_Search_LWin">
+<action name="Accel_Search_LWin" not_user_triggered="true">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -1555,6 +1583,14 @@ should be able to be added at any place in this file.
   <description>Promo banner for an instant app has been dismissed.</description>
 </action>
 
+<action name="Android.InstantApps.BannerDismissedAppIsDefault">
+  <owner>thildebr@chromium.org</owner>
+  <description>
+    A promo banner shown when opening the instant app is default has been
+    dismissed.
+  </description>
+</action>
+
 <action name="Android.InstantApps.BannerOpen">
   <owner>mariakhomenko@chromium.org</owner>
   <description>
@@ -1562,9 +1598,35 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Android.InstantApps.BannerOpenAppIsDefault">
+  <owner>thildebr@chromium.org</owner>
+  <description>
+    User clicked &quot;Open App&quot; button on an instant apps banner that was
+    shown when opening the app was default, signaling that they were using the
+    mobile web first, and decided to switch over to the instant app.
+  </description>
+</action>
+
 <action name="Android.InstantApps.BannerShown" not_user_triggered="true">
   <owner>mariakhomenko@chromium.org</owner>
   <description>Promo banner for an instant app has been displayed.</description>
+</action>
+
+<action name="Android.InstantApps.BannerShownAppIsDefault"
+    not_user_triggered="true">
+  <owner>thildebr@chromium.org</owner>
+  <description>
+    Promo banner for an instant app has been displayed when opening the app is
+    default.
+  </description>
+</action>
+
+<action name="Android.InstantApps.InstantAppsEligiblePageLoaded">
+  <owner>mariakhomenko@chromium.org</owner>
+  <description>
+    A page finished loading in Chrome that could have been loaded in an Instant
+    App.
+  </description>
 </action>
 
 <action name="Android.InstantApps.LaunchedByDefault" not_user_triggered="true">
@@ -1579,6 +1641,14 @@ should be able to be added at any place in this file.
   <owner>tedchoc@chromium.org</owner>
   <description>
     An instant app was launched from the page info popup.
+  </description>
+</action>
+
+<action name="Android.InstantApps.OpenInstantAppButtonShown">
+  <owner>mariakhomenko@chromium.org</owner>
+  <description>
+    Recorded when the user opened PageInfo dialog and saw a button to launch an
+    Instant App there.
   </description>
 </action>
 
@@ -1657,6 +1727,13 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="Android.PhoneIntent">
+  <owner>mariakhomenko@chromium.org</owner>
+  <description>
+    A user clicked on a telephone number link in Chrome content.
+  </description>
+</action>
+
 <action name="AppCloseButton_Clk">
   <obsolete>Unused as of 08/2017</obsolete>
   <owner>jamescook@chromium.org</owner>
@@ -1709,7 +1786,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Arc.Launcher.Search.OpenPlayStore.InstantApps">
-  <owner>hejq@chromium.com</owner>
+  <owner>hejq@chromium.org</owner>
   <description>
     Recorded when the user opens the an instant app from a Play Store app search
     query.
@@ -1717,7 +1794,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Arc.Launcher.Search.OpenPlayStore.UninstalledApps">
-  <owner>hejq@chromium.com</owner>
+  <owner>hejq@chromium.org</owner>
   <description>
     Recorded when the user opens the installing page of a Play Store app search
     result.
@@ -2955,6 +3032,20 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="BrowserActions.TabOpenedNotificationClicked">
+  <owner>ltian@chromium.org</owner>
+  <description>
+    Users click the notification of opening tab in background.
+  </description>
+</action>
+
+<action name="BrowserActions.TabOpenedNotificationCreated">
+  <owner>ltian@chromium.org</owner>
+  <description>
+    Browser Actions creates a notifcation of opening tab in background.
+  </description>
+</action>
+
 <action name="BrowserForSystemProfile">
   <owner>mlerman@chromium.org</owner>
   <description>
@@ -3318,6 +3409,14 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="ClearBrowsingData_OlderThan30Days">
+  <owner>dullweber@chromium.org</owner>
+  <owner>msramek@chromium.org</owner>
+  <description>
+    Browsing data has been cleared for older than 30 days timeperiod.
+  </description>
+</action>
+
 <action name="ClearBrowsingData_Passwords">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -3384,6 +3483,12 @@ should be able to be added at any place in this file.
   <owner>dullweber@chromium.org</owner>
   <owner>msramek@chromium.org</owner>
   <description>Time period in CBD was changed.</description>
+</action>
+
+<action name="ClearBrowsingData_TimePeriodChanged_OlderThan30Days">
+  <owner>dullweber@chromium.org</owner>
+  <owner>msramek@chromium.org</owner>
+  <description>Time period in CBD was changed to OlderThan30Days.</description>
 </action>
 
 <action name="ClearSelection">
@@ -5371,6 +5476,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.NotifyEvent.IPH_ContextualSearch">
+  <obsolete>
+    Replaced with InProductHelp.NotifyEvent.IPH_ContextualSearchWebSearch.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5393,6 +5501,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.NotifyEvent.IPH_ContextualSearchPanel">
+  <obsolete>
+    Replaced with
+    InProductHelp.NotifyEvent.IPH_ContextualSearchPromotePanelOpen.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5403,13 +5515,49 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchTap">
+<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchPromotePanelOpen">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered an event related to opening the Contextual Search panel
+    in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchPromoteTap">
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>
     The user triggered an event related to activation by tap for Contextual
     Search in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchTap">
+  <obsolete>
+    Replaced with InProductHelp.NotifyEvent.IPH_ContextualSearchPromoteTap.
+  </obsolete>
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered an event related to activation by tap for Contextual
+    Search in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.NotifyEvent.IPH_ContextualSearchWebSearch">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered an event related to the Contextual Search web search
+    in-product help. See
     //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
@@ -5513,6 +5661,9 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearch">
+  <obsolete>
+    Replaced with InProductHelp.NotifyUsedEvent.IPH_ContextualSearchWebSearch.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5535,6 +5686,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPanel">
+  <obsolete>
+    Replaced with
+    InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromotePanelOpen.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5545,7 +5700,19 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchTap">
+<action
+    name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromotePanelOpen">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered a used event related to opening the Contextual Search
+    panel in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromoteTap">
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5553,6 +5720,31 @@ should be able to be added at any place in this file.
     The user triggered a used event related to activation by tap for Contextual
     Search in-product help. See
     //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchTap">
+  <obsolete>
+    Replaced with InProductHelp.NotifyUsedEvent.IPH_ContextualSearchPromoteTap.
+  </obsolete>
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered a used event related to activation by tap for Contextual
+    Search in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action name="InProductHelp.NotifyUsedEvent.IPH_ContextualSearchWebSearch">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The user triggered a used event related to the Contextual Search in-product
+    help. See //components/feature_engagement/README.md#Configuring-UMA for
+    details.
   </description>
 </action>
 
@@ -5655,6 +5847,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearch">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchWebSearch.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5677,6 +5873,10 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchPanel">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchPromotePanelOpen.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5688,7 +5888,20 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchTap">
+<action
+    name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchPromotePanelOpen">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The feature engagement tracker tried to determine whether the in-product
+    help related to opening the Contextual Search panel should be shown to the
+    user. See //components/feature_engagement/README.md#Configuring-UMA for
+    details.
+  </description>
+</action>
+
+<action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchPromoteTap">
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5697,6 +5910,33 @@ should be able to be added at any place in this file.
     help related to activation by tap for Contextual Search should be shown to
     the user. See //components/feature_engagement/README.md#Configuring-UMA for
     details.
+  </description>
+</action>
+
+<action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchTap">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchPromoteTap.
+  </obsolete>
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The feature engagement tracker tried to determine whether the in-product
+    help related to activation by tap for Contextual Search should be shown to
+    the user. See //components/feature_engagement/README.md#Configuring-UMA for
+    details.
+  </description>
+</action>
+
+<action name="InProductHelp.ShouldTriggerHelpUI.IPH_ContextualSearchWebSearch">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    The feature engagement tracker tried to determine whether the Contextual
+    Search in-product help should be shown to the user. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
 
@@ -5832,6 +6072,10 @@ should be able to be added at any place in this file.
 
 <action
     name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearch">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchWebSearch.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5856,6 +6100,10 @@ should be able to be added at any place in this file.
 
 <action
     name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchPanel">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchPromotePanelOpen.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5867,7 +6115,19 @@ should be able to be added at any place in this file.
 </action>
 
 <action
-    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchTap">
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchPromotePanelOpen">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action that could have triggered the in-product help related to
+    opening the Contextual Search panel did not. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchPromoteTap">
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -5875,6 +6135,34 @@ should be able to be added at any place in this file.
     A user action that could have triggered the in-product help related to
     activation by tap did not. See
     //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchTap">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchPromoteTap.
+  </obsolete>
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action that could have triggered the in-product help related to
+    activation by tap did not. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.NotTriggered.IPH_ContextualSearchWebSearch">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action that could have triggered the Contextual Search in-product
+    help did not. See //components/feature_engagement/README.md#Configuring-UMA
+    for details.
   </description>
 </action>
 
@@ -6002,6 +6290,10 @@ should be able to be added at any place in this file.
 
 <action
     name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearch">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchWebSearch.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -6025,6 +6317,10 @@ should be able to be added at any place in this file.
 
 <action
     name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchPanel">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchPromotePanelOpen.
+  </obsolete>
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
@@ -6036,13 +6332,51 @@ should be able to be added at any place in this file.
 </action>
 
 <action
-    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchTap">
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchPromotePanelOpen">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action triggered the in-product help related to opening the
+    Contextual Search panel. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchPromoteTap">
   <owner>donnd@chromium.org</owner>
   <owner>mahmoudi@chromium.org</owner>
   <owner>twellington@chromium.org</owner>
   <description>
     A user action triggered the in-product help related to activation by tap.
     See //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchTap">
+  <obsolete>
+    Replaced with
+    InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchPromoteTap.
+  </obsolete>
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action triggered the in-product help related to activation by tap.
+    See //components/feature_engagement/README.md#Configuring-UMA for details.
+  </description>
+</action>
+
+<action
+    name="InProductHelp.ShouldTriggerHelpUIResult.Triggered.IPH_ContextualSearchWebSearch">
+  <owner>donnd@chromium.org</owner>
+  <owner>mahmoudi@chromium.org</owner>
+  <owner>twellington@chromium.org</owner>
+  <description>
+    A user action triggered the Contextual Search in-product help. See
+    //components/feature_engagement/README.md#Configuring-UMA for details.
   </description>
 </action>
 
@@ -11805,7 +12139,7 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="MobileTabClosedUndoShortCut">
-  <owner>xingliu@chromium.com</owner>
+  <owner>xingliu@chromium.org</owner>
   <description>
     Undo tab closure by keyboard shortcut ctrl+shift+T, for Android only.
   </description>
@@ -12054,7 +12388,7 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="Mouse_Down">
+<action name="Mouse_Down" not_user_triggered="true">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -12647,12 +12981,12 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="OpenFileSystemPersistent">
+<action name="OpenFileSystemPersistent" not_user_triggered="true">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="OpenFileSystemTemporary">
+<action name="OpenFileSystemTemporary" not_user_triggered="true">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -16984,6 +17318,82 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="SoundContentSetting.MuteBy.DefaultSwitch">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>
+    User muted all sites by changing the default sound setting from the content
+    settings privacy page (Desktop) or the SingleCategoryPreferences page
+    (Android).
+  </description>
+</action>
+
+<action name="SoundContentSetting.MuteBy.PageInfo">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>User muted site via the Page Info bubble.</description>
+</action>
+
+<action name="SoundContentSetting.MuteBy.PatternException">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>
+    User muted site via adding/removing a pattern exception from the content
+    settings privacy page (Desktop) or the SingleCategoryPreferences page
+    (Android).
+  </description>
+</action>
+
+<action name="SoundContentSetting.MuteBy.SiteSettings">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>User muted site via the site settings page.</description>
+</action>
+
+<action name="SoundContentSetting.MuteBy.TabStrip">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>User muted site via the tab strip.</description>
+</action>
+
+<action name="SoundContentSetting.UnmuteBy.DefaultSwitch">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>
+    User unmuted all sites by changing the default sound setting from the
+    content settings privacy page (Desktop) or the SingleCategoryPreferences
+    page (Android).
+  </description>
+</action>
+
+<action name="SoundContentSetting.UnmuteBy.PageInfo">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>User unmuted site via the Page Info bubble.</description>
+</action>
+
+<action name="SoundContentSetting.UnmuteBy.PatternException">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>
+    User unmuted site via adding/removing a pattern exception from the content
+    settings privacy page (Desktop) or the SingleCategoryPreferences page
+    (Android).
+  </description>
+</action>
+
+<action name="SoundContentSetting.UnmuteBy.SiteSettings">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>User unmuted site via the site settings page.</description>
+</action>
+
+<action name="SoundContentSetting.UnmuteBy.TabStrip">
+  <owner>steimel@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <description>User unmuted site via the tab strip.</description>
+</action>
+
 <action name="StackedTab_DragActiveTab">
   <owner>bruthig@chromium.org</owner>
   <owner>tdanderson@chromium.org</owner>
@@ -17125,7 +17535,7 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
-<action name="StatusArea_BrightnessChanged">
+<action name="StatusArea_BrightnessChanged" not_user_triggered="true">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
 </action>
@@ -18093,7 +18503,7 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="TextToSpeech.Stop">
+<action name="TextToSpeech.Stop" not_user_triggered="true">
   <owner>dmazzoni@chromium.org</owner>
   <description>Synthesized speech is stopped.</description>
 </action>
@@ -18278,7 +18688,7 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="TrackpadScrollFling">
+<action name="TrackpadScrollFling" not_user_triggered="true">
   <owner>tdresser@chromium.org</owner>
   <description>Logged on an ET_SCROLL_FLING_START scroll event.</description>
 </action>
@@ -18664,7 +19074,7 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
-<action name="WebView.PermissionAllow.FileSystem">
+<action name="WebView.PermissionAllow.FileSystem" not_user_triggered="true">
   <owner>fsamuel@chromium.org</owner>
   <owner>hanxi@chromium.org</owner>
   <description>

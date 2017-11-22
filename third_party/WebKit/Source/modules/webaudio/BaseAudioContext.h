@@ -26,9 +26,11 @@
 #ifndef BaseAudioContext_h
 #define BaseAudioContext_h
 
+#include "base/memory/scoped_refptr.h"
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "core/dom/events/EventListener.h"
 #include "core/html/media/AutoplayPolicy.h"
 #include "core/typed_arrays/ArrayBufferViewHelpers.h"
@@ -40,11 +42,9 @@
 #include "modules/webaudio/DeferredTaskHandler.h"
 #include "modules/webaudio/IIRFilterNode.h"
 #include "platform/audio/AudioBus.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/HashSet.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Threading.h"
 #include "platform/wtf/Vector.h"
 
@@ -92,7 +92,7 @@ class WaveShaperNode;
 class MODULES_EXPORT BaseAudioContext
     : public EventTargetWithInlineData,
       public ActiveScriptWrappable<BaseAudioContext>,
-      public SuspendableObject {
+      public PausableObject {
   USING_GARBAGE_COLLECTED_MIXIN(BaseAudioContext);
   DEFINE_WRAPPERTYPEINFO();
 
@@ -443,7 +443,7 @@ class MODULES_EXPORT BaseAudioContext
   //
   // TODO(dominicc): Move to AudioContext because only it creates
   // these Promises.
-  void ResolvePromisesForResume();
+  void ResolvePromisesForUnpause();
 
   // The audio thread relies on the main thread to perform some operations
   // over the objects that it owns and controls; |ScheduleMainThreadCleanup()|

@@ -10,6 +10,7 @@
 // clang-format off
 #include "V8TestInterfaceConstructor2.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/IDLTypes.h"
@@ -20,7 +21,6 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "platform/bindings/V8ObjectConstructor.h"
 #include "platform/wtf/GetPtr.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -41,7 +41,6 @@ const WrapperTypeInfo V8TestInterfaceConstructor2::wrapperTypeInfo = {
     WrapperTypeInfo::kWrapperTypeObjectPrototype,
     WrapperTypeInfo::kObjectClassId,
     WrapperTypeInfo::kNotInheritFromActiveScriptWrappable,
-    WrapperTypeInfo::kIndependent,
 };
 #if defined(COMPONENT_BUILD) && defined(WIN32) && defined(__clang__)
 #pragma clang diagnostic pop
@@ -144,22 +143,22 @@ static void constructor4(const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (exceptionState.HadException())
     return;
 
-  defaultUndefinedOptionalStringArg = (2 < info.Length() ? info[2] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+  defaultUndefinedOptionalStringArg = info[2];
   if (!defaultUndefinedOptionalStringArg.Prepare())
     return;
 
   if (!info[3]->IsUndefined()) {
-    defaultNullStringOptionalStringArg = (3 < info.Length() ? info[3] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+    defaultNullStringOptionalStringArg = info[3];
     if (!defaultNullStringOptionalStringArg.Prepare())
       return;
   } else {
     defaultNullStringOptionalStringArg = nullptr;
   }
-  if (4 < info.Length() && !info[4]->IsNullOrUndefined() && !info[4]->IsObject()) {
+  if (!info[4]->IsNullOrUndefined() && !info[4]->IsObject()) {
     exceptionState.ThrowTypeError("parameter 5 ('defaultUndefinedOptionalDictionaryArg') is not an object.");
     return;
   }
-  defaultUndefinedOptionalDictionaryArg = NativeValueTraits<Dictionary>::NativeValue(info.GetIsolate(), (4 < info.Length() ? info[4] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate()))), exceptionState);
+  defaultUndefinedOptionalDictionaryArg = NativeValueTraits<Dictionary>::NativeValue(info.GetIsolate(), info[4], exceptionState);
   if (exceptionState.HadException())
     return;
 
@@ -170,7 +169,7 @@ static void constructor4(const v8::FunctionCallbackInfo<v8::Value>& info) {
     V8SetReturnValue(info, wrapper);
     return;
   }
-  optionalStringArg = (5 < info.Length() ? info[5] : static_cast<v8::Local<v8::Value>>(v8::Undefined(info.GetIsolate())));
+  optionalStringArg = info[5];
   if (!optionalStringArg.Prepare())
     return;
 

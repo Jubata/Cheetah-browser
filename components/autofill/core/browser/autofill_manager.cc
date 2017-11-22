@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <utility>
 #include <vector>
@@ -21,7 +22,6 @@
 #include "base/files/file_util.h"
 #include "base/guid.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
@@ -192,59 +192,11 @@ AutofillManager::AutofillManager(
     AutofillClient* client,
     const std::string& app_locale,
     AutofillDownloadManagerState enable_download_manager)
-    : AutofillHandler(driver),
-      client_(client),
-      payments_client_(base::MakeUnique<payments::PaymentsClient>(
-          driver->GetURLRequestContext(),
-          client->GetPrefs(),
-          client->GetIdentityProvider(),
-          /*unmask_delegate=*/this,
-          // save_delegate starts out as nullptr and is set up by the
-          // CreditCardSaveManager owned by form_data_importer_.
-          /*save_delegate=*/nullptr)),
-      app_locale_(app_locale),
-      personal_data_(client->GetPersonalDataManager()),
-      form_data_importer_(
-          std::make_unique<FormDataImporter>(client,
-                                             payments_client_.get(),
-                                             client->GetPersonalDataManager(),
-                                             app_locale)),
-      autocomplete_history_manager_(
-          base::MakeUnique<AutocompleteHistoryManager>(driver, client)),
-      form_interactions_ukm_logger_(
-          base::MakeUnique<AutofillMetrics::FormInteractionsUkmLogger>(
-              client->GetUkmRecorder())),
-      address_form_event_logger_(
-          base::MakeUnique<AutofillMetrics::FormEventLogger>(
-              false /* is_for_credit_card */,
-              form_interactions_ukm_logger_.get())),
-      credit_card_form_event_logger_(
-          base::MakeUnique<AutofillMetrics::FormEventLogger>(
-              true /* is_for_credit_card */,
-              form_interactions_ukm_logger_.get())),
-      has_logged_autofill_enabled_(false),
-      has_logged_address_suggestions_count_(false),
-      did_show_suggestions_(false),
-      user_did_type_(false),
-      user_did_autofill_(false),
-      user_did_edit_autofilled_field_(false),
-      enable_ablation_logging_(false),
-      external_delegate_(nullptr),
-      test_delegate_(nullptr),
-#if defined(OS_ANDROID) || defined(OS_IOS)
-      autofill_assistant_(this),
-#endif
-      weak_ptr_factory_(this) {
-  if (enable_download_manager == ENABLE_AUTOFILL_DOWNLOAD_MANAGER) {
-    download_manager_.reset(new AutofillDownloadManager(driver, this));
-  }
-  CountryNames::SetLocaleString(app_locale_);
-  if (personal_data_ && client_)
-    personal_data_->OnSyncServiceInitialized(client_->GetSyncService());
-
-  if (personal_data_ && driver)
-    personal_data_->SetURLRequestContextGetter(driver->GetURLRequestContext());
-}
+    : AutofillManager(driver,
+                      client,
+                      client->GetPersonalDataManager(),
+                      app_locale,
+                      enable_download_manager) {}
 
 AutofillManager::~AutofillManager() {}
 
@@ -940,7 +892,7 @@ bool AutofillManager::GetDeletionConfirmationText(const base::string16& value,
       return false;
 
     if (title)
-      title->assign(credit_card->NetworkAndLastFourDigits());
+      title->assign(credit_card->NetworkOrBankNameAndLastFourDigits());
     if (body) {
       body->assign(l10n_util::GetStringUTF16(
           IDS_AUTOFILL_DELETE_CREDIT_CARD_SUGGESTION_CONFIRMATION_BODY));
@@ -1207,12 +1159,15 @@ void AutofillManager::Reset() {
   external_delegate_->Reset();
 }
 
-AutofillManager::AutofillManager(AutofillDriver* driver,
-                                 AutofillClient* client,
-                                 PersonalDataManager* personal_data)
+AutofillManager::AutofillManager(
+    AutofillDriver* driver,
+    AutofillClient* client,
+    PersonalDataManager* personal_data,
+    const std::string app_locale,
+    AutofillDownloadManagerState enable_download_manager)
     : AutofillHandler(driver),
       client_(client),
-      payments_client_(base::MakeUnique<payments::PaymentsClient>(
+      payments_client_(std::make_unique<payments::PaymentsClient>(
           driver->GetURLRequestContext(),
           client->GetPrefs(),
           client->GetIdentityProvider(),
@@ -1220,43 +1175,42 @@ AutofillManager::AutofillManager(AutofillDriver* driver,
           // save_delegate starts out as nullptr and is set up by the
           // CreditCardSaveManager owned by form_data_importer_.
           /*save_delegate=*/nullptr)),
-      app_locale_("en-US"),
+      app_locale_(app_locale),
       personal_data_(personal_data),
       form_data_importer_(
-          base::MakeUnique<FormDataImporter>(client,
+          std::make_unique<FormDataImporter>(client,
                                              payments_client_.get(),
                                              personal_data,
                                              app_locale_)),
+      field_filler_(app_locale),
       autocomplete_history_manager_(
-          base::MakeUnique<AutocompleteHistoryManager>(driver, client)),
+          std::make_unique<AutocompleteHistoryManager>(driver, client)),
       form_interactions_ukm_logger_(
-          base::MakeUnique<AutofillMetrics::FormInteractionsUkmLogger>(
+          std::make_unique<AutofillMetrics::FormInteractionsUkmLogger>(
               client->GetUkmRecorder())),
       address_form_event_logger_(
-          base::MakeUnique<AutofillMetrics::FormEventLogger>(
+          std::make_unique<AutofillMetrics::FormEventLogger>(
               false /* is_for_credit_card */,
               form_interactions_ukm_logger_.get())),
       credit_card_form_event_logger_(
-          base::MakeUnique<AutofillMetrics::FormEventLogger>(
+          std::make_unique<AutofillMetrics::FormEventLogger>(
               true /* is_for_credit_card */,
               form_interactions_ukm_logger_.get())),
-      has_logged_autofill_enabled_(false),
-      has_logged_address_suggestions_count_(false),
-      did_show_suggestions_(false),
-      user_did_type_(false),
-      user_did_autofill_(false),
-      user_did_edit_autofilled_field_(false),
-      unmasking_query_id_(-1),
-      enable_ablation_logging_(false),
-      external_delegate_(nullptr),
-      test_delegate_(nullptr),
 #if defined(OS_ANDROID) || defined(OS_IOS)
       autofill_assistant_(this),
 #endif
       weak_ptr_factory_(this) {
   DCHECK(driver);
   DCHECK(client_);
+  if (enable_download_manager == ENABLE_AUTOFILL_DOWNLOAD_MANAGER) {
+    download_manager_.reset(new AutofillDownloadManager(driver, this));
+  }
   CountryNames::SetLocaleString(app_locale_);
+  if (personal_data_ && client_)
+    personal_data_->OnSyncServiceInitialized(client_->GetSyncService());
+
+  if (personal_data_ && driver)
+    personal_data_->SetURLRequestContextGetter(driver->GetURLRequestContext());
 }
 
 bool AutofillManager::RefreshDataModels() {
@@ -1376,22 +1330,12 @@ void AutofillManager::FillOrPreviewDataModelForm(
   if (SectionIsAutofilled(*form_structure, form, autofill_field->section())) {
     for (FormFieldData& iter : result.fields) {
       if (iter.SameFieldAs(field)) {
-        base::string16 value =
+        const base::string16 value =
             data_model.GetInfo(autofill_field->Type(), app_locale_);
-        if (AutofillField::FillFormField(*autofill_field, value,
-                                         profile_language_code, app_locale_,
-                                         &iter)) {
-          // Mark the cached field as autofilled, so that we can detect when a
-          // user edits an autofilled field (for metrics).
-          autofill_field->is_autofilled = true;
-
-          // Mark the field as autofilled when a non-empty value is assigned to
-          // it. This allows the renderer to distinguish autofilled fields from
-          // fields with non-empty values, such as select-one fields.
-          iter.is_autofilled = true;
-
-          if (!is_credit_card && !value.empty())
-            client_->DidFillOrPreviewField(value, profile_full_name);
+        if (!value.empty()) {
+          FillFieldWithValue(autofill_field, value, profile_language_code,
+                             profile_full_name, &iter,
+                             /*should_notify=*/!is_credit_card);
         }
         break;
       }
@@ -1407,55 +1351,57 @@ void AutofillManager::FillOrPreviewDataModelForm(
   }
 
   DCHECK_EQ(form_structure->field_count(), form.fields.size());
+
+  if (base::FeatureList::IsEnabled(kAutofillRationalizeFieldTypePredictions)) {
+    form_structure->RationalizePhoneNumbersInSection(autofill_field->section());
+  }
+
   for (size_t i = 0; i < form_structure->field_count(); ++i) {
     if (form_structure->field(i)->section() != autofill_field->section())
       continue;
 
+    if (form_structure->field(i)->only_fill_when_focused() &&
+        !form_structure->field(i)->SameFieldAs(field))
+      continue;
+
     DCHECK(form_structure->field(i)->SameFieldAs(result.fields[i]));
 
-    const AutofillField* cached_field = form_structure->field(i);
+    AutofillField* cached_field = form_structure->field(i);
     FieldTypeGroup field_group_type = cached_field->Type().group();
 
     if (field_group_type == NO_GROUP)
       continue;
 
+    // Don't fill expired cards expiration date.
+    if (IsCreditCardExpirationType(cached_field->Type().GetStorableType()) &&
+        static_cast<const CreditCard*>(&data_model)
+            ->IsExpired(AutofillClock::Now())) {
+      continue;
+    }
+
     base::string16 value =
         data_model.GetInfo(cached_field->Type(), app_locale_);
-    if (is_credit_card && cached_field->Type().GetStorableType() ==
-                              CREDIT_CARD_VERIFICATION_CODE) {
+    if (cached_field->Type().GetStorableType() ==
+        CREDIT_CARD_VERIFICATION_CODE) {
       value = cvc;
-    } else if (is_credit_card &&
-               IsCreditCardExpirationType(
-                   cached_field->Type().GetStorableType()) &&
-               static_cast<const CreditCard*>(&data_model)
-                   ->IsExpired(AutofillClock::Now())) {
-      // Don't fill expired cards expiration date.
-      value = base::string16();
     }
+
+    // Do not attempt to fill empty values because it would skew the metrics.
+    if (value.empty())
+      continue;
 
     // Must match ForEachMatchingFormField() in form_autofill_util.cc.
     // Only notify autofilling of empty fields and the field that initiated
     // the filling (note that "select-one" controls may not be empty but will
     // still be autofilled).
-    bool should_notify = !is_credit_card && !value.empty() &&
+    bool should_notify = !is_credit_card &&
                          (result.fields[i].SameFieldAs(field) ||
                           result.fields[i].form_control_type == "select-one" ||
                           result.fields[i].value.empty());
-    if (AutofillField::FillFormField(*cached_field, value,
-                                     profile_language_code, app_locale_,
-                                     &result.fields[i])) {
-      // Mark the cached field as autofilled, so that we can detect when a
-      // user edits an autofilled field (for metrics).
-      form_structure->field(i)->is_autofilled = true;
-
-      // Mark the field as autofilled when a non-empty value is assigned to
-      // it. This allows the renderer to distinguish autofilled fields from
-      // fields with non-empty values, such as select-one fields.
-      result.fields[i].is_autofilled = true;
-
-      if (should_notify)
-        client_->DidFillOrPreviewField(value, profile_full_name);
-    }
+    // Fill the non-empty |value| into the result vector, which will be sent to
+    // the renderer.
+    FillFieldWithValue(cached_field, value, profile_language_code,
+                       profile_full_name, &result.fields[i], should_notify);
   }
 
   autofilled_form_signatures_.push_front(form_structure->FormSignatureAsStr());
@@ -1475,7 +1421,7 @@ void AutofillManager::FillOrPreviewDataModelForm(
 std::unique_ptr<FormStructure> AutofillManager::ValidateSubmittedForm(
     const FormData& form) {
   std::unique_ptr<FormStructure> submitted_form(
-      base::MakeUnique<FormStructure>(form));
+      std::make_unique<FormStructure>(form));
   if (!ShouldUploadForm(*submitted_form))
     return std::unique_ptr<FormStructure>();
 
@@ -1613,7 +1559,7 @@ std::vector<Suggestion> AutofillManager::GetProfileSuggestions(
   // Adjust phone number to display in prefix/suffix case.
   if (autofill_field.Type().GetStorableType() == PHONE_HOME_NUMBER) {
     for (size_t i = 0; i < suggestions.size(); ++i) {
-      suggestions[i].value = AutofillField::GetPhoneNumberValue(
+      suggestions[i].value = FieldFiller::GetPhoneNumberValue(
           autofill_field, suggestions[i].value, field);
     }
   }
@@ -1656,7 +1602,7 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
     return;
 
   // Setup the url for metrics that we will collect for this form.
-  form_interactions_ukm_logger_->OnFormsParsed(forms[0].origin);
+  form_interactions_ukm_logger_->OnFormsParsed(forms[0].main_frame_origin);
 
   std::vector<FormStructure*> non_queryable_forms;
   std::vector<FormStructure*> queryable_forms;
@@ -1727,7 +1673,7 @@ bool AutofillManager::ParseForm(const FormData& form,
   if (form_structures_.size() >= kMaxFormCacheSize)
     return false;
 
-  auto form_structure = base::MakeUnique<FormStructure>(form);
+  auto form_structure = std::make_unique<FormStructure>(form);
   form_structure->ParseFieldTypesFromAutocompleteAttributes();
   if (!form_structure->ShouldBeParsed())
     return false;
@@ -1976,6 +1922,29 @@ void AutofillManager::DisambiguateNameUploadTypes(
 
     AutofillField* field = form->field(current_index);
     field->set_possible_types(matching_types);
+  }
+}
+
+void AutofillManager::FillFieldWithValue(
+    AutofillField* autofill_field,
+    const base::string16& value,
+    const std::string& profile_language_code,
+    const base::string16& profile_full_name,
+    FormFieldData* field_data,
+    bool should_notify) {
+  if (field_filler_.FillFormField(*autofill_field, value, profile_language_code,
+                                  field_data)) {
+    // Mark the cached field as autofilled, so that we can detect when a
+    // user edits an autofilled field (for metrics).
+    autofill_field->is_autofilled = true;
+
+    // Mark the field as autofilled when a non-empty value is assigned to
+    // it. This allows the renderer to distinguish autofilled fields from
+    // fields with non-empty values, such as select-one fields.
+    field_data->is_autofilled = true;
+
+    if (should_notify)
+      client_->DidFillOrPreviewField(value, profile_full_name);
   }
 }
 

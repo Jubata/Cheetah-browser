@@ -19,7 +19,6 @@
 #include "content/common/shared_worker/shared_worker_client.mojom.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/worker_service_observer.h"
 #include "content/public/common/bind_interface_helpers.h"
 #include "third_party/WebKit/common/message_port/message_port_channel.h"
 
@@ -32,10 +31,6 @@ bool IsShuttingDown(RenderProcessHost* host) {
 }
 
 }  // namespace
-
-WorkerService* WorkerService::GetInstance() {
-  return SharedWorkerServiceImpl::GetInstance();
-}
 
 SharedWorkerServiceImpl* SharedWorkerServiceImpl::GetInstance() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -53,7 +48,6 @@ SharedWorkerServiceImpl::~SharedWorkerServiceImpl() {}
 
 void SharedWorkerServiceImpl::ResetForTesting() {
   worker_hosts_.clear();
-  observers_.Clear();
 }
 
 bool SharedWorkerServiceImpl::TerminateWorker(int process_id, int route_id) {
@@ -80,34 +74,6 @@ void SharedWorkerServiceImpl::TerminateAllWorkersForTesting(
   }
 }
 
-std::vector<WorkerService::WorkerInfo> SharedWorkerServiceImpl::GetWorkers() {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  std::vector<WorkerService::WorkerInfo> results;
-  for (const auto& iter : worker_hosts_) {
-    SharedWorkerHost* host = iter.second.get();
-    const SharedWorkerInstance* instance = host->instance();
-    if (instance) {
-      WorkerService::WorkerInfo info;
-      info.url = instance->url();
-      info.name = instance->name();
-      info.route_id = host->route_id();
-      info.process_id = host->process_id();
-      results.push_back(info);
-    }
-  }
-  return results;
-}
-
-void SharedWorkerServiceImpl::AddObserver(WorkerServiceObserver* observer) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  observers_.AddObserver(observer);
-}
-
-void SharedWorkerServiceImpl::RemoveObserver(WorkerServiceObserver* observer) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  observers_.RemoveObserver(observer);
-}
-
 void SharedWorkerServiceImpl::ConnectToWorker(
     int process_id,
     int frame_id,
@@ -123,10 +89,17 @@ void SharedWorkerServiceImpl::ConnectToWorker(
       info->url, info->name, info->content_security_policy,
       info->content_security_policy_type, info->creation_address_space,
       resource_context, partition_id, creation_context_type,
-      info->data_saver_enabled, base::UnguessableToken::Create());
+      base::UnguessableToken::Create());
 
   SharedWorkerHost* host = FindAvailableSharedWorkerHost(*instance);
   if (host) {
+    // Non-secure contexts cannot connect to secure workers, and secure contexts
+    // cannot connect to non-secure workers:
+    if (host->instance()->creation_context_type() != creation_context_type) {
+      client->OnScriptLoadFailed();
+      return;
+    }
+
     // The process may be shutting down, in which case we will try to create a
     // new shared worker instead.
     if (!IsShuttingDown(RenderProcessHost::FromID(host->process_id()))) {
@@ -146,9 +119,6 @@ void SharedWorkerServiceImpl::ConnectToWorker(
 
 void SharedWorkerServiceImpl::DestroyHost(int process_id, int route_id) {
   worker_hosts_.erase(WorkerID(process_id, route_id));
-
-  for (auto& observer : observers_)
-    observer.WorkerDestroyed(process_id, route_id);
 
   // Complete the call to TerminateAllWorkersForTesting if no more workers.
   if (worker_hosts_.empty() && terminate_all_workers_callback_)
@@ -200,9 +170,6 @@ void SharedWorkerServiceImpl::CreateWorker(
   const std::string name = host->instance()->name();
 
   worker_hosts_[WorkerID(worker_process_id, worker_route_id)] = std::move(host);
-
-  for (auto& observer : observers_)
-    observer.WorkerCreated(url, name, worker_process_id, worker_route_id);
 }
 
 SharedWorkerHost* SharedWorkerServiceImpl::FindSharedWorkerHost(int process_id,

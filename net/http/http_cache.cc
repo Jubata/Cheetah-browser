@@ -746,11 +746,7 @@ void HttpCache::DeletePendingOp(PendingOp* pending_op) {
 
 int HttpCache::OpenEntry(const std::string& key, ActiveEntry** entry,
                          Transaction* trans) {
-  ActiveEntry* active_entry = FindActiveEntry(key);
-  if (active_entry) {
-    *entry = active_entry;
-    return OK;
-  }
+  DCHECK(!FindActiveEntry(key));
 
   std::unique_ptr<WorkItem> item =
       std::make_unique<WorkItem>(WI_OPEN_ENTRY, trans, entry);
@@ -843,27 +839,11 @@ int HttpCache::DoneWithResponseHeaders(ActiveEntry* entry,
   // through done_headers_queue for performance benefit. (Also, in case of
   // writer transaction, the consumer sometimes depend on synchronous behaviour
   // e.g. while computing raw headers size. (crbug.com/711766))
-  if (transaction->mode() & Transaction::WRITE) {
-    // Partial requests may have write mode even when there is a writer present
-    // since they may be reader for a particular range and writer for another
-    // range.
-    if (!is_partial) {
-      // TODO(crbug.com/750725)
-      DCHECK(!entry->writers || entry->writers->CanAddWriters());
-      DCHECK(entry->done_headers_queue.empty());
-    }
-
-    if (!entry->writers) {
-      AddTransactionToWriters(entry, transaction);
-      ProcessQueuedTransactions(entry);
-      return OK;
-    }
+  if ((transaction->mode() & Transaction::WRITE) && !entry->writers) {
+    AddTransactionToWriters(entry, transaction);
+    ProcessQueuedTransactions(entry);
+    return OK;
   }
-
-  // If this is not the first transaction in done_headers_queue, it should be a
-  // read-mode transaction except if it is a partial request.
-  DCHECK(is_partial || (entry->done_headers_queue.empty() ||
-                        !(transaction->mode() & Transaction::WRITE)));
 
   entry->done_headers_queue.push_back(transaction);
   ProcessQueuedTransactions(entry);
@@ -923,12 +903,12 @@ void HttpCache::DoneWithEntry(ActiveEntry* entry,
 
 void HttpCache::WritersDoomEntryRestartTransactions(ActiveEntry* entry) {
   DCHECK(!entry->writers->IsEmpty());
-  DCHECK(!entry->writers->ShouldKeepEntry());
   ProcessEntryFailure(entry);
 }
 
 void HttpCache::WritersDoneWritingToEntry(ActiveEntry* entry,
                                           bool success,
+                                          bool should_keep_entry,
                                           TransactionSet make_readers) {
   // Impacts the queued transactions in one of the following ways:
   // - restart them but do not doom the entry since entry can be saved in
@@ -941,7 +921,7 @@ void HttpCache::WritersDoneWritingToEntry(ActiveEntry* entry,
   DCHECK(entry->writers->IsEmpty());
   DCHECK(success || make_readers.empty());
 
-  if (!success && entry->writers->ShouldKeepEntry()) {
+  if (!success && should_keep_entry) {
     // Restart already validated transactions so that they are able to read
     // the truncated status of the entry.
     RestartHeadersPhaseTransactions(entry);
@@ -1078,15 +1058,19 @@ void HttpCache::ProcessAddToEntryQueue(ActiveEntry* entry) {
   transaction->io_callback().Run(OK);
 }
 
+bool HttpCache::CanTransactionJoinExistingWriters(Transaction* transaction) {
+  return (transaction->method() == "GET" && !transaction->partial());
+}
+
 void HttpCache::ProcessDoneHeadersQueue(ActiveEntry* entry) {
   DCHECK(!entry->writers || entry->writers->CanAddWriters());
   DCHECK(!entry->done_headers_queue.empty());
 
   Transaction* transaction = entry->done_headers_queue.front();
-  bool is_partial = transaction->partial() != nullptr;
 
   if (IsWritingInProgress(entry)) {
-    if (is_partial || transaction->mode() == Transaction::READ) {
+    if (!CanTransactionJoinExistingWriters(transaction) ||
+        transaction->mode() == Transaction::READ) {
       // TODO(shivanisha): Returning from here instead of checking the next
       // transaction in the queue because the FIFO order is maintained
       // throughout, until it becomes a reader or writer. May be at this point
@@ -1098,7 +1082,7 @@ void HttpCache::ProcessDoneHeadersQueue(ActiveEntry* entry) {
     AddTransactionToWriters(entry, transaction);
   } else {  // no writing in progress
     if (transaction->mode() & Transaction::WRITE) {
-      if (is_partial) {
+      if (transaction->partial()) {
         AddTransactionToWriters(entry, transaction);
       } else {
         // Add the transaction to readers since the response body should have
@@ -1135,9 +1119,10 @@ void HttpCache::AddTransactionToWriters(ActiveEntry* entry,
   Writers::TransactionInfo info(transaction->partial(),
                                 transaction->is_truncated(),
                                 *(transaction->GetResponseInfo()));
-  entry->writers->AddTransaction(transaction,
-                                 transaction->partial() /* is_exclusive */,
-                                 transaction->priority(), info);
+  entry->writers->AddTransaction(
+      transaction,
+      !CanTransactionJoinExistingWriters(transaction) /* is_exclusive */,
+      transaction->priority(), info);
 }
 
 bool HttpCache::CanTransactionWriteResponseHeaders(ActiveEntry* entry,

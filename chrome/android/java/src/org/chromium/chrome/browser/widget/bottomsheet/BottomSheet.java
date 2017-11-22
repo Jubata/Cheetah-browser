@@ -34,8 +34,10 @@ import org.chromium.base.ObserverList;
 import org.chromium.base.SysUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.library_loader.LibraryProcessType;
+import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
+import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.NativePageHost;
 import org.chromium.chrome.browser.TabLoadStatus;
@@ -286,6 +288,12 @@ public class BottomSheet
     /** Whether or not scroll events are currently being blocked for the 'velocity' swipe logic. */
     private boolean mVelocityLogicBlockSwipe;
 
+    /** Whether the swipe velocity for the toolbar was recorded. */
+    private boolean mIsSwipeVelocityRecorded;
+
+    /** The speed of the swipe the last time the sheet was opened. */
+    private long mLastSheetOpenMicrosPerDp;
+
     /**
      * An interface defining content that can be displayed inside of the bottom sheet for Chrome
      * Home.
@@ -358,11 +366,14 @@ public class BottomSheet
     private class BottomSheetSwipeDetector extends GestureDetector.SimpleOnGestureListener {
         @Override
         public boolean onDown(MotionEvent e) {
+            if (e == null) return false;
             return shouldGestureMoveSheet(e, e);
         }
 
         @Override
         public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+            if (e1 == null) return false;
+
             if (!canMoveSheet()) {
                 // Currently it's possible to enter the tab switcher after an onScroll() event has
                 // began. If that happens, reset the sheet offset and return false to end the scroll
@@ -418,7 +429,7 @@ public class BottomSheet
 
         @Override
         public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-            if (!shouldGestureMoveSheet(e1, e2) || !mIsScrolling) return false;
+            if (e1 == null || !shouldGestureMoveSheet(e1, e2) || !mIsScrolling) return false;
 
             cancelAnimation();
 
@@ -469,9 +480,20 @@ public class BottomSheet
             return true;
         }
 
+        boolean shouldRecordHistogram = initialEvent != currentEvent;
+
         if (currentEvent.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            mIsSwipeVelocityRecorded = false;
             mVelocityLogicBlockSwipe = false;
+            shouldRecordHistogram = false;
         }
+
+        float scrollDistanceDp = MathUtils.distance(initialEvent.getX(), initialEvent.getY(),
+                                         currentEvent.getX(), currentEvent.getY())
+                / mDpToPx;
+        long timeDeltaMs = currentEvent.getEventTime() - initialEvent.getDownTime();
+        mLastSheetOpenMicrosPerDp =
+                Math.round(scrollDistanceDp > 0f ? timeDeltaMs * 1000 / scrollDistanceDp : 0f);
 
         String logicType = FeatureUtilities.getChromeHomeSwipeLogicType();
 
@@ -485,26 +507,43 @@ public class BottomSheet
             float allowedSwipeWidth = mContainerWidth * SWIPE_ALLOWED_FRACTION;
             startX = mVisibleViewportRect.left + (mContainerWidth - allowedSwipeWidth) / 2;
             endX = startX + allowedSwipeWidth;
-        } else if (ChromeSwitches.CHROME_HOME_SWIPE_LOGIC_VELOCITY.equals(logicType)) {
+        } else if (ChromeSwitches.CHROME_HOME_SWIPE_LOGIC_VELOCITY.equals(logicType)
+                || ChromeFeatureList.isEnabled(
+                           ChromeFeatureList.CHROME_HOME_SWIPE_VELOCITY_FEATURE)) {
             if (mVelocityLogicBlockSwipe) return false;
 
-            float scrollDistanceDp = MathUtils.distance(initialEvent.getX(), initialEvent.getY(),
-                                             currentEvent.getX(), currentEvent.getY())
-                    / mDpToPx;
-            long timeDelta = currentEvent.getEventTime() - initialEvent.getDownTime();
-
-            double dpPerMs = scrollDistanceDp / (double) timeDelta;
+            double dpPerMs = scrollDistanceDp / (double) timeDeltaMs;
 
             if (dpPerMs > SHEET_SWIPE_MAX_DP_PER_MS) {
+                if (shouldRecordHistogram && !mIsSwipeVelocityRecorded) {
+                    recordSwipeVelocity("Android.ChromeHome.OpenSwipeVelocity.Fail",
+                            (int) mLastSheetOpenMicrosPerDp);
+                    mIsSwipeVelocityRecorded = true;
+                }
                 mVelocityLogicBlockSwipe = true;
                 return false;
             }
 
+            if (shouldRecordHistogram && !mIsSwipeVelocityRecorded) {
+                recordSwipeVelocity("Android.ChromeHome.OpenSwipeVelocity.Success",
+                        (int) mLastSheetOpenMicrosPerDp);
+                mIsSwipeVelocityRecorded = true;
+            }
             return true;
         }
 
         return currentEvent.getRawX() > startX && currentEvent.getRawX() < endX
                 || getSheetState() != SHEET_STATE_PEEK;
+    }
+
+    /**
+     * Record swipe velocity in microseconds per dp. This histogram will record between 0 and 20k
+     * microseconds with 50 buckets.
+     * @param name The name of the histogram.
+     * @param microsPerDp The microseconds per dp being recorded.
+     */
+    private void recordSwipeVelocity(String name, int microsPerDp) {
+        RecordHistogram.recordCustomCountHistogram(name, microsPerDp, 1, 20000, 50);
     }
 
     /**
@@ -538,6 +577,58 @@ public class BottomSheet
                     @Override
                     public void onFailure() {}
                 });
+
+        // An observer for recording metrics.
+        this.addObserver(new EmptyBottomSheetObserver() {
+            /**
+             * Whether or not the velocity of the swipe to open the sheet should be recorded. This
+             * will only be true if the sheet was opened by swipe.
+             */
+            private boolean mShouldRecordSwipeVelocity;
+
+            @Override
+            public void onSheetOpened(@StateChangeReason int reason) {
+                mShouldRecordSwipeVelocity = reason == StateChangeReason.SWIPE;
+            }
+
+            @Override
+            public void onSheetClosed(@StateChangeReason int reason) {
+                boolean shouldRecordClose = reason == StateChangeReason.SWIPE
+                        || reason == StateChangeReason.BACK_PRESS
+                        || reason == StateChangeReason.TAP_SCRIM;
+                if (mShouldRecordSwipeVelocity && shouldRecordClose) {
+                    recordSwipeVelocity("Android.ChromeHome.OpenSwipeVelocity.NoNavigation",
+                            (int) mLastSheetOpenMicrosPerDp);
+                }
+                mShouldRecordSwipeVelocity = false;
+            }
+
+            @Override
+            public void onLoadUrl(String url) {
+                recordVelocityForNavigation();
+            }
+
+            @Override
+            public void onSheetContentChanged(BottomSheetContent newContent) {
+                if (newContent == null) return;
+                @ContentType
+                int contentId = newContent.getType();
+                if (contentId != BottomSheetContentController.TYPE_SUGGESTIONS
+                        && contentId != BottomSheetContentController.TYPE_INCOGNITO_HOME) {
+                    recordVelocityForNavigation();
+                }
+            }
+
+            /**
+             * Record the velocity for the last sheet-open event.
+             */
+            private void recordVelocityForNavigation() {
+                if (!mShouldRecordSwipeVelocity) return;
+                recordSwipeVelocity("Android.ChromeHome.OpenSwipeVelocity.Navigation",
+                        (int) mLastSheetOpenMicrosPerDp);
+                mShouldRecordSwipeVelocity = false;
+            }
+        });
     }
 
     /**
@@ -1705,19 +1796,20 @@ public class BottomSheet
      */
     public void showHelpBubbleIfNecessary() {
         // If FRE is not complete, the FRE screen is likely covering ChromeTabbedActivity so the
-        // help bubble should not be shown. Also skip showing if the bottom sheet is already open,
-        // the UI has not been initialized (indicated by mLayoutManager == null), or the tab
-        // switcher is showing.
-        if (isSheetOpen() || mLayoutManager == null || mLayoutManager.overviewVisible()
-                || !FirstRunStatus.getFirstRunFlowComplete()) {
-            return;
-        }
+        // help bubble should not be shown.
+        if (!FirstRunStatus.getFirstRunFlowComplete()) return;
 
         final Tracker tracker = TrackerFactory.getTrackerForProfile(Profile.getLastUsedProfile());
         tracker.addOnInitializedCallback(new Callback<Boolean>() {
             @Override
             public void onResult(Boolean success) {
-                if (!success) return;
+                // Skip showing if the tracker failed to initialize, the bottom sheet is already
+                // open, the UI has not been initialized (indicated by mLayoutManager == null),
+                // or the tab switcher is showing.
+                if (!success || isSheetOpen() || mLayoutManager == null
+                        || mLayoutManager.overviewVisible()) {
+                    return;
+                }
 
                 showHelpBubble(false);
             }

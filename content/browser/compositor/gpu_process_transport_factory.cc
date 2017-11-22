@@ -30,7 +30,6 @@
 #include "components/viz/host/renderer_settings_creation.h"
 #include "components/viz/service/display/display.h"
 #include "components/viz/service/display/display_scheduler.h"
-#include "components/viz/service/display/texture_mailbox_deleter.h"
 #include "components/viz/service/display_embedder/compositing_mode_reporter_impl.h"
 #include "components/viz/service/display_embedder/compositor_overlay_candidate_validator.h"
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
@@ -45,6 +44,7 @@
 #include "content/browser/compositor/software_browser_compositor_output_surface.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/gpu_stream_constants.h"
 #include "content/public/common/content_switches.h"
@@ -124,56 +124,6 @@ bool IsGpuVSyncSignalSupported() {
 #else
   return false;
 #endif  // defined(OS_WIN)
-}
-
-scoped_refptr<ui::ContextProviderCommandBuffer> CreateContextCommon(
-    scoped_refptr<gpu::GpuChannelHost> gpu_channel_host,
-    gpu::SurfaceHandle surface_handle,
-    bool need_alpha_channel,
-    bool need_stencil_bits,
-    bool support_locking,
-    ui::ContextProviderCommandBuffer* shared_context_provider,
-    ui::command_buffer_metrics::ContextType type) {
-  DCHECK(
-      content::GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor());
-  DCHECK(gpu_channel_host);
-
-  // All browser contexts get the same stream id because we don't use sync
-  // tokens for browser surfaces.
-  int32_t stream_id = content::kGpuStreamIdDefault;
-  gpu::SchedulingPriority stream_priority = content::kGpuStreamPriorityUI;
-
-  // This is called from a few places to create different contexts:
-  // - The shared main thread context (offscreen).
-  // - The compositor context, which is used by the browser compositor
-  //   (offscreen) for synchronization mostly, and by the display compositor
-  //   (onscreen, except for with mus) for actual GL drawing.
-  // - The compositor worker context (offscreen) used for GPU raster.
-  // So ask for capabilities needed by any of these cases (we can optimize by
-  // branching on |surface_handle| being null if these needs diverge).
-  //
-  // The default framebuffer for an offscreen context is not used, so it does
-  // not need alpha, stencil, depth, antialiasing. The display compositor does
-  // not use these things either (except for alpha when using mus for
-  // non-opaque ui that overlaps the system's window borders or stencil bits
-  // for overdraw feedback), so we can request only that when needed.
-  gpu::gles2::ContextCreationAttribHelper attributes;
-  attributes.alpha_size = need_alpha_channel ? 8 : -1;
-  attributes.depth_size = 0;
-  attributes.stencil_size = need_stencil_bits ? 8 : 0;
-  attributes.samples = 0;
-  attributes.sample_buffers = 0;
-  attributes.bind_generates_resource = false;
-  attributes.lose_context_when_out_of_memory = true;
-  attributes.buffer_preserved = false;
-
-  constexpr bool automatic_flushes = false;
-
-  GURL url("chrome://gpu/GpuProcessTransportFactory::CreateContextCommon");
-  return base::MakeRefCounted<ui::ContextProviderCommandBuffer>(
-      std::move(gpu_channel_host), stream_id, stream_priority, surface_handle,
-      url, automatic_flushes, support_locking, gpu::SharedMemoryLimits(),
-      attributes, shared_context_provider, type);
 }
 
 #if defined(OS_MACOSX)
@@ -266,8 +216,10 @@ GpuProcessTransportFactory::GpuProcessTransportFactory(
   software_backing_ = std::make_unique<viz::OutputDeviceBacking>();
 #endif
 
-  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
+  if (command_line->HasSwitch(switches::kDisableGpu) ||
+      command_line->HasSwitch(switches::kDisableGpuCompositing)) {
     DisableGpuCompositing(nullptr);
+  }
 }
 
 GpuProcessTransportFactory::~GpuProcessTransportFactory() {
@@ -290,7 +242,7 @@ GpuProcessTransportFactory::CreateSoftwareOutputDevice(
     return base::WrapUnique(new viz::SoftwareOutputDevice);
 
 #if defined(USE_AURA)
-  if (aura::Env::GetInstance()->mode() == aura::Env::Mode::MUS) {
+  if (IsMusHostingViz()) {
     NOTREACHED();
     return nullptr;
   }
@@ -372,9 +324,7 @@ void GpuProcessTransportFactory::CreateLayerTreeFrameSink(
 
   const bool use_vulkan = static_cast<bool>(SharedVulkanContextProvider());
   const bool use_gpu_compositing =
-      !compositor->force_software_compositor() &&
-      !is_gpu_compositing_disabled_ &&
-      GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor();
+      !compositor->force_software_compositor() && !is_gpu_compositing_disabled_;
   if (use_gpu_compositing && !use_vulkan) {
     gpu_channel_factory_->EstablishGpuChannel(base::Bind(
         &GpuProcessTransportFactory::EstablishedGpuChannel,
@@ -391,9 +341,12 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   if (!compositor)
     return;
 
-  // CanUseGpuBrowserCompositor can change as a result of EstablishGpuChannel().
-  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor())
+  if (gpu_channel_host &&
+      gpu_channel_host->gpu_feature_info()
+              .status_values[gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING] !=
+          gpu::kGpuFeatureStatusEnabled) {
     use_gpu_compositing = false;
+  }
   // Gpu compositing may have been disabled in the meantime.
   if (is_gpu_compositing_disabled_)
     use_gpu_compositing = false;
@@ -563,11 +516,8 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       } else if (capabilities.surfaceless) {
 #if defined(OS_MACOSX)
         const auto& gpu_feature_info = context_provider->GetGpuFeatureInfo();
-        bool disable_overlay_ca_layers =
-            gpu_feature_info.IsWorkaroundEnabled(
-                gpu::DISABLE_OVERLAY_CA_LAYERS) ||
-            gpu_feature_info.IsWorkaroundEnabled(
-                gpu::DISABLE_GPU_MEMORY_BUFFERS_AS_RENDER_TARGETS);
+        bool disable_overlay_ca_layers = gpu_feature_info.IsWorkaroundEnabled(
+            gpu::DISABLE_OVERLAY_CA_LAYERS);
         display_output_surface = std::make_unique<GpuOutputSurfaceMac>(
             compositor->widget(), context_provider, data->surface_handle,
             vsync_callback,
@@ -625,7 +575,8 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       synthetic_begin_frame_source =
           std::make_unique<viz::DelayBasedBeginFrameSource>(
               std::make_unique<viz::DelayBasedTimeSource>(
-                  compositor->task_runner().get()));
+                  compositor->task_runner().get()),
+              viz::BeginFrameSource::kNotRestartableId);
       begin_frame_source = synthetic_begin_frame_source.get();
     }
   } else {
@@ -662,8 +613,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       viz::ServerSharedBitmapManager::current(), GetGpuMemoryBufferManager(),
       renderer_settings_, compositor->frame_sink_id(),
       std::move(display_output_surface), std::move(scheduler),
-      std::make_unique<viz::TextureMailboxDeleter>(
-          compositor->task_runner().get()));
+      compositor->task_runner());
   GetFrameSinkManager()->RegisterBeginFrameSource(begin_frame_source,
                                                   compositor->frame_sink_id());
   // Note that we are careful not to destroy prior BeginFrameSource objects
@@ -1002,8 +952,15 @@ GpuProcessTransportFactory::SharedMainThreadContextProvider() {
 
   scoped_refptr<gpu::GpuChannelHost> gpu_channel_host =
       gpu_channel_factory_->EstablishGpuChannelSync(nullptr);
-  if (!gpu_channel_host)
+  if (!gpu_channel_host ||
+      gpu_channel_host->gpu_feature_info()
+              .status_values[gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING] !=
+          gpu::kGpuFeatureStatusEnabled) {
+    DisableGpuCompositing(nullptr);
+    if (gpu_channel_host)
+      gpu_channel_host->DestroyChannel();
     return nullptr;
+  }
 
   // We need a separate context from the compositor's so that skia and gl_helper
   // don't step on each other.
@@ -1089,6 +1046,56 @@ void GpuProcessTransportFactory::OnContextLost() {
       FROM_HERE,
       base::BindOnce(&GpuProcessTransportFactory::OnLostMainThreadSharedContext,
                      callback_factory_.GetWeakPtr()));
+}
+
+scoped_refptr<ui::ContextProviderCommandBuffer>
+GpuProcessTransportFactory::CreateContextCommon(
+    scoped_refptr<gpu::GpuChannelHost> gpu_channel_host,
+    gpu::SurfaceHandle surface_handle,
+    bool need_alpha_channel,
+    bool need_stencil_bits,
+    bool support_locking,
+    ui::ContextProviderCommandBuffer* shared_context_provider,
+    ui::command_buffer_metrics::ContextType type) {
+  DCHECK(gpu_channel_host);
+  DCHECK(!is_gpu_compositing_disabled_);
+
+  // All browser contexts get the same stream id because we don't use sync
+  // tokens for browser surfaces.
+  int32_t stream_id = content::kGpuStreamIdDefault;
+  gpu::SchedulingPriority stream_priority = content::kGpuStreamPriorityUI;
+
+  // This is called from a few places to create different contexts:
+  // - The shared main thread context (offscreen).
+  // - The compositor context, which is used by the browser compositor
+  //   (offscreen) for synchronization mostly, and by the display compositor
+  //   (onscreen, except for with mus) for actual GL drawing.
+  // - The compositor worker context (offscreen) used for GPU raster.
+  // So ask for capabilities needed by any of these cases (we can optimize by
+  // branching on |surface_handle| being null if these needs diverge).
+  //
+  // The default framebuffer for an offscreen context is not used, so it does
+  // not need alpha, stencil, depth, antialiasing. The display compositor does
+  // not use these things either (except for alpha when using mus for
+  // non-opaque ui that overlaps the system's window borders or stencil bits
+  // for overdraw feedback), so we can request only that when needed.
+  gpu::gles2::ContextCreationAttribHelper attributes;
+  attributes.alpha_size = need_alpha_channel ? 8 : -1;
+  attributes.depth_size = 0;
+  attributes.stencil_size = need_stencil_bits ? 8 : 0;
+  attributes.samples = 0;
+  attributes.sample_buffers = 0;
+  attributes.bind_generates_resource = false;
+  attributes.lose_context_when_out_of_memory = true;
+  attributes.buffer_preserved = false;
+
+  constexpr bool automatic_flushes = false;
+
+  GURL url("chrome://gpu/GpuProcessTransportFactory::CreateContextCommon");
+  return base::MakeRefCounted<ui::ContextProviderCommandBuffer>(
+      std::move(gpu_channel_host), stream_id, stream_priority, surface_handle,
+      url, automatic_flushes, support_locking, gpu::SharedMemoryLimits(),
+      attributes, shared_context_provider, type);
 }
 
 }  // namespace content

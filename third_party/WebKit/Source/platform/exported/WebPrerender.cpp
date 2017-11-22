@@ -31,9 +31,9 @@
 #include "public/platform/WebPrerender.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/Prerender.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -43,7 +43,7 @@ class PrerenderExtraDataContainer : public Prerender::ExtraData {
  public:
   static scoped_refptr<PrerenderExtraDataContainer> Create(
       WebPrerender::ExtraData* extra_data) {
-    return WTF::AdoptRef(new PrerenderExtraDataContainer(extra_data));
+    return base::AdoptRef(new PrerenderExtraDataContainer(extra_data));
   }
 
   ~PrerenderExtraDataContainer() override {}

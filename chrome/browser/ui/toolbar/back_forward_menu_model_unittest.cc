@@ -504,7 +504,7 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
   profile()->CreateFaviconService();
   Browser::CreateParams native_params(profile(), true);
   std::unique_ptr<Browser> browser(
-      chrome::CreateBrowserWithTestWindowForParams(&native_params));
+      CreateBrowserWithTestWindowForParams(&native_params));
   FaviconDelegate favicon_delegate;
 
   BackForwardMenuModel back_model(
@@ -528,7 +528,7 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
       ->AddPage(url1, base::Time::Now(), history::SOURCE_BROWSED);
   FaviconServiceFactory::GetForProfile(profile(),
                                        ServiceAccessType::EXPLICIT_ACCESS)
-      ->SetFavicons({url1}, url1_favicon, favicon_base::FAVICON,
+      ->SetFavicons({url1}, url1_favicon, favicon_base::IconType::kFavicon,
                     gfx::Image::CreateFrom1xBitmap(new_icon_bitmap));
 
   // Will return the current icon (default) but start an anync call

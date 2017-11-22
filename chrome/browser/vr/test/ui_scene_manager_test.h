@@ -10,6 +10,7 @@
 #include "base/macros.h"
 #include "base/time/time.h"
 #include "chrome/browser/vr/elements/ui_element_name.h"
+#include "chrome/browser/vr/target_property.h"
 #include "chrome/browser/vr/test/mock_browser_interface.h"
 #include "chrome/browser/vr/test/mock_content_input_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -61,6 +62,12 @@ class UiSceneManagerTest : public testing::Test {
   bool VerifyVisibility(const std::set<UiElementName>& names,
                         bool visible) const;
 
+  // Return false if not all elements in the set match the specified |animating|
+  // state for the specified |properties|. Other elements are ignored.
+  bool VerifyIsAnimating(const std::set<UiElementName>& names,
+                         const std::vector<TargetProperty>& properties,
+                         bool animating) const;
+
   // Count the number of elements in the named element's subtree.
   int NumVisibleChildren(UiElementName name) const;
 
@@ -77,7 +84,7 @@ class UiSceneManagerTest : public testing::Test {
   bool AnimateBy(base::TimeDelta delta);
 
   // A wrapper to call scene_->OnBeginFrame.
-  bool OnBeginFrame();
+  bool OnBeginFrame() const;
 
   void GetBackgroundColor(SkColor* background_color) const;
 

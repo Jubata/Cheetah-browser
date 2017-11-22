@@ -27,19 +27,19 @@
 #ifndef SecurityContext_h
 #define SecurityContext_h
 
+#include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/dom/SandboxFlags.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/Suborigin.h"
 #include "platform/wtf/HashSet.h"
-#include "platform/wtf/Noncopyable.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/StringHash.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebAddressSpace.h"
-#include "public/platform/WebFeaturePolicy.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/platform/WebURLRequest.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
 
 #include <memory>
 
@@ -49,8 +49,6 @@ class SecurityOrigin;
 class ContentSecurityPolicy;
 
 class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
-  WTF_MAKE_NONCOPYABLE(SecurityContext);
-
  public:
   virtual void Trace(blink::Visitor*);
 
@@ -94,10 +92,10 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
 
   void EnforceSuborigin(const Suborigin&);
 
-  WebFeaturePolicy* GetFeaturePolicy() const { return feature_policy_.get(); }
-  void InitializeFeaturePolicy(const WebParsedFeaturePolicy& parsed_header,
-                               const WebParsedFeaturePolicy& container_policy,
-                               const WebFeaturePolicy* parent_feature_policy);
+  FeaturePolicy* GetFeaturePolicy() const { return feature_policy_.get(); }
+  void InitializeFeaturePolicy(const ParsedFeaturePolicy& parsed_header,
+                               const ParsedFeaturePolicy& container_policy,
+                               const FeaturePolicy* parent_feature_policy);
   void UpdateFeaturePolicyOrigin();
 
   void ApplySandboxFlags(SandboxFlags mask);
@@ -111,7 +109,7 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
  private:
   scoped_refptr<SecurityOrigin> security_origin_;
   Member<ContentSecurityPolicy> content_security_policy_;
-  std::unique_ptr<WebFeaturePolicy> feature_policy_;
+  std::unique_ptr<FeaturePolicy> feature_policy_;
 
   SandboxFlags sandbox_flags_;
 
@@ -119,6 +117,7 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
   WebInsecureRequestPolicy insecure_request_policy_;
   InsecureNavigationsSet insecure_navigations_to_upgrade_;
   bool require_safe_types_;
+  DISALLOW_COPY_AND_ASSIGN(SecurityContext);
 };
 
 }  // namespace blink

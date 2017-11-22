@@ -23,20 +23,11 @@ enum VoiceInteractionState {
 
 // Handles voice interaction queries from Android.
 // Next method ID: 6
-// Deprecated method ID: 0
+// Deprecated method ID: 0, 2, 3, 4
 interface VoiceInteractionFrameworkHost {
   // Returns a fullscreen screenshot of the primary display.
   // |data| represents the image encoded in JPEG format.
   [MinVersion=1]CaptureFullscreen@1() => (array<uint8> data);
-
-  // Notifies the host that the metalayer has closed or could not open.
-  [MinVersion=2]OnMetalayerClosed@2();
-
-  // Enables/disables screenshot taking.
-  [MinVersion=3]SetMetalayerEnabled@3(bool enabled);
-
-  // Notifies Chrome whether voice interaction session is running.
-  [MinVersion=6]SetVoiceInteractionRunning@4(bool running);
 
   // Notifies Chrome the state of voice interaction session.
   [MinVersion=8]SetVoiceInteractionState@5(VoiceInteractionState state);

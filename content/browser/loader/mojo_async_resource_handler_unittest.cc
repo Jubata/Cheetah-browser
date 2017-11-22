@@ -30,7 +30,6 @@
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/browser/stream_info.h"
 #include "content/public/common/previews_state.h"
-#include "content/public/common/resource_request_completion_status.h"
 #include "content/public/common/resource_response.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/url_loader.mojom.h"
@@ -55,6 +54,7 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
+#include "services/network/public/cpp/url_loader_completion_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/page_transition_types.h"
 
@@ -181,7 +181,7 @@ class TestResourceDispatcherHostDelegate final
   }
 
   PreviewsState DeterminePreviewsState(
-      const net::URLRequest& url_request,
+      net::URLRequest* url_request,
       content::ResourceContext* resource_context,
       PreviewsState previews_to_allow) override {
     ADD_FAILURE() << "DeterminePreviewsState should not be called.";
@@ -346,8 +346,8 @@ class MojoAsyncResourceHandlerTestBase {
         true,                                    // is_main_frame
         false,                                   // allow_download
         true,                                    // is_async
-        PREVIEWS_OFF                             // previews_state
-        );
+        PREVIEWS_OFF,                            // previews_state
+        nullptr);                                // navigation_ui_data
 
     ResourceRequest request;
     base::WeakPtr<mojo::StrongBinding<mojom::URLLoaderFactory>> weak_binding =

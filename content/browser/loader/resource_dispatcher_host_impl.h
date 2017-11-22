@@ -98,7 +98,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // ResourceDispatcherHostImpl.
   ResourceDispatcherHostImpl(
       CreateDownloadHandlerIntercept download_handler_intercept,
-      const scoped_refptr<base::SingleThreadTaskRunner>& io_thread_runner);
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_thread_runner,
+      bool enable_resource_scheduler);
   ResourceDispatcherHostImpl();
   ~ResourceDispatcherHostImpl() override;
 
@@ -723,6 +724,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // (i.e. have at least three outstanding requests).
   bool HasRequestsFromMultipleActiveTabs();
 
+  static net::NetworkTrafficAnnotationTag GetTrafficAnnotation();
+
   LoaderMap pending_loaders_;
 
   // Collection of temp files downloaded for child processes via
@@ -753,6 +756,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // True if the resource dispatcher host has been shut down.
   bool is_shutdown_;
+
+  const bool enable_resource_scheduler_;
 
   using BlockedLoadersList = std::vector<std::unique_ptr<ResourceLoader>>;
   using BlockedLoadersMap =

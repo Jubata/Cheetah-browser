@@ -24,7 +24,7 @@
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/notification_delegate.h"
 #include "ui/message_center/notification_types.h"
-#include "ui/message_center/notifier_settings.h"
+#include "ui/message_center/notifier_id.h"
 #include "url/gurl.h"
 
 namespace gfx {
@@ -83,6 +83,15 @@ struct MESSAGE_CENTER_EXPORT ButtonInfo {
   // The placeholder string that should be displayed in the input field for TEXT
   // type buttons until the user has entered a response themselves.
   base::string16 placeholder;
+};
+
+// TODO(estade): add an ALWAYS value to mark notifications as additionally
+// visible over system fullscreen windows such as Chrome OS login so we don't
+// need to centrally track Ash system notification IDs.
+enum class FullscreenVisibility {
+  NONE,       // Don't show the notification over fullscreen (default).
+  OVER_USER,  // Show over the current fullscreened client window.
+              // windows (like Chrome OS login).
 };
 
 // Represents rich features available for notifications.
@@ -190,11 +199,13 @@ class MESSAGE_CENTER_EXPORT RichNotificationData {
   // enum definition. TODO(estade): turn this into a boolean. See
   // crbug.com/780342
   SettingsButtonHandler settings_button_handler = SettingsButtonHandler::NONE;
+
+  FullscreenVisibility fullscreen_visibility = FullscreenVisibility::NONE;
 };
 
 class MESSAGE_CENTER_EXPORT Notification {
  public:
-  // Default constructor needed for generated mojom files
+  // Default constructor needed for generated mojom files.
   Notification();
 
   // Creates a new notification.
@@ -238,6 +249,15 @@ class MESSAGE_CENTER_EXPORT Notification {
   Notification& operator=(const Notification& other);
 
   virtual ~Notification();
+
+  // Performs a deep copy of |notification|, including images and (optionally)
+  // the body image, small image, and icon images which are not supported on all
+  // platforms.
+  static std::unique_ptr<Notification> DeepCopy(
+      const Notification& notification,
+      bool include_body_image,
+      bool include_small_image,
+      bool include_icon_images);
 
   // Copies the internal on-memory state from |base|, i.e. shown_as_popup,
   // is_read and never_timeout.
@@ -424,6 +444,13 @@ class MESSAGE_CENTER_EXPORT Notification {
   bool should_show_settings_button() const {
     return optional_fields_.settings_button_handler !=
            SettingsButtonHandler::NONE;
+  }
+
+  FullscreenVisibility fullscreen_visibility() const {
+    return optional_fields_.fullscreen_visibility;
+  }
+  void set_fullscreen_visibility(FullscreenVisibility visibility) {
+    optional_fields_.fullscreen_visibility = visibility;
   }
 
   NotificationDelegate* delegate() const { return delegate_.get(); }

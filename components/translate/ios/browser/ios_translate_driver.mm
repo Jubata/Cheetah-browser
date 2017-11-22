@@ -20,11 +20,11 @@
 #import "components/translate/ios/browser/language_detection_controller.h"
 #import "components/translate/ios/browser/translate_controller.h"
 #include "ios/web/public/browser_state.h"
-#include "ios/web/public/load_committed_details.h"
 #include "ios/web/public/navigation_item.h"
 #include "ios/web/public/navigation_manager.h"
 #include "ios/web/public/referrer.h"
 #include "ios/web/public/web_state/js/crw_js_injection_receiver.h"
+#include "ios/web/public/web_state/navigation_context.h"
 #include "ios/web/public/web_state/web_state.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -51,7 +51,7 @@ IOSTranslateDriver::IOSTranslateDriver(
     web::WebState* web_state,
     web::NavigationManager* navigation_manager,
     TranslateManager* translate_manager)
-    : web::WebStateObserver(web_state),
+    : web_state_(web_state),
       navigation_manager_(navigation_manager),
       translate_manager_(translate_manager->GetWeakPtr()),
       page_seq_no_(0),
@@ -59,7 +59,9 @@ IOSTranslateDriver::IOSTranslateDriver(
       weak_method_factory_(this) {
   DCHECK(navigation_manager_);
   DCHECK(translate_manager_);
-  DCHECK(web::WebStateObserver::web_state());
+  DCHECK(web_state_);
+
+  web_state_->AddObserver(this);
 
   CRWJSInjectionReceiver* receiver = web_state->GetJSInjectionReceiver();
   DCHECK(receiver);
@@ -81,6 +83,10 @@ IOSTranslateDriver::IOSTranslateDriver(
 }
 
 IOSTranslateDriver::~IOSTranslateDriver() {
+  if (web_state_) {
+    web_state_->RemoveObserver(this);
+    web_state_ = nullptr;
+  }
 }
 
 language::IOSLanguageDetectionTabHelper::Callback
@@ -98,28 +104,36 @@ void IOSTranslateDriver::OnLanguageDetermined(
 
   translate_manager_->translate_client()->RecordLanguageDetectionEvent(details);
 
-  if (web_state())
+  if (web_state_)
     translate_manager_->InitiateTranslation(details.adopted_language);
 }
 
 // web::WebStateObserver methods
 
-void IOSTranslateDriver::NavigationItemCommitted(
+void IOSTranslateDriver::DidFinishNavigation(
     web::WebState* web_state,
-    const web::LoadCommittedDetails& load_details) {
+    web::NavigationContext* navigation_context) {
+  DCHECK_EQ(web_state_, web_state);
+
   // Interrupt pending translations and reset various data when a navigation
   // happens. Desktop does it by tracking changes in the page ID, and
   // through WebContentObserver, but these concepts do not exist on iOS.
-  if (!load_details.is_in_page) {
+  if (!navigation_context->IsSameDocument()) {
     ++page_seq_no_;
     translate_manager_->set_current_seq_no(page_seq_no_);
   }
 
   // TODO(droger): support navigation types, like content/ does.
   const bool reload = ui::PageTransitionCoreTypeIs(
-      load_details.item->GetTransitionType(), ui::PAGE_TRANSITION_RELOAD);
-  translate_manager_->GetLanguageState().DidNavigate(load_details.is_in_page,
-                                                     true, reload);
+      navigation_context->GetPageTransition(), ui::PAGE_TRANSITION_RELOAD);
+  translate_manager_->GetLanguageState().DidNavigate(
+      navigation_context->IsSameDocument(), true, reload);
+}
+
+void IOSTranslateDriver::WebStateDestroyed(web::WebState* web_state) {
+  DCHECK_EQ(web_state_, web_state);
+  web_state_->RemoveObserver(this);
+  web_state_ = nullptr;
 }
 
 // TranslateDriver methods
@@ -160,15 +174,15 @@ bool IOSTranslateDriver::IsIncognito() {
 }
 
 const std::string& IOSTranslateDriver::GetContentsMimeType() {
-  return web_state()->GetContentsMimeType();
+  return web_state_->GetContentsMimeType();
 }
 
 const GURL& IOSTranslateDriver::GetLastCommittedURL() {
-  return web_state()->GetLastCommittedURL();
+  return web_state_->GetLastCommittedURL();
 }
 
 const GURL& IOSTranslateDriver::GetVisibleURL() {
-  return web_state()->GetVisibleURL();
+  return web_state_->GetVisibleURL();
 }
 
 bool IOSTranslateDriver::HasCurrentPage() {
@@ -179,7 +193,7 @@ void IOSTranslateDriver::OpenUrlInNewTab(const GURL& url) {
   web::WebState::OpenURLParams params(url, web::Referrer(),
                                       WindowOpenDisposition::NEW_FOREGROUND_TAB,
                                       ui::PAGE_TRANSITION_LINK, false);
-  web_state()->OpenURL(params);
+  web_state_->OpenURL(params);
 }
 
 void IOSTranslateDriver::TranslationDidSucceed(
@@ -222,7 +236,7 @@ void IOSTranslateDriver::CheckTranslateStatus(
 
 bool IOSTranslateDriver::IsPageValid(int page_seq_no) const {
   bool user_navigated_away = page_seq_no != page_seq_no_;
-  return !user_navigated_away && web_state();
+  return !user_navigated_away && web_state_;
 }
 
 // TranslateController::Observer implementation.

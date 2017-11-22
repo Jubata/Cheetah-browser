@@ -909,6 +909,13 @@ void RasterCHROMIUM(const cc::DisplayItemList* list,
                     GLfloat post_translate_y,
                     GLfloat post_scale) override;
 void EndRasterCHROMIUM() override;
+void CreateTransferCacheEntryCHROMIUM(
+    GLuint64 handle_id,
+    GLuint handle_shm_id,
+    GLuint handle_shm_offset,
+    const cc::ClientTransferCacheEntry& entry) override;
+void DeleteTransferCacheEntryCHROMIUM(GLuint64 handle_id) override;
+void UnlockTransferCacheEntryCHROMIUM(GLuint64 handle_id) override;
 void TexStorage2DImageCHROMIUM(GLenum target,
                                GLenum internalFormat,
                                GLenum bufferUsage,
@@ -916,4 +923,5 @@ void TexStorage2DImageCHROMIUM(GLenum target,
                                GLsizei height) override;
 void SetColorSpaceMetadataCHROMIUM(GLuint texture_id,
                                    GLColorSpace color_space) override;
+void WindowRectanglesEXT(GLenum mode, GLsizei count, const GLint* box) override;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_STUB_AUTOGEN_H_

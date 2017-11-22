@@ -42,8 +42,8 @@
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityViolationReportingPolicy.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/StdLibExtras.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "v8/include/v8.h"
 
@@ -114,8 +114,10 @@ class ImageResource::ImageResourceInfoImpl final
   bool HasCacheControlNoStoreHeader() const override {
     return resource_->HasCacheControlNoStoreHeader();
   }
-  const ResourceError& GetResourceError() const override {
-    return resource_->GetResourceError();
+  Optional<ResourceError> GetResourceError() const override {
+    if (resource_->LoadFailedOrCanceled())
+      return resource_->GetResourceError();
+    return WTF::nullopt;
   }
 
   void SetDecodedSize(size_t size) override { resource_->SetDecodedSize(size); }

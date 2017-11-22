@@ -215,7 +215,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::EnableWebVR(true);
 
   WebRuntimeFeatures::EnableWebVRExperimentalRendering(
-      base::FeatureList::IsEnabled(features::kWebVRExperimentalRendering));
+      base::FeatureList::IsEnabled(features::kWebVrExperimentalRendering));
 
   if (command_line.HasSwitch(switches::kDisablePresentationAPI))
     WebRuntimeFeatures::EnablePresentationAPI(false);
@@ -355,9 +355,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       !enableExperimentalWebPlatformFeatures)
     WebRuntimeFeatures::EnableWebAuth(false);
 
-  WebRuntimeFeatures::EnableModuleScripts(
-      base::FeatureList::IsEnabled(features::kModuleScripts));
-
   WebRuntimeFeatures::EnableClientPlaceholdersForServerLoFi(
       base::GetFieldTrialParamValue("PreviewsClientLoFi",
                                     "replace_server_placeholders") == "true");
@@ -415,6 +412,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (base::FeatureList::IsEnabled(features::kStopLoadingInBackground))
     WebRuntimeFeatures::EnableStopLoadingInBackgroundAndroid(true);
+
+  WebRuntimeFeatures::EnablePWAFullCodeCache(
+      base::FeatureList::IsEnabled(features::kPWAFullCodeCache));
 };
 
 }  // namespace content

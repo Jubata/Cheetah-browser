@@ -18,6 +18,9 @@ const char kAshDebugShortcuts[] = "ash-debug-shortcuts";
 // Enable keyboard shortcuts used by developers only.
 const char kAshDeveloperShortcuts[] = "ash-dev-shortcuts";
 
+// Disables the dimming and blur of the wallpaper on login and lock screens.
+const char kAshDisableLoginDimAndBlur[] = "ash-disable-login-dim-and-blur";
+
 // Use a single in-process shelf data model shared between Chrome and Ash.
 // This only applies to the Classic Ash and Mus configs; synchronization between
 // two models is required when running the Mash config via --mash.
@@ -130,32 +133,13 @@ const char kForceClamshellPowerButton[] = "force-clamshell-power-button";
 // Whether this device has an internal stylus.
 const char kHasInternalStylus[] = "has-internal-stylus";
 
-// If true, the views-based md login and lock screens will be shown.
-const char kShowMdLogin[] = "show-md-login";
+// If true, the views login screen will be shown. This will become the default
+// in the future.
+const char kShowViewsLogin[] = "show-views-login";
 
-// Number of recent accelerometer samples to examine to determine if a power
-// button event was spurious.
-const char kSpuriousPowerButtonWindow[] = "spurious-power-button-window";
-
-// Number of recent acceleration samples that must meet or exceed the threshold
-// in order for a power button event to be considered spurious.
-const char kSpuriousPowerButtonAccelCount[] =
-    "spurious-power-button-accel-count";
-
-// Threshold (in m/s^2, disregarding gravity) that screen acceleration must meet
-// or exceed for a power button event to be considered spurious.
-const char kSpuriousPowerButtonScreenAccel[] =
-    "spurious-power-button-screen-accel";
-
-// Threshold (in m/s^2, disregarding gravity) that keyboard acceleration must
-// meet or exceed for a power button event to be considered spurious.
-const char kSpuriousPowerButtonKeyboardAccel[] =
-    "spurious-power-button-keyboard-accel";
-
-// Change in lid angle (i.e. hinge between keyboard and screen) that must be
-// exceeded for a power button event to be considered spurious.
-const char kSpuriousPowerButtonLidAngleChange[] =
-    "spurious-power-button-lid-angle-change";
+// If true, the webui lock screen wil be shown. This is deprecated and will be
+// removed in the future.
+const char kShowWebUiLock[] = "show-webui-lock";
 
 // Chromebases' touchscreens can be used to wake from suspend, unlike the
 // touchscreens on other Chrome OS devices. If set, the touchscreen is kept
@@ -174,8 +158,12 @@ bool IsNightLightEnabled() {
       kAshEnableNightLight);
 }
 
-bool IsUsingMdLogin() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(kShowMdLogin);
+bool IsUsingViewsLogin() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(kShowViewsLogin);
+}
+
+bool IsUsingWebUiLock() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(kShowWebUiLock);
 }
 
 }  // namespace switches

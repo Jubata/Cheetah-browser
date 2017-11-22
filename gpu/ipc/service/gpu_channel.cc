@@ -251,7 +251,7 @@ bool GpuChannelMessageFilter::OnMessageReceived(const IPC::Message& message) {
     for (auto& flush_info : flush_list) {
       GpuCommandBufferMsg_AsyncFlush flush_message(
           flush_info.route_id, flush_info.put_offset, flush_info.flush_id,
-          std::move(flush_info.latency_info));
+          flush_info.snapshot_requested);
 
       auto it = route_sequences_.find(flush_info.route_id);
       if (it == route_sequences_.end()) {
@@ -318,6 +318,7 @@ SyncChannelFilteredSender::SyncChannelFilteredSender(
                                         IPC::Channel::MODE_SERVER,
                                         listener,
                                         ipc_task_runner,
+                                        base::ThreadTaskRunnerHandle::Get(),
                                         false,
                                         shutdown_event)) {}
 
@@ -478,8 +479,6 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
                         OnCreateCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyCommandBuffer,
                         OnDestroyCommandBuffer)
-    IPC_MESSAGE_HANDLER(GpuChannelMsg_GetDriverBugWorkArounds,
-                        OnGetDriverBugWorkArounds)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -657,16 +656,6 @@ void GpuChannel::OnDestroyCommandBuffer(int32_t route_id) {
   }
 
   RemoveRoute(route_id);
-}
-
-void GpuChannel::OnGetDriverBugWorkArounds(
-    std::vector<std::string>* gpu_driver_bug_workarounds) {
-  gpu_driver_bug_workarounds->clear();
-#define GPU_OP(type, name)                                     \
-  if (gpu_channel_manager_->gpu_driver_bug_workarounds().name) \
-    gpu_driver_bug_workarounds->push_back(#name);
-  GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)
-#undef GPU_OP
 }
 
 void GpuChannel::CacheShader(const std::string& key,

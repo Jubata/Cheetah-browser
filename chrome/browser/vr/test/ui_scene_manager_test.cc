@@ -7,6 +7,7 @@
 #include "base/memory/ptr_util.h"
 #include "chrome/browser/vr/elements/rect.h"
 #include "chrome/browser/vr/model/model.h"
+#include "chrome/browser/vr/test/animation_utils.h"
 #include "chrome/browser/vr/test/constants.h"
 #include "chrome/browser/vr/test/fake_ui_element_renderer.h"
 #include "chrome/browser/vr/ui.h"
@@ -73,8 +74,7 @@ void UiSceneManagerTest::MakeAutoPresentedManager() {
 }
 
 bool UiSceneManagerTest::IsVisible(UiElementName name) const {
-  scene_->root_element().UpdateComputedOpacityRecursive();
-  scene_->root_element().UpdateWorldSpaceTransformRecursive();
+  OnBeginFrame();
   UiElement* element = scene_->GetUiElementByName(name);
   if (!element || !element->IsVisible())
     return false;
@@ -93,11 +93,10 @@ void UiSceneManagerTest::SetIncognito(bool incognito) {
 void UiSceneManagerTest::VerifyElementsVisible(
     const std::string& trace_context,
     const std::set<UiElementName>& names) const {
-  scene_->root_element().UpdateComputedOpacityRecursive();
-  scene_->root_element().UpdateWorldSpaceTransformRecursive();
+  OnBeginFrame();
   SCOPED_TRACE(trace_context);
   for (auto name : names) {
-    SCOPED_TRACE(name);
+    SCOPED_TRACE(UiElementNameToString(name));
     auto* element = scene_->GetUiElementByName(name);
     ASSERT_NE(nullptr, element);
     EXPECT_TRUE(element->IsVisible());
@@ -109,8 +108,7 @@ void UiSceneManagerTest::VerifyElementsVisible(
 
 bool UiSceneManagerTest::VerifyVisibility(const std::set<UiElementName>& names,
                                           bool visible) const {
-  scene_->root_element().UpdateComputedOpacityRecursive();
-  scene_->root_element().UpdateWorldSpaceTransformRecursive();
+  OnBeginFrame();
   for (auto name : names) {
     SCOPED_TRACE(name);
     auto* element = scene_->GetUiElementByName(name);
@@ -119,6 +117,22 @@ bool UiSceneManagerTest::VerifyVisibility(const std::set<UiElementName>& names,
       return false;
     }
     if (!element || (visible && element->draw_phase() == kPhaseNone)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool UiSceneManagerTest::VerifyIsAnimating(
+    const std::set<UiElementName>& names,
+    const std::vector<TargetProperty>& properties,
+    bool animating) const {
+  OnBeginFrame();
+  for (auto name : names) {
+    auto* element = scene_->GetUiElementByName(name);
+    EXPECT_NE(nullptr, element);
+    SCOPED_TRACE(element->DebugName());
+    if (IsAnimating(element, properties) != animating) {
       return false;
     }
   }
@@ -143,8 +157,7 @@ int UiSceneManagerTest::NumVisibleChildren(UiElementName name) const {
 bool UiSceneManagerTest::VerifyRequiresLayout(
     const std::set<UiElementName>& names,
     bool requires_layout) const {
-  scene_->root_element().UpdateComputedOpacityRecursive();
-  scene_->root_element().UpdateWorldSpaceTransformRecursive();
+  OnBeginFrame();
   for (auto name : names) {
     SCOPED_TRACE(name);
     auto* element = scene_->GetUiElementByName(name);
@@ -165,11 +178,13 @@ void UiSceneManagerTest::CheckRendererOpacityRecursive(
   // might be confused which opacity is used by renderer.
   element->SetOpacity(0.9f);
 
-  EXPECT_TRUE(OnBeginFrame());
+  OnBeginFrame();
 
   FakeUiElementRenderer renderer;
   if (element->draw_phase() != kPhaseNone) {
-    element->Render(&renderer, kPixelDaydreamProjMatrix);
+    CameraModel model;
+    model.view_proj_matrix = kPixelDaydreamProjMatrix;
+    element->Render(&renderer, model);
   }
 
   // It is expected that some elements doesn't render anything (such as root
@@ -189,18 +204,17 @@ bool UiSceneManagerTest::AnimateBy(base::TimeDelta delta) {
   base::TimeDelta frame_time = base::TimeDelta::FromSecondsD(1.0 / 60.0);
   bool changed = false;
   for (; current_time_ < target_time; current_time_ += frame_time) {
-    if (scene_->OnBeginFrame(current_time_, gfx::Vector3dF(0.f, 0.f, -1.0f)))
+    if (scene_->OnBeginFrame(current_time_, kForwardVector))
       changed = true;
   }
   current_time_ = target_time;
-  if (scene_->OnBeginFrame(current_time_, gfx::Vector3dF(0.f, 0.f, -1.0f)))
+  if (scene_->OnBeginFrame(current_time_, kForwardVector))
     changed = true;
   return changed;
 }
 
-bool UiSceneManagerTest::OnBeginFrame() {
-  return scene_->OnBeginFrame(base::TimeTicks(),
-                              gfx::Vector3dF(0.f, 0.f, -1.0f));
+bool UiSceneManagerTest::OnBeginFrame() const {
+  return scene_->OnBeginFrame(current_time_, kForwardVector);
 }
 
 void UiSceneManagerTest::GetBackgroundColor(SkColor* background_color) const {

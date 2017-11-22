@@ -25,7 +25,9 @@ class MockWidgetInputHandler : public mojom::WidgetInputHandler {
 
   class DispatchedEditCommandMessage;
   class DispatchedEventMessage;
+  class DispatchedFocusMessage;
   class DispatchedIMEMessage;
+  class DispatchedRequestCompositionUpdatesMessage;
 
   // Abstract storage of a received call on the MockWidgetInputHandler
   // interface.
@@ -34,15 +36,23 @@ class MockWidgetInputHandler : public mojom::WidgetInputHandler {
     explicit DispatchedMessage(const std::string& name);
     virtual ~DispatchedMessage();
 
-    // Cast this to an DispatchedEditCommandMessage if it is one, null
+    // Cast this to a DispatchedEditCommandMessage if it is one, null
     // otherwise.
     virtual DispatchedEditCommandMessage* ToEditCommand();
 
-    // Cast this to an DispatchedEventMessage if it is one, null otherwise.
+    // Cast this to a DispatchedEventMessage if it is one, null otherwise.
     virtual DispatchedEventMessage* ToEvent();
+
+    // Cast this to an DispatchedFocusMessage if it is one, null otherwise.
+    virtual DispatchedFocusMessage* ToFocus();
 
     // Cast this to an DispatchedIMEMessage if it is one, null otherwise.
     virtual DispatchedIMEMessage* ToIME();
+
+    // Cast this to a DispatchedRequestCompositionUpdateMessage if it is one,
+    // null otherwise.
+    virtual DispatchedRequestCompositionUpdatesMessage*
+    ToRequestCompositionUpdates();
 
     // Return the name associated with this message. It will either match
     // the message call name (eg. MouseCaptureLost) or the name of an
@@ -106,6 +116,24 @@ class MockWidgetInputHandler : public mojom::WidgetInputHandler {
     DISALLOW_COPY_AND_ASSIGN(DispatchedEditCommandMessage);
   };
 
+  // A DispatchedMessage that stores the focus parameters
+  // that were invoked with.
+  class DispatchedFocusMessage : public DispatchedMessage {
+   public:
+    explicit DispatchedFocusMessage(bool focused);
+    ~DispatchedFocusMessage() override;
+
+    // Override and return |this|.
+    DispatchedFocusMessage* ToFocus() override;
+
+    bool focused() const { return focused_; }
+
+   private:
+    const bool focused_;
+
+    DISALLOW_COPY_AND_ASSIGN(DispatchedFocusMessage);
+  };
+
   // A DispatchedMessage that stores the InputEvent and callback
   // that was passed to the MockWidgetInputHandler interface.
   class DispatchedEventMessage : public DispatchedMessage {
@@ -139,6 +167,28 @@ class MockWidgetInputHandler : public mojom::WidgetInputHandler {
     DispatchEventCallback callback_;
 
     DISALLOW_COPY_AND_ASSIGN(DispatchedEventMessage);
+  };
+
+  // A DispatchedMessage that stores the RequestCompositionUpdates parameters
+  // that were invoked with.
+  class DispatchedRequestCompositionUpdatesMessage : public DispatchedMessage {
+   public:
+    DispatchedRequestCompositionUpdatesMessage(bool immediate_request,
+                                               bool monitor_request);
+    ~DispatchedRequestCompositionUpdatesMessage() override;
+
+    // Override and return |this|.
+    DispatchedRequestCompositionUpdatesMessage* ToRequestCompositionUpdates()
+        override;
+
+    bool immediate_request() const { return immediate_request_; }
+    bool monitor_request() const { return monitor_request_; }
+
+   private:
+    const bool immediate_request_;
+    const bool monitor_request_;
+
+    DISALLOW_COPY_AND_ASSIGN(DispatchedRequestCompositionUpdatesMessage);
   };
 
   // mojom::WidgetInputHandler override.

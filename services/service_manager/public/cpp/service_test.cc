@@ -5,7 +5,6 @@
 #include "services/service_manager/public/cpp/service_test.h"
 
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
@@ -46,7 +45,7 @@ void ServiceTest::InitTestName(const std::string& test_name) {
 }
 
 std::unique_ptr<Service> ServiceTest::CreateService() {
-  return base::MakeUnique<ServiceTestClient>(this);
+  return std::make_unique<ServiceTestClient>(this);
 }
 
 void ServiceTest::OnStartCalled(Connector* connector,
@@ -60,18 +59,16 @@ void ServiceTest::OnStartCalled(Connector* connector,
 
 void ServiceTest::SetUp() {
   background_service_manager_ =
-      base::MakeUnique<service_manager::BackgroundServiceManager>(nullptr,
+      std::make_unique<service_manager::BackgroundServiceManager>(nullptr,
                                                                   nullptr);
 
   // Create the service manager connection. We don't proceed until we get our
   // Service's OnStart() method is called.
-  base::RunLoop run_loop;
-  base::MessageLoop::ScopedNestableTaskAllower allow(
-      base::MessageLoop::current());
+  base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
   initialize_called_ = run_loop.QuitClosure();
 
   mojom::ServicePtr service;
-  context_ = base::MakeUnique<ServiceContext>(CreateService(),
+  context_ = std::make_unique<ServiceContext>(CreateService(),
                                               mojo::MakeRequest(&service));
   background_service_manager_->RegisterService(
       Identity(test_name_, mojom::kRootUserID), std::move(service), nullptr);

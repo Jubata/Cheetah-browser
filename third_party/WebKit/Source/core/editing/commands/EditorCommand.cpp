@@ -33,8 +33,8 @@
 #include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSValueList.h"
-#include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/TagCollection.h"
 #include "core/dom/events/Event.h"
@@ -205,7 +205,7 @@ StaticRangeVector* RangesFromCurrentSelectionOrExtendCaret(
     TextGranularity granularity) {
   frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
   SelectionModifier selection_modifier(
-      frame, frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated());
+      frame, frame.Selection().GetSelectionInDOMTree());
   if (selection_modifier.Selection().IsCaret())
     selection_modifier.Modify(SelectionModifyAlteration::kExtend, direction,
                               granularity);
@@ -255,7 +255,7 @@ static LocalFrame* TargetFrame(LocalFrame& frame, Event* event) {
 static bool ApplyCommandToFrame(LocalFrame& frame,
                                 EditorCommandSource source,
                                 InputEvent::InputType input_type,
-                                StylePropertySet* style) {
+                                CSSPropertyValueSet* style) {
   // FIXME: We don't call shouldApplyStyle when the source is DOM; is there a
   // good reason for that?
   switch (source) {
@@ -275,9 +275,11 @@ static bool ExecuteApplyStyle(LocalFrame& frame,
                               InputEvent::InputType input_type,
                               CSSPropertyID property_id,
                               const String& property_value) {
-  MutableStylePropertySet* style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
-  style->SetProperty(property_id, property_value);
+  DCHECK(frame.GetDocument());
+  MutableCSSPropertyValueSet* style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
+  style->SetProperty(property_id, property_value, /* important */ false,
+                     frame.GetDocument()->SecureContextMode());
   return ApplyCommandToFrame(frame, source, input_type, style);
 }
 
@@ -286,8 +288,8 @@ static bool ExecuteApplyStyle(LocalFrame& frame,
                               InputEvent::InputType input_type,
                               CSSPropertyID property_id,
                               CSSValueID property_value) {
-  MutableStylePropertySet* style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
+  MutableCSSPropertyValueSet* style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(property_id, property_value);
   return ApplyCommandToFrame(frame, source, input_type, style);
 }
@@ -303,7 +305,7 @@ static bool ExecuteToggleStyleInList(LocalFrame& frame,
                                      CSSValue* value) {
   EditingStyle* selection_style =
       EditingStyleUtilities::CreateStyleAtSelectionStart(
-          frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated());
+          frame.Selection().ComputeVisibleSelectionInDOMTree());
   if (!selection_style || !selection_style->Style())
     return false;
 
@@ -324,9 +326,10 @@ static bool ExecuteToggleStyleInList(LocalFrame& frame,
 
   // FIXME: We shouldn't be having to convert new style into text.  We should
   // have setPropertyCSSValue.
-  MutableStylePropertySet* new_mutable_style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
-  new_mutable_style->SetProperty(property_id, new_style);
+  MutableCSSPropertyValueSet* new_mutable_style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
+  new_mutable_style->SetProperty(property_id, new_style, /* important */ false,
+                                 frame.GetDocument()->SecureContextMode());
   return ApplyCommandToFrame(frame, source, input_type, new_mutable_style);
 }
 
@@ -348,8 +351,9 @@ static bool ExecuteToggleStyle(LocalFrame& frame,
     style_is_present = frame.GetEditor().SelectionHasStyle(
                            property_id, on_value) == EditingTriState::kTrue;
 
-  EditingStyle* style = EditingStyle::Create(
-      property_id, style_is_present ? off_value : on_value);
+  EditingStyle* style =
+      EditingStyle::Create(property_id, style_is_present ? off_value : on_value,
+                           frame.GetDocument()->SecureContextMode());
   return ApplyCommandToFrame(frame, source, input_type, style->Style());
 }
 
@@ -358,9 +362,10 @@ static bool ExecuteApplyParagraphStyle(LocalFrame& frame,
                                        InputEvent::InputType input_type,
                                        CSSPropertyID property_id,
                                        const String& property_value) {
-  MutableStylePropertySet* style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
-  style->SetProperty(property_id, property_value);
+  MutableCSSPropertyValueSet* style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
+  style->SetProperty(property_id, property_value, /* important */ false,
+                     frame.GetDocument()->SecureContextMode());
   // FIXME: We don't call shouldApplyStyle when the source is DOM; is there a
   // good reason for that?
   switch (source) {
@@ -399,12 +404,9 @@ static bool ExpandSelectionToGranularity(LocalFrame& frame,
                                          TextGranularity granularity) {
   const VisibleSelection& selection = CreateVisibleSelectionWithGranularity(
       SelectionInDOMTree::Builder()
-          .SetBaseAndExtent(frame.Selection()
-                                .ComputeVisibleSelectionInDOMTreeDeprecated()
-                                .Base(),
-                            frame.Selection()
-                                .ComputeVisibleSelectionInDOMTreeDeprecated()
-                                .Extent())
+          .SetBaseAndExtent(
+              frame.Selection().ComputeVisibleSelectionInDOMTree().Base(),
+              frame.Selection().ComputeVisibleSelectionInDOMTree().Extent())
           .Build(),
       granularity);
   const EphemeralRange new_range = selection.ToNormalizedEphemeralRange();
@@ -509,7 +511,7 @@ static WritingDirection TextDirectionForSelection(
       CSSComputedStyleDeclaration* style =
           CSSComputedStyleDeclaration::Create(&n);
       const CSSValue* unicode_bidi =
-          style->GetPropertyCSSValue(GetCSSPropertyUnicodeBidiAPI());
+          style->GetPropertyCSSValue(GetCSSPropertyUnicodeBidi());
       if (!unicode_bidi || !unicode_bidi->IsIdentifierValue())
         continue;
 
@@ -545,7 +547,7 @@ static WritingDirection TextDirectionForSelection(
     CSSComputedStyleDeclaration* style =
         CSSComputedStyleDeclaration::Create(element);
     const CSSValue* unicode_bidi =
-        style->GetPropertyCSSValue(GetCSSPropertyUnicodeBidiAPI());
+        style->GetPropertyCSSValue(GetCSSPropertyUnicodeBidi());
     if (!unicode_bidi || !unicode_bidi->IsIdentifierValue())
       continue;
 
@@ -560,7 +562,7 @@ static WritingDirection TextDirectionForSelection(
     DCHECK(EditingStyleUtilities::IsEmbedOrIsolate(unicode_bidi_value))
         << unicode_bidi_value;
     const CSSValue* direction =
-        style->GetPropertyCSSValue(GetCSSPropertyDirectionAPI());
+        style->GetPropertyCSSValue(GetCSSPropertyDirection());
     if (!direction || !direction->IsIdentifierValue())
       continue;
 
@@ -615,11 +617,13 @@ static unsigned VerticalScrollDistance(LocalFrame& frame) {
         style->OverflowY() == EOverflow::kAuto ||
         HasEditableStyle(*focused_element)))
     return 0;
+  ScrollableArea* scrollable_area =
+      frame.View()->LayoutViewportScrollableArea();
   int height = std::min<int>(layout_box.ClientHeight().ToInt(),
-                             frame.View()->VisibleHeight());
+                             scrollable_area->VisibleHeight());
   return static_cast<unsigned>(
       max(max<int>(height * ScrollableArea::MinFractionToStepWhenPaging(),
-                   height - frame.View()->MaxOverlapBetweenPages()),
+                   height - scrollable_area->MaxOverlapBetweenPages()),
           1));
 }
 
@@ -825,8 +829,11 @@ static bool ExecuteDeleteToMark(LocalFrame& frame,
         SetSelectionOptions::Builder().SetShouldCloseTyping(true).Build());
   }
   frame.GetEditor().PerformDelete();
-  frame.GetEditor().SetMark(
-      frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated());
+
+  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  frame.GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+  frame.GetEditor().SetMark();
   return true;
 }
 
@@ -1122,8 +1129,8 @@ static bool ExecuteMakeTextWritingDirectionLeftToRight(LocalFrame& frame,
                                                        Event*,
                                                        EditorCommandSource,
                                                        const String&) {
-  MutableStylePropertySet* style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
+  MutableCSSPropertyValueSet* style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(CSSPropertyUnicodeBidi, CSSValueIsolate);
   style->SetProperty(CSSPropertyDirection, CSSValueLtr);
   frame.GetEditor().ApplyStyle(
@@ -1135,8 +1142,8 @@ static bool ExecuteMakeTextWritingDirectionNatural(LocalFrame& frame,
                                                    Event*,
                                                    EditorCommandSource,
                                                    const String&) {
-  MutableStylePropertySet* style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
+  MutableCSSPropertyValueSet* style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(CSSPropertyUnicodeBidi, CSSValueNormal);
   frame.GetEditor().ApplyStyle(
       style, InputEvent::InputType::kFormatSetBlockTextDirection);
@@ -1147,8 +1154,8 @@ static bool ExecuteMakeTextWritingDirectionRightToLeft(LocalFrame& frame,
                                                        Event*,
                                                        EditorCommandSource,
                                                        const String&) {
-  MutableStylePropertySet* style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
+  MutableCSSPropertyValueSet* style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(CSSPropertyUnicodeBidi, CSSValueIsolate);
   style->SetProperty(CSSPropertyDirection, CSSValueRtl);
   frame.GetEditor().ApplyStyle(
@@ -1241,7 +1248,7 @@ bool ModifySelectionyWithPageGranularity(
     unsigned vertical_distance,
     SelectionModifyVerticalDirection direction) {
   SelectionModifier selection_modifier(
-      frame, frame.Selection().ComputeVisibleSelectionInDOMTree());
+      frame, frame.Selection().GetSelectionInDOMTree());
   if (!selection_modifier.ModifyWithPageGranularity(alter, vertical_distance,
                                                     direction)) {
     return false;
@@ -1876,8 +1883,7 @@ static bool ExecuteSetMark(LocalFrame& frame,
                            Event*,
                            EditorCommandSource,
                            const String&) {
-  frame.GetEditor().SetMark(
-      frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated());
+  frame.GetEditor().SetMark();
   return true;
 }
 
@@ -1932,13 +1938,13 @@ static bool ExecuteSwapWithMark(LocalFrame& frame,
                                 Event*,
                                 EditorCommandSource,
                                 const String&) {
-  const VisibleSelection& mark = frame.GetEditor().Mark();
+  const VisibleSelection mark(frame.GetEditor().Mark());
   const VisibleSelection& selection =
       frame.Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
   if (mark.IsNone() || selection.IsNone())
     return false;
+  frame.GetEditor().SetMark();
   frame.Selection().SetSelection(mark.AsSelection());
-  frame.GetEditor().SetMark(selection);
   return true;
 }
 
@@ -2976,7 +2982,7 @@ bool Editor::ExecuteCommand(const String& command_name, const String& value) {
     return GetFrame().GetEventHandler().BubblingScroll(
         kScrollDownIgnoringWritingMode, kScrollByDocument);
 
-  if (command_name == "showGuessPanel") {
+  if (command_name == "ToggleSpellPanel") {
     // TODO(editing-dev): Use of updateStyleAndLayoutIgnorePendingStylesheets
     // needs to be audited. see http://crbug.com/590369 for more details.
     GetFrame().GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();

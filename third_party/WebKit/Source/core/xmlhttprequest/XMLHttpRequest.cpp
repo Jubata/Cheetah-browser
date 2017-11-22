@@ -86,8 +86,8 @@
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/text/CString.h"
 #include "public/platform/WebCORS.h"
-#include "public/platform/WebFeaturePolicyFeature.h"
 #include "public/platform/WebURLRequest.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
 
 namespace blink {
 
@@ -117,22 +117,23 @@ class ScopedEventDispatchProtect final {
 // TODO(tyoshino): Switch XHR to use HttpUtil. See crbug.com/743311.
 void FindCharsetInMediaType(const String& media_type,
                             unsigned& charset_pos,
-                            unsigned& charset_len,
-                            unsigned start) {
-  charset_pos = start;
+                            unsigned& charset_len) {
   charset_len = 0;
 
-  size_t pos = start;
+  size_t pos = charset_pos;
   unsigned length = media_type.length();
 
   while (pos < length) {
     pos = media_type.FindIgnoringASCIICase("charset", pos);
-    if (pos == kNotFound || !pos) {
-      charset_len = 0;
-      return;
-    }
 
-    // is what we found a beginning of a word?
+    if (pos == kNotFound)
+      return;
+
+    // Give up if we find "charset" at the head.
+    if (!pos)
+      return;
+
+    // Now check that "charset" is not a substring of some longer word.
     if (media_type[pos - 1] > ' ' && media_type[pos - 1] != ';') {
       pos += 7;
       continue;
@@ -140,55 +141,49 @@ void FindCharsetInMediaType(const String& media_type,
 
     pos += 7;
 
-    // skip whitespace
-    while (pos != length && media_type[pos] <= ' ')
+    while (pos < length && media_type[pos] <= ' ')
       ++pos;
 
-    // this "charset" substring wasn't a parameter
-    // name, but there may be others
-    if (media_type[pos++] != '=')
-      continue;
-
-    while (pos != length && (media_type[pos] <= ' ' || media_type[pos] == '"' ||
-                             media_type[pos] == '\''))
-      ++pos;
-
-    // we don't handle spaces within quoted parameter values, because charset
-    // names cannot have any
-    unsigned endpos = pos;
-    while (pos != length && media_type[endpos] > ' ' &&
-           media_type[endpos] != '"' && media_type[endpos] != '\'' &&
-           media_type[endpos] != ';')
-      ++endpos;
-
-    charset_pos = pos;
-    charset_len = endpos - pos;
-    return;
+    // Treat this as a charset parameter.
+    if (media_type[pos++] == '=')
+      break;
   }
+
+  while (pos < length && (media_type[pos] <= ' ' || media_type[pos] == '"' ||
+                          media_type[pos] == '\''))
+    ++pos;
+
+  charset_pos = pos;
+
+  // we don't handle spaces within quoted parameter values, because charset
+  // names cannot have any
+  while (pos < length && media_type[pos] > ' ' && media_type[pos] != '"' &&
+         media_type[pos] != '\'' && media_type[pos] != ';')
+    ++pos;
+
+  charset_len = pos - charset_pos;
 }
 String ExtractCharsetFromMediaType(const String& media_type) {
-  unsigned pos, len;
-  FindCharsetInMediaType(media_type, pos, len, 0);
+  unsigned pos = 0;
+  unsigned len = 0;
+  FindCharsetInMediaType(media_type, pos, len);
   return media_type.Substring(pos, len);
 }
 
 void ReplaceCharsetInMediaType(String& media_type,
                                const String& charset_value) {
-  unsigned pos = 0, len = 0;
+  unsigned pos = 0;
 
-  FindCharsetInMediaType(media_type, pos, len, 0);
-
-  if (!len) {
-    // When no charset found, do nothing.
-    return;
-  }
-
-  // Found at least one existing charset, replace all occurrences with new
-  // charset.
-  while (len) {
-    media_type.replace(pos, len, charset_value);
-    unsigned start = pos + charset_value.length();
-    FindCharsetInMediaType(media_type, pos, len, start);
+  while (true) {
+    unsigned len = 0;
+    FindCharsetInMediaType(media_type, pos, len);
+    if (!len)
+      return;
+    if (!EqualIgnoringASCIICase(StringView(media_type, pos, len),
+                                charset_value)) {
+      media_type.replace(pos, len, charset_value);
+    }
+    pos += charset_value.length();
   }
 }
 
@@ -293,7 +288,7 @@ XMLHttpRequest::XMLHttpRequest(
     v8::Isolate* isolate,
     bool is_isolated_world,
     scoped_refptr<SecurityOrigin> isolated_world_security_origin)
-    : SuspendableObject(context),
+    : PausableObject(context),
       timeout_milliseconds_(0),
       state_(kUnsent),
       length_downloaded_to_file_(0),
@@ -695,9 +690,9 @@ void XMLHttpRequest::open(const AtomicString& method,
   upload_complete_ = false;
 
   if (!async && GetExecutionContext()->IsDocument()) {
-    if (IsSupportedInFeaturePolicy(WebFeaturePolicyFeature::kSyncXHR) &&
+    if (IsSupportedInFeaturePolicy(FeaturePolicyFeature::kSyncXHR) &&
         !GetDocument()->GetFrame()->IsFeatureEnabled(
-            WebFeaturePolicyFeature::kSyncXHR)) {
+            FeaturePolicyFeature::kSyncXHR)) {
       exception_state.ThrowDOMException(
           kInvalidAccessError,
           "Synchronous requests are disabled by Feature Policy.");
@@ -1558,8 +1553,12 @@ void XMLHttpRequest::UpdateContentTypeAndCharset(
     SetRequestHeaderInternal(HTTPNames::Content_Type, default_content_type);
     return;
   }
+  String original_content_type = content_type;
   ReplaceCharsetInMediaType(content_type, charset);
   request_headers_.Set(HTTPNames::Content_Type, AtomicString(content_type));
+
+  if (original_content_type != content_type)
+    UseCounter::Count(GetExecutionContext(), WebFeature::kReplaceCharsetInXHR);
 }
 
 bool XMLHttpRequest::ResponseIsXML() const {
@@ -1925,12 +1924,12 @@ void XMLHttpRequest::HandleDidTimeout() {
                      expected_length);
 }
 
-void XMLHttpRequest::Suspend() {
-  progress_event_throttle_->Suspend();
+void XMLHttpRequest::Pause() {
+  progress_event_throttle_->Pause();
 }
 
-void XMLHttpRequest::Resume() {
-  progress_event_throttle_->Resume();
+void XMLHttpRequest::Unpause() {
+  progress_event_throttle_->Unpause();
 }
 
 void XMLHttpRequest::ContextDestroyed(ExecutionContext*) {
@@ -1958,7 +1957,7 @@ const AtomicString& XMLHttpRequest::InterfaceName() const {
 }
 
 ExecutionContext* XMLHttpRequest::GetExecutionContext() const {
-  return SuspendableObject::GetExecutionContext();
+  return PausableObject::GetExecutionContext();
 }
 
 void XMLHttpRequest::ReportMemoryUsageToV8() {
@@ -1989,7 +1988,7 @@ void XMLHttpRequest::Trace(blink::Visitor* visitor) {
   visitor->Trace(blob_loader_);
   XMLHttpRequestEventTarget::Trace(visitor);
   DocumentParserClient::Trace(visitor);
-  SuspendableObject::Trace(visitor);
+  PausableObject::Trace(visitor);
 }
 
 void XMLHttpRequest::TraceWrappers(

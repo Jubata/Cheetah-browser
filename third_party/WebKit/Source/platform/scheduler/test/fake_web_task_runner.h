@@ -11,7 +11,6 @@
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "platform/WebTaskRunner.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 namespace scheduler {
@@ -26,7 +25,8 @@ class FakeWebTaskRunner : public WebTaskRunner {
   // WebTaskRunner implementation:
   bool RunsTasksInCurrentSequence() override;
   double MonotonicallyIncreasingVirtualTimeSeconds() const override;
-  SingleThreadTaskRunnerRefPtr ToSingleThreadTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> ToSingleThreadTaskRunner()
+      override;
 
   void RunUntilIdle();
   void AdvanceTimeAndRun(double delta_seconds);

@@ -87,31 +87,25 @@ bool GeneralizedTimeToBaseTime(const der::GeneralizedTime& generalized,
   exploded.hour = generalized.hours;
   exploded.minute = generalized.minutes;
   exploded.second = generalized.seconds;
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+
   if (base::Time::FromUTCExploded(exploded, result))
     return true;
 
-  if (sizeof(time_t) == 4) {
-    // Fail on obviously bad dates before trying the 32-bit hacks.
-    if (!exploded.HasValidValues())
-      return false;
+  // Fail on obviously bad dates.
+  if (!exploded.HasValidValues())
+    return false;
 
-    // Hack to handle dates that can't be converted on 32-bit systems.
-    // TODO(mattm): consider consolidating this with
-    // SaturatedTimeFromUTCExploded from cookie_util.cc
-    if (generalized.year >= 2038) {
-      *result = base::Time::Max();
-      return true;
-    }
-    if (generalized.year < 1970) {
-      *result = base::Time::Min();
-      return true;
-    }
+  // TODO(mattm): consider consolidating this with
+  // SaturatedTimeFromUTCExploded from cookie_util.cc
+  if (static_cast<int>(generalized.year) > base::Time::kExplodedMaxYear) {
+    *result = base::Time::Max();
+    return true;
+  }
+  if (static_cast<int>(generalized.year) < base::Time::kExplodedMinYear) {
+    *result = base::Time::Min();
+    return true;
   }
   return false;
-#else
-  return base::Time::FromUTCExploded(exploded, result);
-#endif
 }
 
 // Sets |value| to the Value from a DER Sequence Tag-Length-Value and return
@@ -251,88 +245,20 @@ scoped_refptr<X509Certificate> X509Certificate::CreateFromBytes(
 
 // static
 scoped_refptr<X509Certificate> X509Certificate::CreateFromPickle(
-    base::PickleIterator* pickle_iter,
-    PickleType type) {
-  if (type == PICKLETYPE_CERTIFICATE_CHAIN_V3) {
-    int chain_length = 0;
-    if (!pickle_iter->ReadLength(&chain_length))
-      return NULL;
+    base::PickleIterator* pickle_iter) {
+  int chain_length = 0;
+  if (!pickle_iter->ReadLength(&chain_length))
+    return nullptr;
 
-    std::vector<base::StringPiece> cert_chain;
-    const char* data = NULL;
-    int data_length = 0;
-    for (int i = 0; i < chain_length; ++i) {
-      if (!pickle_iter->ReadData(&data, &data_length))
-        return NULL;
-      cert_chain.push_back(base::StringPiece(data, data_length));
-    }
-    return CreateFromDERCertChain(cert_chain);
+  std::vector<base::StringPiece> cert_chain;
+  const char* data = nullptr;
+  int data_length = 0;
+  for (int i = 0; i < chain_length; ++i) {
+    if (!pickle_iter->ReadData(&data, &data_length))
+      return nullptr;
+    cert_chain.push_back(base::StringPiece(data, data_length));
   }
-
-  // Legacy / Migration code. This should eventually be removed once
-  // sufficient time has passed that all pickles serialized prior to
-  // PICKLETYPE_CERTIFICATE_CHAIN_V3 have been removed.
-  OSCertHandle cert_handle = ReadOSCertHandleFromPickle(pickle_iter);
-  if (!cert_handle)
-    return NULL;
-
-  OSCertHandles intermediates;
-  uint32_t num_intermediates = 0;
-  if (type != PICKLETYPE_SINGLE_CERTIFICATE) {
-    if (!pickle_iter->ReadUInt32(&num_intermediates)) {
-      FreeOSCertHandle(cert_handle);
-      return NULL;
-    }
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && defined(__x86_64__)
-    // On 64-bit Linux (and any other 64-bit platforms), the intermediate count
-    // might really be a 64-bit field since we used to use Pickle::WriteSize(),
-    // which writes either 32 or 64 bits depending on the architecture. Since
-    // x86-64 is little-endian, if that happens, the next 32 bits will be all
-    // zeroes (the high bits) and the 32 bits we already read above are the
-    // correct value (we assume there are never more than 2^32 - 1 intermediate
-    // certificates in a chain; in practice, more than a dozen or so is
-    // basically unheard of). Since it's invalid for a certificate to start with
-    // 32 bits of zeroes, we check for that here and skip it if we find it. We
-    // save a copy of the pickle iterator to restore in case we don't get 32
-    // bits of zeroes. Now we always write 32 bits, so after a while, these old
-    // cached pickles will all get replaced.
-    // TODO(mdm): remove this compatibility code in April 2013 or so.
-    base::PickleIterator saved_iter = *pickle_iter;
-    uint32_t zero_check = 0;
-    if (!pickle_iter->ReadUInt32(&zero_check)) {
-      // This may not be an error. If there are no intermediates, and we're
-      // reading an old 32-bit pickle, and there's nothing else after this in
-      // the pickle, we should report success. Note that it is technically
-      // possible for us to skip over zeroes that should have occurred after
-      // an empty certificate list; to avoid this going forward, only do this
-      // backward-compatibility stuff for PICKLETYPE_CERTIFICATE_CHAIN_V1
-      // which comes from the pickle version number in http_response_info.cc.
-      if (num_intermediates) {
-        FreeOSCertHandle(cert_handle);
-        return NULL;
-      }
-    }
-    if (zero_check)
-      *pickle_iter = saved_iter;
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && defined(__x86_64__)
-
-    for (uint32_t i = 0; i < num_intermediates; ++i) {
-      OSCertHandle intermediate = ReadOSCertHandleFromPickle(pickle_iter);
-      if (!intermediate)
-        break;
-      intermediates.push_back(intermediate);
-    }
-  }
-
-  scoped_refptr<X509Certificate> cert = nullptr;
-  if (intermediates.size() == num_intermediates)
-    cert = CreateFromHandle(cert_handle, intermediates);
-  FreeOSCertHandle(cert_handle);
-  for (size_t i = 0; i < intermediates.size(); ++i)
-    FreeOSCertHandle(intermediates[i]);
-
-  return cert;
+  return CreateFromDERCertChain(cert_chain);
 }
 
 // static
@@ -424,9 +350,9 @@ void X509Certificate::Persist(base::Pickle* pickle) {
     return;
   }
   pickle->WriteInt(static_cast<int>(intermediate_ca_certs_.size() + 1));
-  WriteOSCertHandleToPickle(cert_handle_, pickle);
-  for (size_t i = 0; i < intermediate_ca_certs_.size(); ++i)
-    WriteOSCertHandleToPickle(intermediate_ca_certs_[i], pickle);
+  pickle->WriteString(x509_util::CryptoBufferAsStringPiece(cert_handle_));
+  for (auto* intermediate : intermediate_ca_certs_)
+    pickle->WriteString(x509_util::CryptoBufferAsStringPiece(intermediate));
 }
 
 void X509Certificate::GetDNSNames(std::vector<std::string>* dns_names) const {
@@ -859,32 +785,21 @@ SHA256HashValue X509Certificate::CalculateFingerprint256(OSCertHandle cert) {
   return sha256;
 }
 
-// static
-SHA256HashValue X509Certificate::CalculateCAFingerprint256(
-    const OSCertHandles& intermediates) {
+SHA256HashValue X509Certificate::CalculateChainFingerprint256() const {
   SHA256HashValue sha256;
   memset(sha256.data, 0, sizeof(sha256.data));
 
   SHA256_CTX sha256_ctx;
   SHA256_Init(&sha256_ctx);
-  for (CRYPTO_BUFFER* cert : intermediates) {
+  SHA256_Update(&sha256_ctx, CRYPTO_BUFFER_data(cert_handle_),
+                CRYPTO_BUFFER_len(cert_handle_));
+  for (CRYPTO_BUFFER* cert : intermediate_ca_certs_) {
     SHA256_Update(&sha256_ctx, CRYPTO_BUFFER_data(cert),
                   CRYPTO_BUFFER_len(cert));
   }
   SHA256_Final(sha256.data, &sha256_ctx);
 
   return sha256;
-}
-
-// static
-SHA256HashValue X509Certificate::CalculateChainFingerprint256(
-    OSCertHandle leaf,
-    const OSCertHandles& intermediates) {
-  OSCertHandles chain;
-  chain.push_back(leaf);
-  chain.insert(chain.end(), intermediates.begin(), intermediates.end());
-
-  return CalculateCAFingerprint256(chain);
 }
 
 // static
@@ -998,25 +913,6 @@ bool X509Certificate::Initialize(UnsafeCreateOptions options) {
   }
   serial_number_ = tbs.serial_number.AsString();
   return true;
-}
-
-// static
-X509Certificate::OSCertHandle X509Certificate::ReadOSCertHandleFromPickle(
-    base::PickleIterator* pickle_iter) {
-  const char* data;
-  int length;
-  if (!pickle_iter->ReadData(&data, &length))
-    return NULL;
-
-  return CreateOSCertHandleFromBytes(data, length);
-}
-
-// static
-void X509Certificate::WriteOSCertHandleToPickle(OSCertHandle cert_handle,
-                                                base::Pickle* pickle) {
-  pickle->WriteData(
-      reinterpret_cast<const char*>(CRYPTO_BUFFER_data(cert_handle)),
-      CRYPTO_BUFFER_len(cert_handle));
 }
 
 }  // namespace net

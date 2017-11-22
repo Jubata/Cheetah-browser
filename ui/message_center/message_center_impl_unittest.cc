@@ -24,7 +24,7 @@
 #include "ui/message_center/message_center_types.h"
 #include "ui/message_center/notification_blocker.h"
 #include "ui/message_center/notification_types.h"
-#include "ui/message_center/notifier_settings.h"
+#include "ui/message_center/notifier_id.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
 
 using base::UTF8ToUTF16;
@@ -355,10 +355,15 @@ TEST_F(MessageCenterImplTest, PopupTimersControllerRestartOnUpdate) {
   popup_timers_controller->OnNotificationDisplayed("id1", DISPLAY_SOURCE_POPUP);
   ASSERT_EQ(popup_timers_controller->timer_finished(), 0);
 
+#if defined(OS_CHROMEOS)
+  const int dismiss_time = kAutocloseDefaultDelaySeconds;
+#else
+  const int dismiss_time = kAutocloseHighPriorityDelaySeconds;
+#endif
+
   // Fast forward the |task_runner| by one second less than the auto-close timer
   // frequency for Web Notifications. (As set by the |notifier_id|.)
-  task_runner->FastForwardBy(
-      base::TimeDelta::FromSeconds(kAutocloseHighPriorityDelaySeconds - 1));
+  task_runner->FastForwardBy(base::TimeDelta::FromSeconds(dismiss_time - 1));
   ASSERT_EQ(popup_timers_controller->timer_finished(), 0);
 
   // Trigger a replacement of the notification in the timer controller.
@@ -366,8 +371,7 @@ TEST_F(MessageCenterImplTest, PopupTimersControllerRestartOnUpdate) {
 
   // Fast forward the |task_runner| by one second less than the auto-close timer
   // frequency for Web Notifications again. It should have been reset.
-  task_runner->FastForwardBy(
-      base::TimeDelta::FromSeconds(kAutocloseHighPriorityDelaySeconds - 1));
+  task_runner->FastForwardBy(base::TimeDelta::FromSeconds(dismiss_time - 1));
   ASSERT_EQ(popup_timers_controller->timer_finished(), 0);
 
   // Now fast forward the |task_runner| by two seconds (to avoid flakiness),
@@ -398,6 +402,10 @@ TEST_F(MessageCenterImplTest, NotificationBlocker) {
   EXPECT_EQ(2u, message_center()->GetPopupNotifications().size());
   EXPECT_EQ(2u, message_center()->GetVisibleNotifications().size());
 
+  // "id1" is displayed as a pop-up so that it will be closed when blocked.
+  message_center()->DisplayedNotification("id1",
+                                          message_center::DISPLAY_SOURCE_POPUP);
+
   // Block all notifications. All popups are gone and message center should be
   // hidden.
   blocker1.SetNotificationsEnabled(false);
@@ -420,10 +428,14 @@ TEST_F(MessageCenterImplTest, NotificationBlocker) {
   EXPECT_TRUE(message_center()->GetPopupNotifications().empty());
   EXPECT_EQ(2u, message_center()->GetVisibleNotifications().size());
 
-  // Unblock both blockers, which recovers the global state, but the popups
-  // aren't shown.
+  // Unblock both blockers, which recovers the global state, the displayed
+  // pop-ups before blocking aren't shown but the never-displayed ones will
+  // be shown.
   blocker2.SetNotificationsEnabled(true);
-  EXPECT_TRUE(message_center()->GetPopupNotifications().empty());
+  NotificationList::PopupNotifications popups =
+      message_center()->GetPopupNotifications();
+  EXPECT_EQ(1u, popups.size());
+  EXPECT_TRUE(PopupNotificationsContain(popups, "id2"));
   EXPECT_EQ(2u, message_center()->GetVisibleNotifications().size());
 }
 
@@ -438,6 +450,10 @@ TEST_F(MessageCenterImplTest, NotificationsDuringBlocked) {
                        notifier_id, RichNotificationData(), NULL)));
   EXPECT_EQ(1u, message_center()->GetPopupNotifications().size());
   EXPECT_EQ(1u, message_center()->GetVisibleNotifications().size());
+
+  // "id1" is displayed as a pop-up so that it will be closed when blocked.
+  message_center()->DisplayedNotification("id1",
+                                          message_center::DISPLAY_SOURCE_POPUP);
 
   // Create a notification during blocked. Still no popups.
   blocker.SetNotificationsEnabled(false);
@@ -475,6 +491,10 @@ TEST_F(MessageCenterImplTest, NotificationBlockerAllowsPopups) {
                        UTF8ToUTF16("message"), gfx::Image() /* icon */,
                        base::string16() /* display_source */, GURL(),
                        notifier_id2, RichNotificationData(), NULL)));
+
+  // "id1" is displayed as a pop-up so that it will be closed when blocked.
+  message_center()->DisplayedNotification("id1",
+                                          message_center::DISPLAY_SOURCE_POPUP);
 
   // "id1" is closed but "id2" is still visible as a popup.
   blocker.SetNotificationsEnabled(false);
@@ -678,41 +698,6 @@ TEST_F(MessageCenterImplTest, RemoveAllNotificationsWithPinned) {
   EXPECT_TRUE(NotificationsContain(notifications, "id4"));
 }
 #endif
-
-#if defined(OS_CHROMEOS)
-TEST_F(MessageCenterImplTest, CachedUnreadCount) {
-  message_center()->AddNotification(
-      std::unique_ptr<Notification>(CreateSimpleNotification("id1")));
-  message_center()->AddNotification(
-      std::unique_ptr<Notification>(CreateSimpleNotification("id2")));
-  message_center()->AddNotification(
-      std::unique_ptr<Notification>(CreateSimpleNotification("id3")));
-  ASSERT_EQ(3u, message_center()->UnreadNotificationCount());
-
-  // Mark 'displayed' on all notifications by using for-loop. This shouldn't
-  // recreate |notifications| inside of the loop.
-  const NotificationList::Notifications& notifications =
-      message_center()->GetVisibleNotifications();
-  for (NotificationList::Notifications::const_iterator iter =
-           notifications.begin(); iter != notifications.end(); ++iter) {
-    message_center()->DisplayedNotification(
-        (*iter)->id(), message_center::DISPLAY_SOURCE_MESSAGE_CENTER);
-  }
-  EXPECT_EQ(0u, message_center()->UnreadNotificationCount());
-
-  // Imitate the timeout, which recovers the unread count. Again, this shouldn't
-  // recreate |notifications| inside of the loop.
-  for (NotificationList::Notifications::const_iterator iter =
-           notifications.begin(); iter != notifications.end(); ++iter) {
-    message_center()->MarkSinglePopupAsShown((*iter)->id(), false);
-  }
-  EXPECT_EQ(3u, message_center()->UnreadNotificationCount());
-
-  // Opening the message center will reset the unread count.
-  message_center()->SetVisibility(VISIBILITY_MESSAGE_CENTER);
-  EXPECT_EQ(0u, message_center()->UnreadNotificationCount());
-}
-#endif  // OS_CHROMEOS
 
 TEST_F(MessageCenterImplTest, NotifierEnabledChanged) {
   ASSERT_EQ(0u, message_center()->NotificationCount());

@@ -26,6 +26,7 @@
 #include "content/public/browser/browser_message_filter.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/message_filter.h"
+#include "third_party/WebKit/public/platform/modules/cache_storage/cache_storage.mojom.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gpu_memory_buffer.h"
@@ -113,6 +114,15 @@ class CONTENT_EXPORT RenderMessageFilter
   void CreateFullscreenWidget(int opener_id,
                               mojom::WidgetPtr widget,
                               CreateFullscreenWidgetCallback callback) override;
+  void DidGenerateCacheableMetadata(const GURL& url,
+                                    base::Time expected_response_time,
+                                    const std::vector<uint8_t>& data) override;
+  void DidGenerateCacheableMetadataInCacheStorage(
+      const GURL& url,
+      base::Time expected_response_time,
+      const std::vector<uint8_t>& data,
+      const url::Origin& cache_storage_origin,
+      const std::string& cache_storage_cache_name) override;
 
   // Message handlers called on the browser IO thread:
   void OnHasGpuProcess(IPC::Message* reply);
@@ -128,22 +138,12 @@ class CONTENT_EXPORT RenderMessageFilter
                            base::ThreadPriority priority);
 #endif
 
-  void OnCacheableMetadataAvailable(const GURL& url,
-                                    base::Time expected_response_time,
-                                    const std::vector<char>& data);
-  void OnCacheableMetadataAvailableForCacheStorage(
-      const GURL& url,
-      base::Time expected_response_time,
-      const std::vector<char>& data,
-      const url::Origin& cache_storage_origin,
-      const std::string& cache_storage_cache_name);
-  void OnCacheStorageOpenCallback(
-      const GURL& url,
-      base::Time expected_response_time,
-      scoped_refptr<net::IOBuffer> buf,
-      int buf_len,
-      std::unique_ptr<CacheStorageCacheHandle> cache_handle,
-      CacheStorageError error);
+  void OnCacheStorageOpenCallback(const GURL& url,
+                                  base::Time expected_response_time,
+                                  scoped_refptr<net::IOBuffer> buf,
+                                  int buf_len,
+                                  CacheStorageCacheHandle cache_handle,
+                                  blink::mojom::CacheStorageError error);
   void OnMediaLogEvents(const std::vector<media::MediaLogEvent>&);
 
   bool CheckBenchmarkingEnabled() const;

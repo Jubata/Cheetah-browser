@@ -1794,6 +1794,20 @@ void GL_APIENTRY GLES2RasterCHROMIUM(const cc::DisplayItemList* list,
 void GL_APIENTRY GLES2EndRasterCHROMIUM() {
   gles2::GetGLContext()->EndRasterCHROMIUM();
 }
+void GL_APIENTRY GLES2CreateTransferCacheEntryCHROMIUM(
+    GLuint64 handle_id,
+    GLuint handle_shm_id,
+    GLuint handle_shm_offset,
+    const cc::ClientTransferCacheEntry& entry) {
+  gles2::GetGLContext()->CreateTransferCacheEntryCHROMIUM(
+      handle_id, handle_shm_id, handle_shm_offset, entry);
+}
+void GL_APIENTRY GLES2DeleteTransferCacheEntryCHROMIUM(GLuint64 handle_id) {
+  gles2::GetGLContext()->DeleteTransferCacheEntryCHROMIUM(handle_id);
+}
+void GL_APIENTRY GLES2UnlockTransferCacheEntryCHROMIUM(GLuint64 handle_id) {
+  gles2::GetGLContext()->UnlockTransferCacheEntryCHROMIUM(handle_id);
+}
 void GL_APIENTRY GLES2TexStorage2DImageCHROMIUM(GLenum target,
                                                 GLenum internalFormat,
                                                 GLenum bufferUsage,
@@ -1805,6 +1819,11 @@ void GL_APIENTRY GLES2TexStorage2DImageCHROMIUM(GLenum target,
 void GL_APIENTRY GLES2SetColorSpaceMetadataCHROMIUM(GLuint texture_id,
                                                     GLColorSpace color_space) {
   gles2::GetGLContext()->SetColorSpaceMetadataCHROMIUM(texture_id, color_space);
+}
+void GL_APIENTRY GLES2WindowRectanglesEXT(GLenum mode,
+                                          GLsizei count,
+                                          const GLint* box) {
+  gles2::GetGLContext()->WindowRectanglesEXT(mode, count, box);
 }
 
 namespace gles2 {
@@ -3154,12 +3173,31 @@ extern const NameToFunc g_gles2_function_table[] = {
         reinterpret_cast<GLES2FunctionPointer>(glEndRasterCHROMIUM),
     },
     {
+        "glCreateTransferCacheEntryCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glCreateTransferCacheEntryCHROMIUM),
+    },
+    {
+        "glDeleteTransferCacheEntryCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glDeleteTransferCacheEntryCHROMIUM),
+    },
+    {
+        "glUnlockTransferCacheEntryCHROMIUM",
+        reinterpret_cast<GLES2FunctionPointer>(
+            glUnlockTransferCacheEntryCHROMIUM),
+    },
+    {
         "glTexStorage2DImageCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glTexStorage2DImageCHROMIUM),
     },
     {
         "glSetColorSpaceMetadataCHROMIUM",
         reinterpret_cast<GLES2FunctionPointer>(glSetColorSpaceMetadataCHROMIUM),
+    },
+    {
+        "glWindowRectanglesEXT",
+        reinterpret_cast<GLES2FunctionPointer>(glWindowRectanglesEXT),
     },
     {
         NULL, NULL,

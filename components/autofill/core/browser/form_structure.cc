@@ -8,13 +8,13 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "base/command_line.h"
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
@@ -29,6 +29,7 @@
 #include "components/autofill/core/browser/field_candidates.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_field.h"
+#include "components/autofill/core/browser/rationalization_util.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_util.h"
@@ -303,155 +304,13 @@ bool AllTypesCaptured(const FormStructure& form,
   return true;
 }
 
-// Helper function that rationalizes phone numbers fields in the given
-// vector of fields. The vector of fields are expected to have all fields
-// for a certain section.
-void RationalizePhoneNumberFieldPredictionsInSection(
-    std::vector<AutofillField*>* fields_in_section) {
-  AutofillField* found_number_field = nullptr;
-  AutofillField* found_number_field_second = nullptr;
-  AutofillField* found_city_code_field = nullptr;
-  AutofillField* found_country_code_field = nullptr;
-  AutofillField* found_city_and_number_field = nullptr;
-  AutofillField* found_whole_number_field = nullptr;
-  bool phone_number_found = false;
-  bool phone_number_separate_fields = false;
-  // Iterate through all given fields. Iteration stops when it first finds a
-  // valid set of fields that can compose a whole number. The |found_*| pointers
-  // will be set to that set of fields when iteration finishes.
-  for (AutofillField* field : *fields_in_section) {
-    ServerFieldType current_field_type = field->Type().GetStorableType();
-    switch (current_field_type) {
-      case PHONE_HOME_NUMBER:
-      case PHONE_BILLING_NUMBER:
-        if (!found_number_field) {
-          found_number_field = field;
-          if (field->max_length < 5) {
-            phone_number_separate_fields = true;
-          } else {
-            phone_number_found = true;
-          }
-          break;
-        }
-        // If the form has phone number separated into exchange and subscriber
-        // number we mark both of them as number fields.
-        // TODO(wuandy): A less hacky solution to have dedicated enum for
-        // exchange and subscriber number.
-        DCHECK(phone_number_separate_fields);
-        DCHECK(!found_number_field_second);
-        found_number_field_second = field;
-        phone_number_found = true;
-        break;
-      case PHONE_HOME_CITY_CODE:
-      case PHONE_BILLING_CITY_CODE:
-        if (!found_city_code_field)
-          found_city_code_field = field;
-        break;
-      case PHONE_HOME_COUNTRY_CODE:
-      case PHONE_BILLING_COUNTRY_CODE:
-        if (!found_country_code_field)
-          found_country_code_field = field;
-        break;
-      case PHONE_HOME_CITY_AND_NUMBER:
-      case PHONE_BILLING_CITY_AND_NUMBER:
-        DCHECK(!phone_number_found && !found_city_and_number_field);
-        found_city_and_number_field = field;
-        phone_number_found = true;
-        break;
-      case PHONE_HOME_WHOLE_NUMBER:
-      case PHONE_BILLING_WHOLE_NUMBER:
-        DCHECK(!phone_number_found && !found_whole_number_field);
-        found_whole_number_field = field;
-        phone_number_found = true;
-        break;
-      default:
-        break;
-    }
-    if (phone_number_found)
-      break;
-  }
-
-  // The first number of found may be the whole number field, the
-  // city and number field, or neither. But it cannot be both.
-  DCHECK(!(found_whole_number_field && found_city_and_number_field));
-
-  // Prefer to fill the first complete phone number found. The whole number
-  // and city_and_number fields are only set if they represent the first
-  // complete number found; otherwise, a complete number is present as
-  // component input fields. These scenarios are mutually exclusive, so
-  // clean up any inconsistencies.
-  if (found_whole_number_field) {
-    found_number_field = nullptr;
-    found_number_field_second = nullptr;
-    found_city_code_field = nullptr;
-    found_country_code_field = nullptr;
-  } else if (found_city_and_number_field) {
-    found_number_field = nullptr;
-    found_number_field_second = nullptr;
-    found_city_code_field = nullptr;
-  }
-
-  // A second update pass.
-  // At this point, either |phone_number_found| is false and we should do a
-  // best-effort filling for the field whose types we have seen a first time.
-  // Or |phone_number_found| is true and the pointers to the fields that
-  // compose the first valid phone number are set to not-NULL, specifically:
-  // 1. |found_whole_number_field| is not NULL, other pointers set to NULL, or
-  // 2. |found_city_and_number_field| is not NULL, |found_country_code_field| is
-  //    probably not NULL, and other pointers set to NULL, or
-  // 3. |found_city_code_field| and |found_number_field| are not NULL,
-  //    |found_country_code_field| is probably not NULL, and other pointers are
-  //    NULL.
-  // 4. |found_city_code_field|, |found_number_field| and
-  // |found_number_field_second|
-  //    are not NULL, |found_country_code_field| is probably not NULL, and other
-  //    pointers are NULL.
-
-  // For all above cases, in the update pass, if one field is phone
-  // number related but not one of the found fields from first pass, set their
-  // |only_fill_when_focused| field to true.
-  for (auto it = fields_in_section->begin(); it != fields_in_section->end();
-       ++it) {
-    AutofillField* field = *it;
-    ServerFieldType current_field_type = field->Type().GetStorableType();
-    switch (current_field_type) {
-      case PHONE_HOME_NUMBER:
-      case PHONE_BILLING_NUMBER:
-        if (field != found_number_field && field != found_number_field_second)
-          field->set_only_fill_when_focused(true);
-        break;
-      case PHONE_HOME_CITY_CODE:
-      case PHONE_BILLING_CITY_CODE:
-        if (field != found_city_code_field)
-          field->set_only_fill_when_focused(true);
-        break;
-      case PHONE_HOME_COUNTRY_CODE:
-      case PHONE_BILLING_COUNTRY_CODE:
-        if (field != found_country_code_field)
-          field->set_only_fill_when_focused(true);
-        break;
-      case PHONE_HOME_CITY_AND_NUMBER:
-      case PHONE_BILLING_CITY_AND_NUMBER:
-        if (field != found_city_and_number_field)
-          field->set_only_fill_when_focused(true);
-        break;
-      case PHONE_HOME_WHOLE_NUMBER:
-      case PHONE_BILLING_WHOLE_NUMBER:
-        if (field != found_whole_number_field)
-          field->set_only_fill_when_focused(true);
-        break;
-      default:
-        break;
-    }
-  }
-}
-
 }  // namespace
 
 FormStructure::FormStructure(const FormData& form)
     : form_name_(form.name),
       source_url_(form.origin),
       target_url_(form.action),
+      main_frame_url_(form.main_frame_origin),
       autofill_count_(0),
       active_field_count_(0),
       upload_required_(USE_UPLOAD_RATES),
@@ -481,7 +340,7 @@ FormStructure::FormStructure(const FormData& form)
     base::string16 unique_name =
         field.name + base::ASCIIToUTF16("_") +
         base::SizeTToString16(++unique_names[field.name]);
-    fields_.push_back(base::MakeUnique<AutofillField>(field, unique_name));
+    fields_.push_back(std::make_unique<AutofillField>(field, unique_name));
   }
 
   form_signature_ = autofill::CalculateFormSignature(form);
@@ -534,7 +393,7 @@ void FormStructure::DetermineHeuristicTypes(ukm::UkmRecorder* ukm_recorder) {
   }
 
   if (developer_engagement_metrics)
-    AutofillMetrics::LogDeveloperEngagementUkm(ukm_recorder, source_url(),
+    AutofillMetrics::LogDeveloperEngagementUkm(ukm_recorder, main_frame_url(),
                                                developer_engagement_metrics);
 
   if (base::FeatureList::IsEnabled(kAutofillRationalizeFieldTypePredictions))
@@ -706,6 +565,7 @@ std::vector<FormDataPredictions> FormStructure::GetFieldTypePredictions(
     form.data.name = form_structure->form_name_;
     form.data.origin = form_structure->source_url_;
     form.data.action = form_structure->target_url_;
+    form.data.main_frame_origin = form_structure->main_frame_url_;
     form.data.is_form_tag = form_structure->is_form_tag_;
     form.data.is_formless_checkout = form_structure->is_formless_checkout_;
     form.signature = form_structure->FormSignatureAsStr();
@@ -831,6 +691,8 @@ void FormStructure::UpdateFromCache(const FormStructure& cached_form,
       field->set_previously_autofilled(
           cached_field->second->previously_autofilled());
       field->set_section(cached_field->second->section());
+      field->set_only_fill_when_focused(
+          cached_field->second->only_fill_when_focused());
     }
   }
 
@@ -899,7 +761,7 @@ void FormStructure::LogQualityMetrics(
     ++num_detected_field_types;
     if (field->is_autofilled)
       did_autofill_some_possible_fields = true;
-    else
+    else if (!field->only_fill_when_focused())
       did_autofill_all_possible_fields = false;
   }
 
@@ -951,8 +813,8 @@ void FormStructure::LogQualityMetrics(
             GetFormTypes(), did_autofill_some_possible_fields, elapsed);
       }
     }
-    if (form_interactions_ukm_logger->url() != source_url())
-      form_interactions_ukm_logger->UpdateSourceURL(source_url());
+    if (form_interactions_ukm_logger->url() != main_frame_url())
+      form_interactions_ukm_logger->UpdateSourceURL(main_frame_url());
     AutofillMetrics::LogAutofillFormSubmittedState(
         state, form_parsed_timestamp_, form_interactions_ukm_logger);
   }
@@ -1081,27 +943,6 @@ void FormStructure::ParseFieldTypesFromAutocompleteAttributes() {
   was_parsed_for_autocomplete_attributes_ = true;
 }
 
-bool FormStructure::FillFields(
-    const std::vector<ServerFieldType>& types,
-    const InputFieldComparator& matches,
-    const base::Callback<base::string16(const AutofillType&)>& get_info,
-    const std::string& address_language_code,
-    const std::string& app_locale) {
-  bool filled_something = false;
-  for (size_t i = 0; i < field_count(); ++i) {
-    for (size_t j = 0; j < types.size(); ++j) {
-      if (matches.Run(types[j], *field(i))) {
-        AutofillField::FillFormField(*field(i), get_info.Run(field(i)->Type()),
-                                     address_language_code, app_locale,
-                                     field(i));
-        filled_something = true;
-        break;
-      }
-    }
-  }
-  return filled_something;
-}
-
 std::set<base::string16> FormStructure::PossibleValues(ServerFieldType type) {
   std::set<base::string16> values;
   AutofillType target_type(type);
@@ -1176,6 +1017,7 @@ FormData FormStructure::ToFormData() const {
   data.name = form_name_;
   data.origin = source_url_;
   data.action = target_url_;
+  data.main_frame_origin = main_frame_url_;
 
   for (size_t i = 0; i < fields_.size(); ++i) {
     data.fields.push_back(FormFieldData(*fields_[i]));
@@ -1343,20 +1185,21 @@ void FormStructure::RationalizeCreditCardFieldPredictions() {
   }
 }
 
-void FormStructure::RationalizePhoneNumberFieldPredictions() {
-  auto section_to_fields_map =
-      std::map<std::string, std::vector<AutofillField*>>();
-  for (const auto& field : fields_) {
-    section_to_fields_map[field->section()].push_back(field.get());
+void FormStructure::RationalizePhoneNumbersInSection(std::string section) {
+  if (phone_rationalized_[section])
+    return;
+  std::vector<AutofillField*> fields;
+  for (size_t i = 0; i < field_count(); ++i) {
+    if (field(i)->section() != section)
+      continue;
+    fields.push_back(field(i));
   }
-  for (auto& it : section_to_fields_map) {
-    RationalizePhoneNumberFieldPredictionsInSection(&it.second);
-  }
+  rationalization_util::RationalizePhoneNumberFields(fields);
+  phone_rationalized_[section] = true;
 }
 
 void FormStructure::RationalizeFieldTypePredictions() {
   RationalizeCreditCardFieldPredictions();
-  RationalizePhoneNumberFieldPredictions();
 }
 
 void FormStructure::EncodeFormForQuery(

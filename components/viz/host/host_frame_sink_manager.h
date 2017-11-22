@@ -29,6 +29,9 @@ class SingleThreadTaskRunner;
 
 namespace viz {
 
+namespace test {
+class HostFrameSinkManagerTestBase;
+}  // namespace test
 class CompositorFrameSinkSupport;
 class FrameSinkManagerImpl;
 class SurfaceInfo;
@@ -118,6 +121,9 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
                                 const FrameSinkId& owner);
   void DropTemporaryReference(const SurfaceId& surface_id);
 
+  // Asks viz to send updates regarding video activity to |observer|.
+  void AddVideoDetectorObserver(mojom::VideoDetectorObserverPtr observer);
+
   // CompositorFrameSinkSupportManager:
   std::unique_ptr<CompositorFrameSinkSupport> CreateCompositorFrameSinkSupport(
       mojom::CompositorFrameSinkClient* client,
@@ -125,8 +131,11 @@ class VIZ_HOST_EXPORT HostFrameSinkManager
       bool is_root,
       bool needs_sync_points) override;
 
+  void OnFrameTokenChanged(const FrameSinkId& frame_sink_id,
+                           uint32_t frame_token) override;
+
  private:
-  friend class HostFrameSinkManagerTestBase;
+  friend class test::HostFrameSinkManagerTestBase;
 
   struct FrameSinkData {
     FrameSinkData();

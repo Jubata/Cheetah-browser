@@ -36,7 +36,7 @@ class WorkerFetchContextImpl::URLLoaderFactoryImpl
 
   std::unique_ptr<blink::WebURLLoader> CreateURLLoader(
       const blink::WebURLRequest& request,
-      blink::SingleThreadTaskRunnerRefPtr task_runner) override {
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner) override {
     DCHECK(task_runner);
     DCHECK(resource_dispatcher_);
     if (auto loader = CreateServiceWorkerURLLoader(request, task_runner))
@@ -59,7 +59,7 @@ class WorkerFetchContextImpl::URLLoaderFactoryImpl
  private:
   std::unique_ptr<blink::WebURLLoader> CreateServiceWorkerURLLoader(
       const blink::WebURLRequest& request,
-      blink::SingleThreadTaskRunnerRefPtr task_runner) {
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
     // TODO(horo): Unify this code path with
     // ServiceWorkerNetworkProvider::CreateURLLoader that is used for document
     // cases.
@@ -171,14 +171,6 @@ bool WorkerFetchContextImpl::IsControlledByServiceWorker() const {
   return is_controlled_by_service_worker_ ||
          (controller_version_id_ !=
           blink::mojom::kInvalidServiceWorkerVersionId);
-}
-
-void WorkerFetchContextImpl::SetDataSaverEnabled(bool enabled) {
-  is_data_saver_enabled_ = enabled;
-}
-
-bool WorkerFetchContextImpl::IsDataSaverEnabled() const {
-  return is_data_saver_enabled_;
 }
 
 void WorkerFetchContextImpl::SetIsOnSubframe(bool is_on_sub_frame) {

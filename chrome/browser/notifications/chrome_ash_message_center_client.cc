@@ -15,7 +15,7 @@
 #include "content/public/common/service_manager_connection.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "services/service_manager/public/cpp/connector.h"
-#include "ui/message_center/notifier_settings.h"
+#include "ui/message_center/notifier_id.h"
 
 using ash::mojom::NotifierUiDataPtr;
 using message_center::NotifierId;
@@ -85,7 +85,6 @@ ChromeAshMessageCenterClient::~ChromeAshMessageCenterClient() {}
 // NotificationPlatformBridge interface.
 void ChromeAshMessageCenterClient::Display(
     NotificationCommon::Type /*notification_type*/,
-    const std::string& /*notification_id*/,
     const std::string& /*profile_id*/,
     bool /*is_incognito*/,
     const message_center::Notification& notification,

@@ -48,6 +48,13 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Skip('conformance/glsl/bugs/sampler-array-struct-function-arg.html',
         bug=757097)
 
+    # Failing on Windows and Linux with NVIDIA GPUs and OpenGL driver.
+    self.Fail('conformance/glsl/bugs/vector-scalar-arithmetic-inside-loop.html',
+        ['nvidia'], bug=772651)
+    self.Fail('conformance/glsl/bugs/' +
+        'vector-scalar-arithmetic-inside-loop-complex.html',
+        ['nvidia'], bug=772651)
+
     # All platforms.
     self.Flaky('conformance2/query/occlusion-query.html', bug=603168)
     self.Fail('conformance2/glsl3/tricky-loop-conditions.html', bug=483282)
@@ -141,13 +148,33 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['win', ('nvidia', 0x1cb3), 'd3d11'], bug=728670)
     self.Flaky('conformance/extensions/oes-texture-half-float-with-video.html',
         ['win', ('nvidia', 0x1cb3), 'd3d11'], bug=728670)
+    self.Flaky('conformance2/rendering/attrib-type-match.html',
+        ['win', ('nvidia', 0x1cb3), 'd3d11'], bug=782254)
 
-    # Win / NVIDIA / OpenGL
+    # WIN / OpenGL / NVIDIA failures
+    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
+        'tex-2d-rgb565-rgb-unsigned_byte.html',
+        ['win', ('nvidia', 0x1cb3), 'opengl'], bug=781668)
+    self.Fail('conformance/limits/gl-max-texture-dimensions.html',
+        ['win', ('nvidia', 0x1cb3), 'opengl'], bug=715001)
+    self.Fail('conformance/textures/misc/texture-size.html',
+        ['win', ('nvidia', 0x1cb3), 'opengl'], bug=703779)
     self.Fail('conformance2/glsl3/vector-dynamic-indexing-nv-driver-bug.html',
         ['win', 'nvidia', 'opengl'], bug=693090)
     self.Fail('conformance2/glsl3/' +
         'vector-dynamic-indexing-swizzled-lvalue.html',
         ['win', 'nvidia', 'opengl'], bug=709874)
+    self.Flaky('conformance2/rendering/attrib-type-match.html',
+        ['win', 'nvidia', 'opengl'], bug=782254)
+    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
+        'tex-2d-rg16f-rg-half_float.html',
+        ['win', 'nvidia', 'opengl'], bug=784849)
+    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
+        'tex-2d-r8-red-unsigned_byte.html',
+        ['win', 'nvidia', 'opengl'], bug=784849)
+    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
+        'tex-2d-r16f-red-float.html',
+        ['win', 'nvidia', 'opengl'], bug=786716)
 
     # Win / AMD
     self.Fail('conformance2/rendering/blitframebuffer-stencil-only.html',
@@ -348,8 +375,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['mac', ('nvidia', 0xfe9)], bug=483282)
     self.Fail('conformance/attribs/gl-disabled-vertex-attrib.html',
         ['mac', ('nvidia', 0xfe9)], bug=483282)
-    self.Fail('conformance/canvas/drawingbuffer-static-canvas-test.html',
-        ['highsierra', ('nvidia', 0xfe9)], bug=775202)
     self.Flaky(
         'conformance/extensions/webgl-compressed-texture-size-limit.html',
         ['mac', ('nvidia', 0xfe9)], bug=483282)
@@ -365,6 +390,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Flaky('conformance2/textures/image_bitmap_from_video/' +
         'tex-2d-rgba16f-rgba-half_float.html',
         ['mac', ('nvidia', 0xfe9)], bug=682834)
+    self.Fail('conformance/glsl/bugs/init-array-with-loop.html',
+        ['mac', ('nvidia', 0xfe9)], bug=784817)
 
     self.Fail('deqp/functional/gles3/draw/random.html',
         ['sierra', ('nvidia', 0xfe9)], bug=716652)
@@ -726,12 +753,77 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     # This test causes a lost device and then the next test fails.
     self.Skip('conformance2/rendering/blitframebuffer-size-overflow.html',
         ['linux', ('nvidia', 0x1cb3)], bug=709320)
-    # Observed flaky on Swarmed bots.
+    # Observed flaky on Swarmed bots. Some of these were directly
+    # observed, some not. We can't afford any flakes on the tryservers
+    # so mark them all flaky.
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'array_interleaved_lines.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'array_interleaved_points.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'array_interleaved_triangles.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'array_separate_lines.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'array_separate_points.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'array_separate_triangles.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
     self.Flaky('deqp/functional/gles3/transformfeedback/' +
         'basic_types_interleaved_lines.html',
         ['linux', ('nvidia', 0x1cb3)], bug=780706)
     self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'basic_types_interleaved_points.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'basic_types_interleaved_triangles.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
         'basic_types_separate_lines.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'basic_types_separate_points.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'basic_types_separate_triangles.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'interpolation_centroid.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'interpolation_flat.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'interpolation_smooth.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'point_size.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'position.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'random_interleaved_lines.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'random_interleaved_points.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'random_interleaved_triangles.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'random_separate_lines.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'random_separate_points.html',
+        ['linux', ('nvidia', 0x1cb3)], bug=780706)
+    self.Flaky('deqp/functional/gles3/transformfeedback/' +
+        'random_separate_triangles.html',
         ['linux', ('nvidia', 0x1cb3)], bug=780706)
 
     # Linux NVIDIA Quadro P400, OpenGL backend

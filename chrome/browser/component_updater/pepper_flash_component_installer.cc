@@ -19,6 +19,7 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
+#include "base/memory/ref_counted.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -250,6 +251,7 @@ class FlashComponentInstallerPolicy : public ComponentInstallerPolicy {
   update_client::CrxInstaller::Result OnCustomInstall(
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) override;
+  void OnCustomUninstall() override;
   bool VerifyInstallation(const base::DictionaryValue& manifest,
                           const base::FilePath& install_dir) const override;
   void ComponentReady(const base::Version& version,
@@ -300,6 +302,8 @@ FlashComponentInstallerPolicy::OnCustomInstall(
 #endif  // defined(OS_LINUX)
   return update_client::CrxInstaller::Result(update_client::InstallError::NONE);
 }
+
+void FlashComponentInstallerPolicy::OnCustomUninstall() {}
 
 void FlashComponentInstallerPolicy::ComponentReady(
     const base::Version& version,
@@ -375,11 +379,9 @@ void RegisterPepperFlashComponent(ComponentUpdateService* cus) {
     return;
 #endif  // defined(OS_CHROMEOS)
 
-  std::unique_ptr<ComponentInstallerPolicy> policy(
-      new FlashComponentInstallerPolicy);
-  // |cus| will take ownership of |installer| during installer->Register(cus).
-  ComponentInstaller* installer = new ComponentInstaller(std::move(policy));
-  installer->Register(cus, base::Closure());
+  auto installer = base::MakeRefCounted<ComponentInstaller>(
+      std::make_unique<FlashComponentInstallerPolicy>());
+  installer->Register(cus, base::OnceClosure());
 #endif  // defined(GOOGLE_CHROME_BUILD)
 }
 

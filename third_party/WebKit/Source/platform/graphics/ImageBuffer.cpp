@@ -310,18 +310,6 @@ void ImageBuffer::Draw(GraphicsContext& context,
   surface_->Draw(context, dest_rect, src_rect, op);
 }
 
-void ImageBuffer::Flush(FlushReason reason) {
-  if (surface_->Canvas()) {
-    surface_->Flush(reason);
-  }
-}
-
-void ImageBuffer::FlushGpu(FlushReason reason) {
-  if (surface_->Canvas()) {
-    surface_->FlushGpu(reason);
-  }
-}
-
 bool ImageBuffer::GetImageData(const IntRect& rect,
                                WTF::ArrayBufferContents& contents) const {
   uint8_t bytes_per_pixel = surface_->ColorParams().BytesPerPixel();
@@ -373,8 +361,12 @@ bool ImageBuffer::GetImageData(const IntRect& rect,
           : kRGBA_8888_SkColorType;
   SkImageInfo info = SkImageInfo::Make(rect.Width(), rect.Height(), color_type,
                                        kUnpremul_SkAlphaType);
-  snapshot->PaintImageForCurrentFrame().GetSkImage()->readPixels(
+  sk_sp<SkImage> sk_image = snapshot->PaintImageForCurrentFrame().GetSkImage();
+  bool read_pixels_successful = sk_image->readPixels(
       info, result.Data(), bytes_per_pixel * rect.Width(), rect.X(), rect.Y());
+  DCHECK(read_pixels_successful ||
+         !sk_image->bounds().intersect(SkIRect::MakeXYWH(
+             rect.X(), rect.Y(), info.width(), info.height())));
   gpu_readback_invoked_in_current_frame_ = true;
   result.Transfer(contents);
   return true;

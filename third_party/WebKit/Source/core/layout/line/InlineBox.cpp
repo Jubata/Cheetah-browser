@@ -78,8 +78,8 @@ void InlineBox::Remove(MarkLineBoxes mark_line_boxes) {
 }
 
 void* InlineBox::operator new(size_t sz) {
-  return WTF::PartitionAlloc(WTF::Partitions::LayoutPartition(), sz,
-                             WTF_HEAP_PROFILER_TYPE_NAME(InlineBox));
+  return WTF::Partitions::LayoutPartition()->Alloc(
+      sz, WTF_HEAP_PROFILER_TYPE_NAME(InlineBox));
 }
 
 void InlineBox::operator delete(void* ptr) {
@@ -370,6 +370,13 @@ void InlineBox::SetLineLayoutItemShouldDoFullPaintInvalidationIfNeeded() {
   // style. Otherwise it paints nothing so we don't need to invalidate it.
   if (!IsRootInlineBox() || IsFirstLineStyle())
     line_layout_item_.SetShouldDoFullPaintInvalidation();
+}
+
+bool CanUseInlineBox(const LayoutObject& node) {
+  DCHECK(node.IsText() || node.IsInline() || node.IsLayoutBlockFlow());
+  return !RuntimeEnabledFeatures::LayoutNGEnabled() ||
+         !RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled() ||
+         !node.EnclosingNGBlockFlow();
 }
 
 }  // namespace blink

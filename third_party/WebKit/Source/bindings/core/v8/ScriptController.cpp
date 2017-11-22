@@ -59,9 +59,9 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/StringExtras.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/CString.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "public/web/WebSettings.h"
@@ -246,10 +246,14 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(const KURL& url,
       GetFrame()->GetNavigationScheduler().LocationChangePending();
 
   v8::HandleScope handle_scope(GetIsolate());
-  ScriptFetchOptions fetch_options;
-  // TODO(kouhei): set up |fetch_options| properly.
+
+  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+  // Step 12.9 "Let script be result of creating a classic script given script
+  // source, settings, base URL, and the default classic script fetch options."
+  // [spec text]
   v8::Local<v8::Value> result = EvaluateScriptInMainWorld(
-      ScriptSourceCode(script_source), fetch_options, kNotSharableCrossOrigin,
+      ScriptSourceCode(script_source, ScriptSourceLocationType::kJavascriptUrl),
+      ScriptFetchOptions(), kNotSharableCrossOrigin,
       kDoNotExecuteScriptWhenScriptsDisabled);
 
   // If executing script caused this frame to be removed from the page, we
@@ -275,11 +279,14 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(const KURL& url,
   return true;
 }
 
-void ScriptController::ExecuteScriptInMainWorld(const String& script,
-                                                ExecuteScriptPolicy policy) {
+void ScriptController::ExecuteScriptInMainWorld(
+    const String& script,
+    ScriptSourceLocationType source_location_type,
+    ExecuteScriptPolicy policy) {
   v8::HandleScope handle_scope(GetIsolate());
-  EvaluateScriptInMainWorld(ScriptSourceCode(script), ScriptFetchOptions(),
-                            kNotSharableCrossOrigin, policy);
+  EvaluateScriptInMainWorld(ScriptSourceCode(script, source_location_type),
+                            ScriptFetchOptions(), kNotSharableCrossOrigin,
+                            policy);
 }
 
 void ScriptController::ExecuteScriptInMainWorld(

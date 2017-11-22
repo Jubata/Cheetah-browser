@@ -27,7 +27,7 @@ import zipfile
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://chromium.googlesource.com/chromium/src/+/master/docs/updating_clang.md
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION = '315613'
+CLANG_REVISION = '318667'
 
 use_head_revision = bool(os.environ.get('LLVM_FORCE_HEAD_REVISION', '0')
                          in ('1', 'YES'))
@@ -35,7 +35,7 @@ if use_head_revision:
   CLANG_REVISION = 'HEAD'
 
 # This is incremented when pushing a new build of Clang at the same revision.
-CLANG_SUB_REVISION=2
+CLANG_SUB_REVISION=1
 
 PACKAGE_VERSION = "%s-%s" % (CLANG_REVISION, CLANG_SUB_REVISION)
 
@@ -48,10 +48,10 @@ LLVM_DIR = os.path.join(THIRD_PARTY_DIR, 'llvm')
 LLVM_BOOTSTRAP_DIR = os.path.join(THIRD_PARTY_DIR, 'llvm-bootstrap')
 LLVM_BOOTSTRAP_INSTALL_DIR = os.path.join(THIRD_PARTY_DIR,
                                           'llvm-bootstrap-install')
-LLVM_LTO_LLD_DIR = os.path.join(THIRD_PARTY_DIR, 'llvm-lto-lld')
 CHROME_TOOLS_SHIM_DIR = os.path.join(LLVM_DIR, 'tools', 'chrometools')
 LLVM_BUILD_DIR = os.path.join(CHROMIUM_DIR, 'third_party', 'llvm-build',
                               'Release+Asserts')
+LLD_BUILD_DIR = os.path.join(LLVM_BUILD_DIR, 'lld')
 COMPILER_RT_BUILD_DIR = os.path.join(LLVM_BUILD_DIR, 'compiler-rt')
 CLANG_DIR = os.path.join(LLVM_DIR, 'tools', 'clang')
 LLD_DIR = os.path.join(LLVM_DIR, 'tools', 'lld')
@@ -399,16 +399,18 @@ def VeryifyVersionOfBuiltClangMatchesVERSION():
     sys.exit(1)
 
 
+def GetPlatformUrlPrefix(platform):
+  if platform == 'win32' or platform == 'cygwin':
+    return CDS_URL + '/Win/'
+  if platform == 'darwin':
+    return CDS_URL + '/Mac/'
+  assert platform.startswith('linux')
+  return CDS_URL + '/Linux_x64/'
+
+
 def DownloadAndUnpackClangPackage(platform, runtimes_only=False):
   cds_file = "clang-%s.tgz" %  PACKAGE_VERSION
-  if platform == 'win32' or platform == 'cygwin':
-    cds_full_url = CDS_URL + '/Win/' + cds_file
-  elif platform == 'darwin':
-    cds_full_url = CDS_URL + '/Mac/' + cds_file
-  else:
-    assert platform.startswith('linux')
-    cds_full_url = CDS_URL + '/Linux_x64/' + cds_file
-
+  cds_full_url = GetPlatformUrlPrefix(platform) + cds_file
   try:
     path_prefix = None
     if runtimes_only:
@@ -530,6 +532,10 @@ def UpdateClang(args):
                      '-DLLVM_USE_CRT_RELEASE=MT',
                      ]
 
+  if sys.platform != 'win32':
+    # libxml2 is required by the Win manifest merging tool used in cross-builds.
+    base_cmake_args.append('-DLLVM_ENABLE_LIBXML2=FORCE_ON')
+
   if args.bootstrap:
     print 'Building bootstrap compiler'
     EnsureDirExists(LLVM_BOOTSTRAP_DIR)
@@ -569,37 +575,6 @@ def UpdateClang(args):
       cxxflags = ['--gcc-toolchain=' + args.gcc_toolchain]
     print 'Building final compiler'
 
-  # Build lld with LTO. That speeds up the linker by ~10%.
-  # We only use LTO for Linux now.
-  if args.bootstrap and args.lto_lld:
-    print 'Building LTO lld'
-    if os.path.exists(LLVM_LTO_LLD_DIR):
-      RmTree(LLVM_LTO_LLD_DIR)
-    EnsureDirExists(LLVM_LTO_LLD_DIR)
-    os.chdir(LLVM_LTO_LLD_DIR)
-
-    # The linker expects all archive members to have symbol tables, so the
-    # archiver needs to be able to create symbol tables for bitcode files.
-    # GNU ar and ranlib don't understand bitcode files, but llvm-ar and
-    # llvm-ranlib do, so use them.
-    ar = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'llvm-ar')
-    ranlib = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'llvm-ranlib')
-
-    lto_cmake_args = base_cmake_args + [
-        '-DCMAKE_C_COMPILER=' + cc,
-        '-DCMAKE_CXX_COMPILER=' + cxx,
-        '-DCMAKE_AR=' + ar,
-        '-DCMAKE_RANLIB=' + ranlib,
-        '-DLLVM_ENABLE_LTO=thin',
-        '-DLLVM_USE_LINKER=lld',
-        '-DCMAKE_C_FLAGS=' + ' '.join(cflags),
-        '-DCMAKE_CXX_FLAGS=' + ' '.join(cxxflags)]
-
-    RmCmakeCache('.')
-    RunCommand(['cmake'] + lto_cmake_args + [LLVM_DIR])
-    RunCommand(['ninja', 'lld'])
-
-
   # LLVM uses C++11 starting in llvm 3.5. On Linux, this means libstdc++4.7+ is
   # needed, on OS X it requires libc++. clang only automatically links to libc++
   # when targeting OS X 10.9+, so add stdlib=libc++ explicitly so clang can run
@@ -619,7 +594,6 @@ def UpdateClang(args):
     # This makes running package.py over 10% faster (30 min instead of 34 min)
     RmTree(LIBCXX_DIR)
 
-  # Build clang.
 
   # If building at head, define a macro that plugins can use for #ifdefing
   # out code that builds at head, but not at CLANG_REVISION or vice versa.
@@ -635,12 +609,51 @@ def UpdateClang(args):
     cxxflags += ['/Zi', '/GS-']
     ldflags += ['/DEBUG', '/OPT:REF', '/OPT:ICF']
 
-  CreateChromeToolsShim()
-
   deployment_env = None
   if deployment_target:
     deployment_env = os.environ.copy()
     deployment_env['MACOSX_DEPLOYMENT_TARGET'] = deployment_target
+
+  # Build lld. This is done separately from the rest of the build because lld
+  # requires threading support.
+  print 'Building lld'
+  if os.path.exists(LLD_BUILD_DIR):
+    RmTree(LLD_BUILD_DIR)
+  EnsureDirExists(LLD_BUILD_DIR)
+  os.chdir(LLD_BUILD_DIR)
+
+  lld_cmake_args = base_cmake_args + [
+      '-DCMAKE_C_FLAGS=' + ' '.join(cflags),
+      '-DCMAKE_CXX_FLAGS=' + ' '.join(cxxflags),
+      '-DCMAKE_EXE_LINKER_FLAGS=' + ' '.join(ldflags),
+      '-DCMAKE_SHARED_LINKER_FLAGS=' + ' '.join(ldflags),
+      '-DCMAKE_MODULE_LINKER_FLAGS=' + ' '.join(ldflags)]
+  if cc is not None:  lld_cmake_args.append('-DCMAKE_C_COMPILER=' + cc)
+  if cxx is not None: lld_cmake_args.append('-DCMAKE_CXX_COMPILER=' + cxx)
+
+  if args.lto_lld:
+    # Build lld with LTO. That speeds up the linker by ~10%.
+    # We only use LTO for Linux now.
+    #
+    # The linker expects all archive members to have symbol tables, so the
+    # archiver needs to be able to create symbol tables for bitcode files.
+    # GNU ar and ranlib don't understand bitcode files, but llvm-ar and
+    # llvm-ranlib do, so use them.
+    ar = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'llvm-ar')
+    ranlib = os.path.join(LLVM_BOOTSTRAP_INSTALL_DIR, 'bin', 'llvm-ranlib')
+    lld_cmake_args += [
+        '-DCMAKE_AR=' + ar,
+        '-DCMAKE_RANLIB=' + ranlib,
+        '-DLLVM_ENABLE_LTO=thin',
+        '-DLLVM_USE_LINKER=lld']
+
+  RmCmakeCache('.')
+  RunCommand(['cmake'] + lld_cmake_args + [LLVM_DIR], msvc_arch='x64',
+             env=deployment_env)
+  RunCommand(['ninja', 'lld'], msvc_arch='x64')
+
+  # Build clang and other tools.
+  CreateChromeToolsShim()
 
   cmake_args = []
   # TODO(thakis): Unconditionally append this to base_cmake_args instead once
@@ -668,9 +681,14 @@ def UpdateClang(args):
              msvc_arch='x64', env=deployment_env)
   RunCommand(['ninja'], msvc_arch='x64')
 
-  # Copy LTO-optimized lld, if any.
-  if args.bootstrap and args.lto_lld:
-    CopyFile(os.path.join(LLVM_LTO_LLD_DIR, 'bin', 'lld'),
+  # Copy in the threaded version of lld.
+  if sys.platform == 'win32':
+    CopyFile(os.path.join(LLD_BUILD_DIR, 'bin', 'lld-link.exe'),
+             os.path.join(LLVM_BUILD_DIR, 'bin'))
+    CopyFile(os.path.join(LLD_BUILD_DIR, 'bin', 'lld.pdb'),
+             os.path.join(LLVM_BUILD_DIR, 'bin'))
+  else:
+    CopyFile(os.path.join(LLD_BUILD_DIR, 'bin', 'lld'),
              os.path.join(LLVM_BUILD_DIR, 'bin'))
 
   if chrome_tools:
@@ -776,23 +794,25 @@ def UpdateClang(args):
           '--api=' + ('21' if target_arch == 'aarch64' else '19'),
           '--force',
           '--install-dir=%s' % toolchain_dir,
-          '--stl=stlport',
+          '--stl=libc++',
           '--arch=' + {
               'aarch64': 'arm64',
               'arm': 'arm',
               'i686': 'x86',
           }[target_arch]])
-      # Android NDK r9d copies a broken unwind.h into the toolchain, see
-      # http://crbug.com/357890
-      for f in glob.glob(os.path.join(toolchain_dir, 'include/c++/*/unwind.h')):
-        os.remove(f)
 
-      # Build ASan runtime for Android in a separate build tree.
+      # Build sanitizer runtimes for Android in a separate build tree.
       build_dir = os.path.join(LLVM_BUILD_DIR, 'android-' + target_arch)
       if not os.path.exists(build_dir):
         os.mkdir(os.path.join(build_dir))
       os.chdir(build_dir)
-      cflags = ['--target=%s-linux-androideabi' % target_arch,
+      target_triple = target_arch
+      abi_libs = 'c++abi'
+      if target_arch == 'arm':
+        target_triple = 'armv7'
+        abi_libs += ';unwind'
+      target_triple += '-linux-androideabi'
+      cflags = ['--target=%s' % target_triple,
                 '--sysroot=%s/sysroot' % toolchain_dir,
                 '-B%s' % toolchain_dir]
       android_args = base_cmake_args + [
@@ -802,16 +822,17 @@ def UpdateClang(args):
         '-DLLVM_CONFIG_PATH=' + os.path.join(LLVM_BUILD_DIR, 'bin/llvm-config'),
         '-DCMAKE_C_FLAGS=' + ' '.join(cflags),
         '-DCMAKE_CXX_FLAGS=' + ' '.join(cflags),
+        '-DSANITIZER_CXX_ABI=none',
+        '-DSANITIZER_CXX_ABI_LIBRARY=' + abi_libs,
+        '-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-u__cxa_demangle',
         '-DANDROID=1']
       RmCmakeCache('.')
       RunCommand(['cmake'] + android_args + [COMPILER_RT_DIR])
-      RunCommand(['ninja', 'libclang_rt.asan-%s-android.so' % target_arch])
+      RunCommand(['ninja', 'asan', 'ubsan'])
 
-      # And copy it into the main build tree.
-      runtime = 'libclang_rt.asan-%s-android.so' % target_arch
-      for root, _, files in os.walk(build_dir):
-        if runtime in files:
-          shutil.copy(os.path.join(root, runtime), asan_rt_lib_dst_dir)
+      # And copy them into the main build tree.
+      for f in glob.glob(os.path.join(build_dir, 'lib/linux/*.so')):
+        shutil.copy(f, asan_rt_lib_dst_dir)
 
   # Run tests.
   if args.run_tests or use_head_revision:

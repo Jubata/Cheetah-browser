@@ -117,7 +117,8 @@ class CONTENT_EXPORT StoragePartitionImpl
       const base::Closure& callback) override;
   void Flush() override;
   void ClearBluetoothAllowedDevicesMapForTesting() override;
-
+  void SetNetworkFactoryForTesting(
+      mojom::URLLoaderFactoryPtr test_factory) override;
   BackgroundFetchContext* GetBackgroundFetchContext();
   BackgroundSyncContext* GetBackgroundSyncContext();
   PaymentAppContextImpl* GetPaymentAppContext();
@@ -128,6 +129,10 @@ class CONTENT_EXPORT StoragePartitionImpl
 
   // mojom::StoragePartitionService interface.
   void OpenLocalStorage(
+      const url::Origin& origin,
+      mojo::InterfaceRequest<mojom::LevelDBWrapper> request) override;
+  void OpenSessionStorage(
+      int64_t namespace_id,
       const url::Origin& origin,
       mojo::InterfaceRequest<mojom::LevelDBWrapper> request) override;
 

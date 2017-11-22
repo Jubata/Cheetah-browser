@@ -46,6 +46,7 @@
 #include "content/renderer/layout_test_dependencies.h"
 #include "content/renderer/media/audio_ipc_factory.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
+#include "ipc/ipc_sync_channel.h"
 #include "media/media_features.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/binding.h"
@@ -134,7 +135,6 @@ class CacheStorageDispatcher;
 class CategorizedWorkerPool;
 class ChildResourceMessageFilter;
 class CompositorForwardingMessageFilter;
-class DevToolsAgentFilter;
 class DomStorageDispatcher;
 class FileSystemDispatcher;
 class FrameSwapMessageQueue;
@@ -523,9 +523,6 @@ class CONTENT_EXPORT RenderThreadImpl
   void WidgetHidden();
   void WidgetRestored();
 
-  void AddEmbeddedWorkerRoute(int32_t routing_id, IPC::Listener* listener);
-  void RemoveEmbeddedWorkerRoute(int32_t routing_id);
-
   void RegisterPendingFrameCreate(
       const service_manager::BindSourceInfo& source_info,
       int routing_id,
@@ -561,6 +558,7 @@ class CONTENT_EXPORT RenderThreadImpl
       std::unique_ptr<blink::scheduler::RendererScheduler> scheduler);
 
  private:
+  void OnProcessFinalRelease() override;
   // IPC::Listener
   void OnChannelError() override;
 
@@ -664,7 +662,6 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_refptr<BlobMessageFilter> blob_message_filter_;
   scoped_refptr<AudioInputMessageFilter> audio_input_message_filter_;
   scoped_refptr<MidiMessageFilter> midi_message_filter_;
-  scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
   scoped_refptr<ServiceWorkerMessageFilter> service_worker_message_filter_;
   scoped_refptr<ChildResourceMessageFilter> resource_message_filter_;
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
@@ -727,9 +724,6 @@ class CONTENT_EXPORT RenderThreadImpl
   // resources given to the compositor or to the viz service should be
   // software-based.
   bool is_gpu_compositing_disabled_ = false;
-
-  // The channel from the renderer process to the GPU process.
-  scoped_refptr<gpu::GpuChannelHost> gpu_channel_;
 
   // The message loop of the renderer main thread.
   // This message loop should be destructed before the RenderThreadImpl
@@ -828,7 +822,7 @@ class CONTENT_EXPORT RenderThreadImpl
   PendingFrameCreateMap pending_frame_creates_;
 
   mojom::StoragePartitionServicePtr storage_partition_service_;
-  mojom::RendererHostPtr renderer_host_;
+  mojom::RendererHostAssociatedPtr renderer_host_;
 
   AssociatedInterfaceRegistryImpl associated_interfaces_;
 

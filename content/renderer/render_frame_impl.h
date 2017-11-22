@@ -66,12 +66,12 @@
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/public/interfaces/connector.mojom.h"
 #include "services/service_manager/public/interfaces/interface_provider.mojom.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/WebEffectiveConnectionType.h"
-#include "third_party/WebKit/public/platform/WebFeaturePolicy.h"
 #include "third_party/WebKit/public/platform/WebFocusType.h"
 #include "third_party/WebKit/public/platform/WebLoadingBehaviorFlag.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayer.h"
-#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/media_engagement.mojom.h"
 #include "third_party/WebKit/public/platform/site_engagement.mojom.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
@@ -110,6 +110,7 @@ struct WebCursorInfo;
 struct WebFindOptions;
 class WebLayerTreeView;
 class WebRelatedAppsFetcher;
+struct FramePolicy;
 struct WebRemoteScrollProperties;
 }  // namespace blink
 
@@ -163,7 +164,6 @@ struct CustomContextMenuContext;
 struct FileChooserFileInfo;
 struct FileChooserParams;
 struct FrameOwnerProperties;
-struct FramePolicy;
 struct FrameReplicationState;
 struct NavigationParams;
 struct RequestNavigationParams;
@@ -171,10 +171,6 @@ struct ResourceResponseHead;
 struct ScreenInfo;
 struct StartNavigationParams;
 struct StreamOverrideParameters;
-
-namespace {
-class CreateFrameWidgetParams;
-}
 
 class CONTENT_EXPORT RenderFrameImpl
     : public RenderFrame,
@@ -494,7 +490,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void SetPreviewsState(PreviewsState previews_state) override;
   PreviewsState GetPreviewsState() const override;
   bool IsPasting() const override;
-  blink::WebPageVisibilityState GetVisibilityState() const override;
+  blink::mojom::PageVisibilityState GetVisibilityState() const override;
   bool IsBrowserSideNavigationPending() override;
   scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
       blink::TaskType task_type) override;
@@ -514,6 +510,8 @@ class CONTENT_EXPORT RenderFrameImpl
   // mojom::Frame implementation:
   void GetInterfaceProvider(
       service_manager::mojom::InterfaceProviderRequest request) override;
+  void GetCanonicalUrlForSharing(
+      GetCanonicalUrlForSharingCallback callback) override;
 
   // mojom::FrameBindingsControl implementation:
   void AllowBindings(int32_t enabled_bindings_flags) override;
@@ -525,7 +523,8 @@ class CONTENT_EXPORT RenderFrameImpl
       const CommonNavigationParams& common_params,
       const RequestNavigationParams& request_params,
       mojo::ScopedDataPipeConsumerHandle body_data,
-      base::Optional<URLLoaderFactoryBundle> subresource_loaders) override;
+      base::Optional<URLLoaderFactoryBundle> subresource_loaders,
+      const base::UnguessableToken& devtools_navigation_token) override;
 
   // mojom::HostZoom implementation:
   void SetHostZoomLevel(const GURL& url, double zoom_level) override;
@@ -560,7 +559,7 @@ class CONTENT_EXPORT RenderFrameImpl
       const blink::WebString& name,
       const blink::WebString& fallback_name,
       blink::WebSandboxFlags sandbox_flags,
-      const blink::WebParsedFeaturePolicy& container_policy,
+      const blink::ParsedFeaturePolicy& container_policy,
       const blink::WebFrameOwnerProperties& frame_owner_properties) override;
   void DidChangeOpener(blink::WebFrame* frame) override;
   void FrameDetached(DetachType type) override;
@@ -574,9 +573,9 @@ class CONTENT_EXPORT RenderFrameImpl
   void DidChangeFramePolicy(
       blink::WebFrame* child_frame,
       blink::WebSandboxFlags flags,
-      const blink::WebParsedFeaturePolicy& container_policy) override;
+      const blink::ParsedFeaturePolicy& container_policy) override;
   void DidSetFeaturePolicyHeader(
-      const blink::WebParsedFeaturePolicy& parsed_header) override;
+      const blink::ParsedFeaturePolicy& parsed_header) override;
   void DidAddContentSecurityPolicies(
       const blink::WebVector<blink::WebContentSecurityPolicy>&) override;
   void DidChangeFrameOwnerProperties(
@@ -675,6 +674,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void DidObserveLoadingBehavior(
       blink::WebLoadingBehaviorFlag behavior) override;
   void DidObserveNewFeatureUsage(blink::mojom::WebFeature feature) override;
+  bool ShouldTrackUseCounter(const blink::WebURL& url) override;
   void DidCreateScriptContext(v8::Local<v8::Context> context,
                               int world_id) override;
   void WillReleaseScriptContext(v8::Local<v8::Context> context,
@@ -726,7 +726,7 @@ class CONTENT_EXPORT RenderFrameImpl
       const blink::WebString& sink_id,
       const blink::WebSecurityOrigin& security_origin,
       blink::WebSetSinkIdCallbacks* web_callbacks) override;
-  blink::WebPageVisibilityState VisibilityState() const override;
+  blink::mojom::PageVisibilityState VisibilityState() const override;
   std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
   void DraggableRegionsChanged() override;
   // |rect_to_scroll| is with respect to this frame's origin. |rect_to_scroll|
@@ -1017,7 +1017,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnSnapshotAccessibilityTree(int callback_id);
   void OnExtractSmartClipData(uint32_t callback_id, const gfx::Rect& rect);
   void OnUpdateOpener(int opener_routing_id);
-  void OnDidUpdateFramePolicy(const FramePolicy& frame_policy);
+  void OnDidUpdateFramePolicy(const blink::FramePolicy& frame_policy);
   void OnSetFrameOwnerProperties(
       const FrameOwnerProperties& frame_owner_properties);
   void OnAdvanceFocus(blink::WebFocusType type, int32_t source_routing_id);
@@ -1096,7 +1096,8 @@ class CONTENT_EXPORT RenderFrameImpl
       const StartNavigationParams& start_params,
       const RequestNavigationParams& request_params,
       std::unique_ptr<StreamOverrideParameters> stream_params,
-      base::Optional<URLLoaderFactoryBundle> subresource_loader_factories);
+      base::Optional<URLLoaderFactoryBundle> subresource_loader_factories,
+      const base::UnguessableToken& devtools_navigation_token);
 
   // Returns a URLLoaderFactoryBundle which can be used to request subresources
   // for this frame. Only valid to call when the Network Service is enabled.
@@ -1234,6 +1235,11 @@ class CONTENT_EXPORT RenderFrameImpl
   void GetInterface(const std::string& interface_name,
                     mojo::ScopedMessagePipeHandle interface_pipe) override;
 
+  // Whether to allow the use of Encrypted Media Extensions (EME), except for
+  // the use of Clear Key key systems, which is always allowed as required by
+  // the spec.
+  bool IsEncryptedMediaEnabled() const;
+
   // Send |callback| our AndroidOverlay routing token when it arrives.  We may
   // call |callback| before returning.
   void RequestOverlayRoutingToken(media::RoutingTokenCallback callback);
@@ -1248,6 +1254,12 @@ class CONTENT_EXPORT RenderFrameImpl
   void BindWidget(mojom::WidgetRequest request);
 
   void ShowDeferredContextMenu(const ContextMenuParams& params);
+
+  // Whether or not a navigation in this frame consumes user gestures.
+  bool ConsumeGestureOnNavigation() const;
+
+  // Whether or not the frame is controlled by a service worker.
+  bool IsControlledByServiceWorker();
 
   mojom::URLLoaderFactory* custom_url_loader_factory() {
     return custom_url_loader_factory_.get();

@@ -16,21 +16,20 @@
 #include "core/testing/DummyPageHolder.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/runtime_enabled_features.h"
+#include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/wtf/Compiler.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Vector.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
+// To avoid symbol collisions in jumbo builds.
+namespace flat_tree_traversal_ng_test {
 
-class FlatTreeTraversalNgTest : public ::testing::Test {
+class FlatTreeTraversalNgTest : public ::testing::Test,
+                                private ScopedIncrementalShadowDOMForTest {
  public:
-  FlatTreeTraversalNgTest() {
-    RuntimeEnabledFeatures::SetIncrementalShadowDOMEnabled(true);
-  }
-  ~FlatTreeTraversalNgTest() {
-    RuntimeEnabledFeatures::SetIncrementalShadowDOMEnabled(false);
-  }
+  FlatTreeTraversalNgTest() : ScopedIncrementalShadowDOMForTest(true) {}
 
  protected:
   Document& GetDocument() const;
@@ -784,4 +783,5 @@ TEST_F(FlatTreeTraversalNgTest, v1AllFallbackContent) {
   EXPECT_EQ(nullptr, FlatTreeTraversalNg::PreviousSibling(*fallback_x));
 }
 
+}  // namespace flat_tree_traversal_ng_test
 }  // namespace blink

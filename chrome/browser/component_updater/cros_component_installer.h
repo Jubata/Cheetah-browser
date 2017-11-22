@@ -28,7 +28,7 @@
 //  ...
 //  component_updater::CrOSComponent::LoadComponent(
 //            name,
-//            base::Bind(&LoadCallback));
+//            base::BindOnce(&LoadCallback));
 //
 namespace component_updater {
 
@@ -59,6 +59,7 @@ class CrOSComponentInstallerPolicy : public ComponentInstallerPolicy {
   update_client::CrxInstaller::Result OnCustomInstall(
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) override;
+  void OnCustomUninstall() override;
   bool VerifyInstallation(const base::DictionaryValue& manifest,
                           const base::FilePath& install_dir) const override;
   void ComponentReady(const base::Version& version,

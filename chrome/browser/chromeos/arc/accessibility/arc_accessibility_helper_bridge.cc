@@ -17,6 +17,7 @@
 #include "components/arc/arc_service_manager.h"
 #include "components/exo/shell_surface.h"
 #include "components/exo/surface.h"
+#include "components/exo/wm_helper.h"
 #include "ui/arc/notification/arc_notification_surface.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
@@ -199,7 +200,7 @@ void ArcAccessibilityHelperBridge::Shutdown() {
     surface_manager->RemoveObserver(this);
 }
 
-void ArcAccessibilityHelperBridge::OnInstanceReady() {
+void ArcAccessibilityHelperBridge::OnConnectionReady() {
   auto* instance = ARC_GET_INSTANCE_FOR_METHOD(
       arc_bridge_service_->accessibility_helper(), Init);
   DCHECK(instance);
@@ -441,6 +442,7 @@ aura::Window* ArcAccessibilityHelperBridge::GetActiveWindow() {
 }
 
 void ArcAccessibilityHelperBridge::OnWindowActivated(
+    ActivationReason reason,
     aura::Window* gained_active,
     aura::Window* lost_active) {
   if (gained_active == lost_active)

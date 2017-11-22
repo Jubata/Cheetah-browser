@@ -112,6 +112,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--os-type",
           "android",
           "--build-revision",
@@ -143,6 +144,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--refimg-cloud-storage-bucket",
           "chromium-gpu-archive/reference-images",
           "--os-type",
@@ -181,7 +183,8 @@
           "--browser=android-chromium",
           "--passthrough",
           "-v",
-          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc"
+          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test"
         ],
         "isolate_name": "telemetry_gpu_integration_test",
         "name": "screenshot_sync_tests",
@@ -274,7 +277,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -299,7 +302,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -324,7 +327,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -349,7 +352,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -364,6 +367,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--os-type",
           "linux",
           "--build-revision",
@@ -380,7 +384,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -395,6 +399,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--refimg-cloud-storage-bucket",
           "chromium-gpu-archive/reference-images",
           "--os-type",
@@ -419,7 +424,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -433,7 +438,8 @@
           "--browser=release",
           "--passthrough",
           "-v",
-          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc"
+          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test"
         ],
         "isolate_name": "telemetry_gpu_integration_test",
         "name": "screenshot_sync_tests",
@@ -444,7 +450,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -469,7 +475,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -496,7 +502,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -522,7 +528,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -553,7 +559,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -578,7 +584,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -603,7 +609,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -628,7 +634,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -643,6 +649,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--os-type",
           "linux",
           "--build-revision",
@@ -659,7 +666,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -674,6 +681,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--refimg-cloud-storage-bucket",
           "chromium-gpu-archive/reference-images",
           "--os-type",
@@ -698,7 +706,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -712,7 +720,8 @@
           "--browser=release",
           "--passthrough",
           "-v",
-          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc"
+          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test"
         ],
         "isolate_name": "telemetry_gpu_integration_test",
         "name": "screenshot_sync_tests",
@@ -723,7 +732,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -748,7 +757,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -775,7 +784,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -801,7 +810,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a",
+              "gpu": "10de:1cb3-384.90",
               "os": "Ubuntu",
               "pool": "Chrome-GPU"
             }
@@ -918,6 +927,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--os-type",
           "mac",
           "--build-revision",
@@ -948,6 +958,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--refimg-cloud-storage-bucket",
           "chromium-gpu-archive/reference-images",
           "--os-type",
@@ -985,7 +996,8 @@
           "--browser=release",
           "--passthrough",
           "-v",
-          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc"
+          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test"
         ],
         "isolate_name": "telemetry_gpu_integration_test",
         "name": "screenshot_sync_tests",
@@ -1162,7 +1174,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1187,7 +1199,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1212,7 +1224,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1237,7 +1249,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1252,6 +1264,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--os-type",
           "win",
           "--build-revision",
@@ -1268,7 +1281,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1283,6 +1296,7 @@
           "--passthrough",
           "-v",
           "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test",
           "--refimg-cloud-storage-bucket",
           "chromium-gpu-archive/reference-images",
           "--os-type",
@@ -1307,7 +1321,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1321,7 +1335,8 @@
           "--browser=release",
           "--passthrough",
           "-v",
-          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc"
+          "--extra-browser-args=--enable-logging=stderr --js-flags=--expose-gc",
+          "--dont-restore-color-profile-after-test"
         ],
         "isolate_name": "telemetry_gpu_integration_test",
         "name": "screenshot_sync_tests",
@@ -1332,7 +1347,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1357,7 +1372,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1384,7 +1399,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
@@ -1410,7 +1425,7 @@
           "can_use_on_swarming_builders": true,
           "dimension_sets": [
             {
-              "gpu": "10de:104a-23.21.13.8792",
+              "gpu": "10de:1cb3-23.21.13.8792",
               "os": "Windows-2008ServerR2-SP1",
               "pool": "Chrome-GPU"
             }
