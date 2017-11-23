@@ -5,21 +5,19 @@
 package org.chromium.chrome.browser.cheetah;
 
 import android.content.Context;
-import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.omnibox.UrlBar;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.widget.TintedImageButton;
 import org.chromium.ui.UiUtils;
 import org.chromium.ui.widget.ButtonCompat;
 
-import java.util.List;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 /**
  * Container view for personalized signin promos.
@@ -29,9 +27,7 @@ public class EditCommentView extends LinearLayout implements View.OnClickListene
     protected TintedImageButton mPostButton;
     protected EditText mEditText;
     private View mEditContainer;
-    private float mUrlFocusChangePercent;
     protected ButtonCompat mAddCommentButton;
-    protected PostCallback postCallback = new PostCallback();
     private Tab tab;
 
     public EditCommentView(Context context, AttributeSet attrs) {
@@ -52,61 +48,105 @@ public class EditCommentView extends LinearLayout implements View.OnClickListene
         mAddCommentButton.setOnClickListener(this);
         mDeleteButton.setOnClickListener(this);
         mPostButton.setOnClickListener(this);
+
+        updateEditField();
     }
 
-    /**
-     * Updates percentage of current the URL focus change animation.
-     * @param percent 1.0 is 100% focused, 0 is completely unfocused.
-     */
-    public void setUrlFocusChangePercent(float percent) {
-        mUrlFocusChangePercent = percent;
-
-        if (percent > 0f) {
-            mEditContainer.setVisibility(VISIBLE);
-        } else if (percent == 0f) {
-            // If a URL focus change is in progress, then it will handle setting the visibility
-            // correctly after it completes.  If done here, it would cause the URL to jump due
-            // to a badly timed layout call.
-            mEditContainer.setVisibility(GONE);
+    private void updateEditField() {
+        //switchToEdit(false);
+        Comment comment = null;
+        if(tab != null) {
+            try {
+                LocalCommentsStorage.get().getDraftAsync(new URI(tab.getUrl()),
+                        new LocalCommentsStorage.CommentCallback() {
+                            @Override
+                            public void onResult(Comment comment) {
+                                if(comment != null && mEditText != null) {
+                                    mEditText.setText(comment.text);
+                                    switchToEdit(true);
+                                }
+                            }
+                        });
+            } catch (URISyntaxException e) {
+                e.printStackTrace();//todo: add metrics here
+                //todo: add alert dialog
+            }
         }
+    }
 
+    public void switchToEdit(boolean editMode) {
+        if (editMode) {
+            mAddCommentButton.setVisibility(GONE);
+            mEditContainer.setVisibility(VISIBLE);
+            mEditText.requestFocus();
+            UiUtils.showKeyboard(mEditText);
+            mEditContainer.setVisibility(VISIBLE);
+        } else {
+            mEditContainer.setVisibility(GONE);
+            mAddCommentButton.setVisibility(VISIBLE);
+        }
     }
 
     @Override
     public void onClick(View view) {
         if(view == mAddCommentButton) {
-            mAddCommentButton.setVisibility(GONE);
-            mEditContainer.setVisibility(VISIBLE);
-            mEditText.requestFocus();
-            UiUtils.showKeyboard(mEditText);
+            switchToEdit(true);
         } else if(view == mDeleteButton) {
-            mEditText.setText("");
+            finishEdit();
         } else if(view == mPostButton) {
-            if(tab != null) {
-                CommentsReceiver.PostComment(true,
-                        tab.getUrl(),
-                        mEditText.getText().toString(),
-                        postCallback
-                );
+            String editText = mEditText.getText().toString().trim();
+            if(tab != null && !editText.isEmpty()) {
+                try {
+                    Comment comment = new Comment();
+                    comment.text = mEditText.getText().toString();
+                    comment.uri = new URI(tab.getUrl());
+                    UnsentCommentsManager manager = UnsentCommentsManager.getUnsentCommentsManager();
+                    manager.onNewUnsent(comment);
+                    finishEdit();
+                } catch (URISyntaxException e) {
+                    e.printStackTrace();
+                }
             }
         }
     }
 
+    //Switch to button mode + delete draft
+    private void finishEdit() {
+        mEditText.setText("");
+        switchToEdit(false);
+        if(tab != null) {
+            try {
+                LocalCommentsStorage.get().deleteDraftAsync(  new URI(tab.getUrl()) );
+            } catch (URISyntaxException e) {
+                e.printStackTrace();//todo: add metrics here
+                //todo: add alert dialog
+            }
+        }
+    }
+
+    @Override
+    public void onDetachedFromWindow() {
+        String editText = mEditText.getText().toString().trim();
+        if(editText.isEmpty()) {
+            try {
+                LocalCommentsStorage.get().deleteDraftAsync(  new URI(tab.getUrl()) );
+            } catch (URISyntaxException e) {
+                e.printStackTrace();
+            }
+        } else if(tab != null) {
+            try {
+                LocalCommentsStorage.get().updateDraftAsync(
+                        mEditText.getText().toString(),
+                        new URI(tab.getUrl()) );
+            } catch (URISyntaxException e) {
+                e.printStackTrace();
+            }
+        }
+        super.onDetachedFromWindow();
+    }
+
     public void setTab(Tab tab) {
         this.tab = tab;
+        updateEditField();
     }
-
-    class PostCallback implements CommentsReceiver.CommentsCallback {
-
-        @Override
-        public void onResponse(List<Comment> comments) {
-
-        }
-
-        @Override
-        public void onError(int responseCode, Exception e) {
-
-        }
-    }
-
 }

@@ -11,12 +11,16 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -37,9 +41,9 @@ public class CommentsReceiver {
     }
 
     public static void GetComments(
-            boolean useHttps, String url_param, final CommentsCallback callback) {
+            boolean useHttps, final URI comment_uri, final CommentsCallback callback) {
         String url = useHttps ? httpsServer : httpServer;
-        url = url +"get?url=" + Uri.encode(url_param) +
+        url = url +"get?url=" + Uri.encode(comment_uri.toString()) +
             "&api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
 
         JsonObjectHttpRequest.RequestCallback requestCallback =
@@ -47,7 +51,8 @@ public class CommentsReceiver {
                 @Override
                 public void onResponse(JSONObject result) {
                     ThreadUtils.assertOnUiThread();
-                    ArrayList<Comment> comments = new ArrayList<>();
+                    //ArrayList<Comment> comments = new ArrayList<>();
+                    HashMap<UUID, Comment> comments = new HashMap<>();
                     JSONArray array = null;
                     try {
                         array = result.getJSONArray("comments");
@@ -60,6 +65,7 @@ public class CommentsReceiver {
                             String user = jsonObject.getString("user");
                             String language = jsonObject.getString("language");
                             String text = jsonObject.getString("text");
+                            UUID localUUID = UUID.fromString(jsonObject.getString("local_comment_id"));
 
                             DateFormat format = new SimpleDateFormat(
                                     "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
@@ -68,7 +74,12 @@ public class CommentsReceiver {
                             timestamp = format.parse(
                                     jsonObject.getString("timestamp"));
 
-                            comments.add(new Comment(url, comment_id, user_id, user, language, text, timestamp));
+                            if(comments.containsKey(localUUID)) {
+                                localUUID = UUID.randomUUID();
+                            }
+                            comments.put(localUUID,
+                                    new Comment(url, comment_id, user_id, user, language,
+                                            text, timestamp));
                         }
                     } catch (JSONException e) {
                         e.printStackTrace();
@@ -76,7 +87,14 @@ public class CommentsReceiver {
                         e.printStackTrace();
                     }
 
-                    callback.onResponse(comments);
+                    LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
+                    HashMap<UUID, Comment> unsent = localCommentsStorage.getUnsentAndZombies(comment_uri);
+                    comments.putAll(unsent);
+
+                    List<Comment> list = new ArrayList<>(comments.values());
+                    Collections.sort(list, new Comment.DateComparator());
+
+                    callback.onResponse(list);
                 }
 
                 @Override
@@ -100,8 +118,13 @@ public class CommentsReceiver {
         AsyncTask.THREAD_POOL_EXECUTOR.execute(request);
     }
 
+    public interface PostCallback {
+        void onError(int responseCode, Exception e, Comment comment);
+        void onSuccess(Comment comment);
+    }
+
     public static void PostComment(
-            boolean useHttps, String comment_url, String text, final CommentsCallback callback) {
+            boolean useHttps, final Comment comment, final PostCallback callback) {
         String url = useHttps ? httpsServer : httpServer;
         url = url +"new?api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
 
@@ -109,22 +132,16 @@ public class CommentsReceiver {
                 new JsonObjectHttpRequest.RequestCallback() {
                     @Override
                     public void onResponse(JSONObject result) {
-                        ThreadUtils.assertOnUiThread();
-                        ArrayList<Comment> comments = new ArrayList<>();
-                        JSONArray array = null;
-                        try {
-                            UUID comment_id = UUID.fromString(result.getString("comment_id"));
-                            comments.add(new Comment(comment_id));
-                        } catch (JSONException e) {
-                            e.printStackTrace();
+                        if(callback != null) {
+                            callback.onSuccess(comment);
                         }
-
-                        callback.onResponse(comments);
                     }
 
                     @Override
                     public void onError(int responseCode, Exception e) {
-                        callback.onError(responseCode, e);
+                        if(callback != null) {
+                            callback.onError(responseCode, e, comment);
+                        }
                     }
                 };
 
@@ -133,9 +150,10 @@ public class CommentsReceiver {
         try {
             JSONObject payload = new JSONObject();
             try {
-                payload.put("text", text);
-                payload.put("url", comment_url);
+                payload.put("text", comment.text);
+                payload.put("url", comment.uri);
                 payload.put("user_id", new UUID(0,0).toString());
+                payload.put("local_comment_id", comment.localCommentUUID);
             } catch (JSONException e) {
                 e.printStackTrace();
             }
@@ -156,4 +174,5 @@ public class CommentsReceiver {
         }
         return userAgent;
     }
+
 }

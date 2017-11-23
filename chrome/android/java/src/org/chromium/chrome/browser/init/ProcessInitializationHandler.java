@@ -41,6 +41,7 @@ import org.chromium.chrome.browser.DeferredStartupHandler;
 import org.chromium.chrome.browser.DevToolsServer;
 import org.chromium.chrome.browser.banners.AppBannerManager;
 import org.chromium.chrome.browser.bookmarkswidget.BookmarkWidgetProvider;
+import org.chromium.chrome.browser.cheetah.UnsentCommentsManager;
 import org.chromium.chrome.browser.crash.LogcatExtractionRunnable;
 import org.chromium.chrome.browser.crash.MinidumpUploadService;
 import org.chromium.chrome.browser.download.DownloadController;
@@ -233,6 +234,8 @@ public class ProcessInitializationHandler {
         }
 
         SearchWidgetProvider.initialize();
+
+        UnsentCommentsManager.startIfNeeded();
     }
 
     /**

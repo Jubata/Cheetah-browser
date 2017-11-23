@@ -19,6 +19,8 @@ import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.suggestions.ContentSuggestionsAdditionalAction;
 import org.chromium.chrome.browser.tab.Tab;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -95,7 +97,13 @@ public class CommentsSource implements SuggestionsSource {
     public List<SnippetArticle> getSuggestionsForCategory(int category) {
         if(category == 10001) {
             if(!fetched && activeTab != null) {
-                CommentsReceiver.GetComments(true, activeTab.getUrl(),
+                URI uri = null;
+                try {
+                    uri = new URI(activeTab.getUrl());
+                } catch (URISyntaxException e) {
+                    e.printStackTrace();
+                }
+                CommentsReceiver.GetComments(true, uri,
                         new CommentsReceiver.CommentsCallback() {
                             @Override
                             public void onResponse(List<Comment> comments) {
@@ -106,9 +114,9 @@ public class CommentsSource implements SuggestionsSource {
                                             comment.text,
                                             comment.user,
                                             "http://yandex.ru",
-                                            1,
+                                            comment.timestamp.getTime(),
                                             0,
-                                            1,
+                                            System.currentTimeMillis(),
                                             false,
                                             0x80ff0000);
                                     article.mIsComment = true;

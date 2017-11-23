@@ -1972,11 +1972,13 @@ if (enable_offline_pages_harness) {
 
 chrome_java_sources += [
     "java/src/org/chromium/chrome/browser/cheetah/Comment.java",
+    "java/src/org/chromium/chrome/browser/cheetah/CommentsBottomSheetContent.java",
     "java/src/org/chromium/chrome/browser/cheetah/CommentsReceiver.java",
+    "java/src/org/chromium/chrome/browser/cheetah/CommentsSource.java",
+    "java/src/org/chromium/chrome/browser/cheetah/EditCommentView.java",
     "java/src/org/chromium/chrome/browser/cheetah/HttpRequest.java",
     "java/src/org/chromium/chrome/browser/cheetah/JsonObjectHttpRequest.java",
-    "java/src/org/chromium/chrome/browser/cheetah/CommentsBottomSheetContent.java",
-    "java/src/org/chromium/chrome/browser/cheetah/CommentsSource.java",
+    "java/src/org/chromium/chrome/browser/cheetah/LocalCommentsStorage.java",
     "java/src/org/chromium/chrome/browser/cheetah/NewComment.java",
-    "java/src/org/chromium/chrome/browser/cheetah/EditCommentView.java",
+    "java/src/org/chromium/chrome/browser/cheetah/UnsentCommentsManager.java",
 ]
