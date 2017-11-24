@@ -54,19 +54,16 @@ public class EditCommentView extends LinearLayout implements View.OnClickListene
 
     private void updateEditField() {
         //switchToEdit(false);
-        Comment comment = null;
-        if(tab != null) {
+        if (tab != null) {
             try {
                 LocalCommentsStorage.get().getDraftAsync(new URI(tab.getUrl()),
-                        new LocalCommentsStorage.CommentCallback() {
-                            @Override
-                            public void onResult(Comment comment) {
-                                if(comment != null && mEditText != null) {
-                                    mEditText.setText(comment.text);
-                                    switchToEdit(true);
-                                }
+                        (Comment comment) -> {
+                            if (comment != null && mEditText != null) {
+                                mEditText.setText(comment.text);
+                                switchToEdit(true);
                             }
-                        });
+                        }
+                );
             } catch (URISyntaxException e) {
                 e.printStackTrace();//todo: add metrics here
                 //todo: add alert dialog

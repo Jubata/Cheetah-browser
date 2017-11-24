@@ -124,124 +124,149 @@ public class LocalCommentsStorage {
         return comment;
     }
 
-    public HashMap<UUID, Comment> getUnsentAndZombies(URI uri) {
-        final SQLiteDatabase db = mDBHelper.getReadableDatabase();
-        String dbUri = simplifyUri(uri);
-        Cursor cursor = db.rawQuery(
-                "select * from comments where (state & ? AND url=?)",
-                    new String[] {Integer.toString(UNSENT), dbUri});
-        HashMap<UUID, Comment> comments = new HashMap<>();
-        while (cursor.moveToNext()) {
-            Comment comment = fromCursor(cursor);
-            comment.localCommentUUID = UUID.randomUUID();
-            comments.put(comment.localCommentUUID, comment);
-        }
-        return comments;
+    public void getUnsentAndZombiesAsync(URI uri, AsyncResult<HashMap<UUID, Comment>> callback) {
+        runAsync(() -> {
+            final SQLiteDatabase db = mDBHelper.getReadableDatabase();
+            String dbUri = simplifyUri(uri);
+            Cursor cursor = db.rawQuery(
+                    "select * from comments where (state & ? AND url=?)",
+                    new String[]{Integer.toString(UNSENT), dbUri});
+            HashMap<UUID, Comment> comments = new HashMap<>();
+            while (cursor.moveToNext()) {
+                Comment comment = fromCursor(cursor);
+                comment.localCommentUUID = UUID.randomUUID();
+                comments.put(comment.localCommentUUID, comment);
+            }
+            return comments;
+        }, comments -> callback.onPostExecute(comments));
     }
 
-    @Nullable
-    public Comment getOneUnsent() {
-        final SQLiteDatabase db = mDBHelper.getReadableDatabase();
-        Cursor cursor = db.rawQuery(
-                "select * from comments where state=? limit 1", new String[] {Integer.toString(UNSENT)});
-        if(cursor != null && cursor.getCount() > 0) {
-            cursor.moveToNext();
-            return fromCursor(cursor);
-        }
-        else {
+    public void getOneUnsentAsync(AsyncResult<Comment> callback) {
+        runAsync(() -> {
+            final SQLiteDatabase db = mDBHelper.getReadableDatabase();
+            Cursor cursor = db.rawQuery(
+                    "select * from comments where state=? limit 1", new String[]{Integer.toString(UNSENT)});
+            if (cursor != null && cursor.getCount() > 0) {
+                cursor.moveToNext();
+                return fromCursor(cursor);
+            } else {
+                return null;
+            }
+        }, comment -> callback.onPostExecute(comment));
+    }
+
+    public void insertAsync(String text, URI uri, int state, AsyncResult<Void> callback) {
+        runAsync(() -> {
+            ContentValues insertValues = new ContentValues();
+            insertValues.put("id", UUID.randomUUID().toString());
+            insertValues.put("url", simplifyUri(uri));
+            insertValues.put("text", text);
+            insertValues.put("state", state);
+            insertValues.put("timestamp", System.currentTimeMillis());
+            final SQLiteDatabase db = mDBHelper.getWritableDatabase();
+            db.insert("comments", null, insertValues);
             return null;
-        }
-    }
-
-    public void insert(String text, URI uri, int state) {
-        ContentValues insertValues = new ContentValues();
-        insertValues.put("id", UUID.randomUUID().toString());
-        insertValues.put("url", simplifyUri(uri));
-        insertValues.put("text", text);
-        insertValues.put("state", state);
-        insertValues.put("timestamp", System.currentTimeMillis());
-        final SQLiteDatabase db = mDBHelper.getWritableDatabase();
-        db.insert("comments", null, insertValues);
+        }, (Void v) -> callback.onPostExecute(v));
         //todo: add metrics if failed
     }
 
-    public interface CommentCallback {
-        void onResult(Comment comment);
+    public void getDraftAsync(@NonNull URI uri, AsyncResult<Comment> callback) {
+        runAsync(()-> {
+            String dbUri = simplifyUri(uri);
+            final SQLiteDatabase db = mDBHelper.getReadableDatabase();
+            Cursor cursor = db.rawQuery(
+                    "select * from comments where (state=? AND url=?) limit 1",
+                    new String[] {Integer.toString(DRAFT), dbUri});
+            if(cursor != null && cursor.getCount() > 0) {
+                cursor.moveToNext();
+                return fromCursor(cursor);
+            }
+            else {
+                return null;
+            }
+        }, comment -> callback.onPostExecute(comment));
     }
 
-    @SuppressLint("StaticFieldLeak")
-    @Nullable
-    public void getDraftAsync(@NonNull final URI uri, final CommentCallback callback) {
-        new AsyncTask<URI, Void, Comment>() {
-            @Override
-            protected Comment doInBackground(URI... uris) {
+    public void updateDraftAsync(String text, URI uri) {
+        runAsync(() -> {
+            try {
+                ContentValues insertValues = new ContentValues();
                 String dbUri = simplifyUri(uri);
-                final SQLiteDatabase db = mDBHelper.getReadableDatabase();
-                Cursor cursor = db.rawQuery(
-                        "select * from comments where (state=? AND url=?) limit 1",
-                        new String[] {Integer.toString(DRAFT), dbUri});
-                if(cursor != null && cursor.getCount() > 0) {
-                    cursor.moveToNext();
-                    return fromCursor(cursor);
-                }
-                else {
-                    return null;
-                }
+                insertValues.put("id", UUID.nameUUIDFromBytes(dbUri.getBytes("UTF-8")).toString());
+                insertValues.put("url", dbUri);
+                insertValues.put("text", text);
+                insertValues.put("state", DRAFT);
+                insertValues.put("timestamp", System.currentTimeMillis());
+                final SQLiteDatabase db = mDBHelper.getWritableDatabase();
+                db.replace("comments", null, insertValues);
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
             }
+        });
+    }
 
-            @Override
-            protected void onPostExecute(Comment comment) {
-                callback.onResult(comment);
-            }
-        }.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, null);
+    public void deleteDraftAsync(URI uri) {
+        runAsync(() -> {
+            String dbUri = simplifyUri(uri);
+            final SQLiteDatabase db = mDBHelper.getReadableDatabase();
+            db.delete("comments", "(state = ? AND url = ?)", new String[]
+                    {Integer.toString(DRAFT), dbUri});
+        });
+    }
+
+    public void deleteAsync(UUID id, AsyncResult<Void> callback) {
+        runAsync(() -> {
+            final SQLiteDatabase db = mDBHelper.getReadableDatabase();
+            db.delete("comments", "id = ?", new String[] {id.toString()});
+            return null;
+        }, (Void v) -> callback.onPostExecute(v));
+    }
+
+    public void markAsZombieAsync(UUID id, AsyncResult<Void> callback) {
+        runAsync(() -> {
+            final SQLiteDatabase db = mDBHelper.getWritableDatabase();
+            ContentValues updateValues = new ContentValues();
+            updateValues.put("state", ZOMBIE);
+            db.update("comments", updateValues, "id = ?", new String[]{id.toString()});
+            return null;
+        }, (Void v) -> callback.onPostExecute(v));
     }
 
     @SuppressLint("StaticFieldLeak")
-    public void updateDraftAsync(final String text, final URI uri) {
+    private void runAsync(AsyncLambda asyncLambda) {
         new AsyncTask<Void, Void, Void>() {
             @Override
             protected Void doInBackground(Void... params) {
-                try {
-                    ContentValues insertValues = new ContentValues();
-                    String dbUri = simplifyUri(uri);
-                    insertValues.put("id", UUID.nameUUIDFromBytes(dbUri.getBytes("UTF-8")).toString());
-                    insertValues.put("url", dbUri);
-                    insertValues.put("text", text);
-                    insertValues.put("state", DRAFT);
-                    insertValues.put("timestamp", System.currentTimeMillis());
-                    final SQLiteDatabase db = mDBHelper.getWritableDatabase();
-                    db.replace("comments", null, insertValues);
-                } catch(UnsupportedEncodingException e) {
-                    e.printStackTrace();
-                }
+                asyncLambda.doInBackground();
                 return null;
             }
-        }.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, null);
+        }.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, (Void)null);
     }
 
     @SuppressLint("StaticFieldLeak")
-    public void deleteDraftAsync(final URI uri) {
-        new AsyncTask<Void, Void, Void>() {
+    private <E> void runAsync(final GenericAsyncLambda<E> asyncLambda, final AsyncResult<E> callback) {
+        new AsyncTask<Void, Void, E>() {
             @Override
-            protected Void doInBackground(Void... params) {
-                String dbUri = simplifyUri(uri);
-                final SQLiteDatabase db = mDBHelper.getReadableDatabase();
-                db.delete("comments", "(state = ? AND url = ?)", new String[]
-                        {Integer.toString(DRAFT), dbUri});
-                return null;
+            protected E doInBackground(Void... params) {
+                return asyncLambda.doInBackground();
             }
-        }.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, null);
+
+            @Override
+            protected void onPostExecute(E e) {
+                callback.onPostExecute(e);
+            }
+        }.executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, (Void)null);
     }
 
-    public void delete(UUID id) {
-        final SQLiteDatabase db = mDBHelper.getReadableDatabase();
-        db.delete("comments", "id = ?", new String[] {id.toString()});
+    private interface AsyncLambda {
+        void doInBackground();
     }
 
-    public void markAsZombie(UUID id) {
-        final SQLiteDatabase db = mDBHelper.getWritableDatabase();
-        ContentValues updateValues = new ContentValues();
-        updateValues.put("state", ZOMBIE);
-        db.update("comments", updateValues, "id = ?",  new String[] {id.toString()});
+    public interface AsyncResult<E> {
+        void onPostExecute(E e);
+    }
+
+    private interface GenericAsyncLambda<E> {
+        E doInBackground();
     }
 }

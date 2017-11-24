@@ -11,7 +11,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.text.DateFormat;
@@ -88,13 +87,15 @@ public class CommentsReceiver {
                     }
 
                     LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-                    HashMap<UUID, Comment> unsent = localCommentsStorage.getUnsentAndZombies(comment_uri);
-                    comments.putAll(unsent);
+                    localCommentsStorage.getUnsentAndZombiesAsync(comment_uri,
+                            (HashMap<UUID, Comment> unsent) -> {
+                                comments.putAll(unsent);
 
-                    List<Comment> list = new ArrayList<>(comments.values());
-                    Collections.sort(list, new Comment.DateComparator());
+                                List<Comment> list = new ArrayList<>(comments.values());
+                                Collections.sort(list, new Comment.DateComparator());
 
-                    callback.onResponse(list);
+                                callback.onResponse(list);
+                            });
                 }
 
                 @Override

@@ -11,20 +11,18 @@ import java.util.TimerTask;
 public class UnsentCommentsManager {
     private  Timer timer;
     private static UnsentCommentsManager unsentCommentsManager;
-    FailureCallback failureCallback = new FailureCallback();
-    private final int LONG_DELAY = 5000;
+    PostCommentCallback postCommentCallback = new PostCommentCallback();
+    private final int LONG_DELAY = 30000;
     private final int SHORT_DELAY = 1000;
     private static final Object sLock = new Object();
 
 
     public static void startIfNeeded() {
-        synchronized (sLock) {
-            LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-            Comment comment = localCommentsStorage.getOneUnsent();
-            if(comment != null) {
-                getUnsentCommentsManager().scheduleNew();
-            }
-        }
+        LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
+        localCommentsStorage.getOneUnsentAsync((comment) -> {
+                    if (comment != null) getUnsentCommentsManager().scheduleNew();
+                }
+        );
     }
 
     public static UnsentCommentsManager getUnsentCommentsManager() {
@@ -37,71 +35,62 @@ public class UnsentCommentsManager {
     }
 
     public void scheduleNew() {
-        synchronized (sLock) {
-            if (timer != null) {
-                return; //do nothing if timer already running
-            }
-            timer = new Timer();
-            reschedule(LONG_DELAY);
+        if (timer != null) {
+            return; //do nothing if timer already running
         }
+        timer = new Timer();
+        reschedule(LONG_DELAY);
     }
 
     private void reschedule(int delay) {
-        synchronized (sLock) {
-            timer.schedule(new TimerTask() {
-                @Override
-                public void run() {
-                    getUnsentCommentsManager().PostUnsent();
-                }
-            }, delay);
-        }
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                getUnsentCommentsManager().PostUnsent();
+            }
+        }, delay);
     }
 
     private void cancel() {
-        synchronized (sLock) {
-            if(timer == null) {
-                throw new RuntimeException("Timer was not created");
-            } else {
-                timer.cancel();
-                timer = null;
-            }
+        if (timer == null) {
+            throw new RuntimeException("Timer was not created");
+        } else {
+            timer.cancel();
+            timer = null;
         }
     }
 
     private void PostUnsent() {
-        synchronized (sLock) {
-            LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-            Comment comment = localCommentsStorage.getOneUnsent();
-            if(comment == null) {
+        LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
+        localCommentsStorage.getOneUnsentAsync((Comment comment) -> {
+            if (comment == null) {
                 cancel();
             } else {
-                CommentsReceiver.PostComment(true, comment, failureCallback);
+                CommentsReceiver.PostComment(true, comment, postCommentCallback);
             }
-        }
+        });
     }
 
     public void onNewUnsent(Comment comment) {
-        synchronized (sLock) {
-            LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-            localCommentsStorage.insert(comment.text, comment.uri, LocalCommentsStorage.UNSENT);
-            scheduleNew();
-        }
+        LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
+        localCommentsStorage.insertAsync(comment.text, comment.uri, LocalCommentsStorage.UNSENT,
+                (Void v) -> scheduleNew());
     }
 
 
-    private class FailureCallback implements CommentsReceiver.PostCallback {
+    private class PostCommentCallback implements CommentsReceiver.PostCallback {
         @Override
         public void onError(int responseCode, Exception e, Comment comment) {
             boolean markZombie = responseCode == HttpURLConnection.HTTP_NOT_ACCEPTABLE;
 
             if(markZombie) {
-                synchronized (sLock) {
                     LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-                    localCommentsStorage.markAsZombie(comment.localCommentUUID);
-                }
+                    localCommentsStorage.markAsZombieAsync(comment.localCommentUUID,
+                            (Void)->reschedule(LONG_DELAY) );
             }
-
-            reschedule(LONG_DELAY); //sent next message
+            else {
+                reschedule(LONG_DELAY); //sent next message
+            }
         }
 
         @Override
@@ -110,13 +99,9 @@ public class UnsentCommentsManager {
                 throw new RuntimeException("UnsentManager comment with localCommentUUID == null");
             }
 
-            synchronized (sLock) {
-                //we have successfully post comment after fail
-                LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-                localCommentsStorage.delete(comment.localCommentUUID);
-            }
-
-            reschedule(SHORT_DELAY);
+            //we have successfully post comment after fail
+            LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
+            localCommentsStorage.deleteAsync(comment.localCommentUUID, (Void) -> reschedule(SHORT_DELAY));
         }
     }
 }
