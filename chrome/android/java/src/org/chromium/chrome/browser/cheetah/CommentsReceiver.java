@@ -35,7 +35,7 @@ public class CommentsReceiver {
     private static final int connectionTimeout=2000;
 
     public interface CommentsCallback {
-        void onResponse(List<Comment> comments);
+        void onResponse(HashMap<UUID, Comment> comments);
         void onError(int responseCode, Exception e);
     }
 
@@ -86,16 +86,7 @@ public class CommentsReceiver {
                         e.printStackTrace();
                     }
 
-                    LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-                    localCommentsStorage.getUnsentAndZombiesAsync(comment_uri,
-                            (HashMap<UUID, Comment> unsent) -> {
-                                comments.putAll(unsent);
-
-                                List<Comment> list = new ArrayList<>(comments.values());
-                                Collections.sort(list, new Comment.DateComparator());
-
-                                callback.onResponse(list);
-                            });
+                    callback.onResponse(comments);
                 }
 
                 @Override

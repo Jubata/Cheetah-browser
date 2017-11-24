@@ -17,6 +17,7 @@ import org.chromium.chrome.browser.ntp.cards.NewTabPageViewHolder;
 import org.chromium.chrome.browser.ntp.cards.NodeVisitor;
 import org.chromium.chrome.browser.ntp.cards.OptionalLeaf;
 import org.chromium.chrome.browser.suggestions.SuggestionsRecyclerView;
+import org.chromium.chrome.browser.suggestions.SuggestionsUiDelegate;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.widget.displaystyle.UiConfig;
@@ -104,14 +105,6 @@ public class NewComment extends OptionalLeaf implements ImpressionTracker.Listen
             // Modern does not update the card background.
             assert !FeatureUtilities.isChromeHomeEnabled();
             return R.drawable.ntp_signin_promo_card_single;
-        }
-
-        /**
-         * Triggers an update of the personalized signin promo. Intended to be used as
-         * {@link PartialBindCallback}.
-         */
-        public static void update(NewTabPageViewHolder viewHolder) {
-            ((NewCommentViewHolder) viewHolder).updateNewCommentView();
         }
 
         private void updateNewCommentView() {

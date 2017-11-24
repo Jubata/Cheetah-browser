@@ -1,6 +1,8 @@
 package org.chromium.chrome.browser.cheetah;
 
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.util.HashSet;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -15,6 +17,7 @@ public class UnsentCommentsManager {
     private final int LONG_DELAY = 30000;
     private final int SHORT_DELAY = 1000;
     private static final Object sLock = new Object();
+    private HashSet<CommentsListener> mListeners = new HashSet<>();
 
 
     public static void startIfNeeded() {
@@ -74,7 +77,12 @@ public class UnsentCommentsManager {
     public void onNewUnsent(Comment comment) {
         LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
         localCommentsStorage.insertAsync(comment.text, comment.uri, LocalCommentsStorage.UNSENT,
-                (Void v) -> scheduleNew());
+                (Void v) -> {
+                    scheduleNew();
+                    for(CommentsListener listener : mListeners) {
+                        listener.onCommentsChanged(comment.uri);
+                    }
+                });
     }
 
 
@@ -103,5 +111,18 @@ public class UnsentCommentsManager {
             LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
             localCommentsStorage.deleteAsync(comment.localCommentUUID, (Void) -> reschedule(SHORT_DELAY));
         }
+    }
+
+    public void AddListener(CommentsListener listener) {
+        mListeners.add(listener);
+    }
+
+    public void RemoveListener(CommentsListener listener) {
+        mListeners.remove(listener);
+    }
+
+    public interface CommentsListener {
+        //local changes happen
+        void onCommentsChanged(URI uri);
     }
 }

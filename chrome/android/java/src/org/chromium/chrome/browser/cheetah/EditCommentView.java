@@ -81,6 +81,7 @@ public class EditCommentView extends LinearLayout implements View.OnClickListene
         } else {
             mEditContainer.setVisibility(GONE);
             mAddCommentButton.setVisibility(VISIBLE);
+            UiUtils.hideKeyboard(mEditText);
         }
     }
 

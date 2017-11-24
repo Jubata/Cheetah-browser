@@ -22,14 +22,19 @@ import org.chromium.chrome.browser.tab.Tab;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Provides access to the snippets to display on the NTP using the C++ ContentSuggestionsService.
  */
-public class CommentsSource implements SuggestionsSource {
+public class CommentsSource implements SuggestionsSource, UnsentCommentsManager.CommentsListener {
     private final ObserverList<Observer> mObserverList = new ObserverList<>();
     private final Tab activeTab;
+    private List<SnippetArticle> articles = new ArrayList<>();
+    private HashMap<UUID, Comment> remoteComments = new HashMap<>();
 
     /**
      * Creates a SnippetsBridge for getting snippet data for the current user.
@@ -38,11 +43,15 @@ public class CommentsSource implements SuggestionsSource {
      */
     public CommentsSource(Profile profile, Tab activeTab) {
         this.activeTab = activeTab;
+        UnsentCommentsManager unsent = UnsentCommentsManager.getUnsentCommentsManager();
+        unsent.AddListener(this);
     }
 
     @Override
     public void destroy() {
         mObserverList.clear();
+        UnsentCommentsManager unsent = UnsentCommentsManager.getUnsentCommentsManager();
+        unsent.RemoveListener(this);
     }
 
     @Override
@@ -88,54 +97,31 @@ public class CommentsSource implements SuggestionsSource {
                     );
             return info;
         }
-        throw new IllegalArgumentException("ouch");
+        throw new IllegalArgumentException("category not implemented");
     }
-
-    private List<SnippetArticle> articles = new ArrayList<>();
 
     @Override
     public List<SnippetArticle> getSuggestionsForCategory(int category) {
         if(category == 10001) {
             if(!fetched && activeTab != null) {
-                URI uri = null;
                 try {
-                    uri = new URI(activeTab.getUrl());
+                    final URI uri = new URI(activeTab.getUrl());
+                    CommentsReceiver.GetComments(true, uri,
+                            new CommentsReceiver.CommentsCallback() {
+                                @Override
+                                public void onResponse(HashMap<UUID, Comment> comments) {
+                                    remoteComments = comments;
+                                    onCommentsChanged(uri);
+                                }
+
+                                @Override
+                                public void onError(int responseCode, Exception e) {
+                                    //add handler
+                                }
+                            });
                 } catch (URISyntaxException e) {
                     e.printStackTrace();
                 }
-                CommentsReceiver.GetComments(true, uri,
-                        new CommentsReceiver.CommentsCallback() {
-                            @Override
-                            public void onResponse(List<Comment> comments) {
-                                articles.clear();
-                                for (Comment comment : comments) {
-                                    SnippetArticle article = new SnippetArticle(10001,
-                                            "0",
-                                            comment.text,
-                                            comment.user,
-                                            "http://yandex.ru",
-                                            comment.timestamp.getTime(),
-                                            0,
-                                            System.currentTimeMillis(),
-                                            false,
-                                            0x80ff0000);
-                                    article.mIsComment = true;
-                                    articles.add(article);
-                                }
-                                fetched = true;
-                                for (Observer observer : mObserverList) {
-                                    observer.onCategoryStatusChanged(10001, CategoryStatus.AVAILABLE);
-                                    observer.onNewSuggestions(10001);
-                                    observer.onFullRefreshRequired();
-                                }
-
-                            }
-
-                            @Override
-                            public void onError(int responseCode, Exception e) {
-                                //add handler
-                            }
-                        });
                 SnippetArticle article = new SnippetArticle(10001,
                     "0",
                     "Dummy article",
@@ -153,6 +139,39 @@ public class CommentsSource implements SuggestionsSource {
             return articles;
         }
         throw new IllegalArgumentException("ouch");
+    }
+
+    @Override
+    public void onCommentsChanged(URI uri) {
+        LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
+        localCommentsStorage.getUnsentAndZombiesAsync(uri, this::onCommentsChangedInt);
+    }
+
+    private void onCommentsChangedInt(HashMap<UUID, Comment> comments) {
+        comments.putAll(remoteComments);
+
+        List<Comment> list = new ArrayList<>(comments.values());
+        Collections.sort(list, new Comment.DateComparator());
+
+        articles.clear();
+        for (Comment comment : list) {
+            SnippetArticle article = new SnippetArticle(10001,
+                    "0",
+                    comment.text,
+                    comment.user,
+                    "http://yandex.ru",
+                    comment.timestamp.getTime(),
+                    0,
+                    System.currentTimeMillis(),
+                    false,
+                    0x80ff0000);
+            article.mIsComment = true;
+            articles.add(article);
+        }
+        fetched = true;
+        for (Observer observer : mObserverList) {
+            observer.onFullRefreshRequired();
+        }
     }
 
     @Override
