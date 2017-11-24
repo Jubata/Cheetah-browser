@@ -1,5 +1,9 @@
 package org.chromium.chrome.browser.cheetah;
 
+import org.chromium.base.ApplicationStatus;
+import org.chromium.base.ApplicationState;
+import org.chromium.components.sync.AndroidSyncSettings;
+
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.HashSet;
@@ -10,11 +14,11 @@ import java.util.TimerTask;
  * Created by ivan2kh on 11/18/17.
  */
 
-public class UnsentCommentsManager {
+public class UnsentCommentsManager implements ApplicationStatus.ApplicationStateListener {
     private  Timer timer;
     private static UnsentCommentsManager unsentCommentsManager;
     PostCommentCallback postCommentCallback = new PostCommentCallback();
-    private final int LONG_DELAY = 30000;
+    private final int LONG_DELAY = 5000;
     private final int SHORT_DELAY = 1000;
     private static final Object sLock = new Object();
     private HashSet<CommentsListener> mListeners = new HashSet<>();
@@ -26,6 +30,10 @@ public class UnsentCommentsManager {
                     if (comment != null) getUnsentCommentsManager().scheduleNew();
                 }
         );
+    }
+
+    private UnsentCommentsManager() {
+        ApplicationStatus.registerApplicationStateListener(this);
     }
 
     public static UnsentCommentsManager getUnsentCommentsManager() {
@@ -42,7 +50,7 @@ public class UnsentCommentsManager {
             return; //do nothing if timer already running
         }
         timer = new Timer();
-        reschedule(LONG_DELAY);
+        reschedule(SHORT_DELAY);
     }
 
     private void reschedule(int delay) {
@@ -83,6 +91,19 @@ public class UnsentCommentsManager {
                         listener.onCommentsChanged(comment.uri);
                     }
                 });
+    }
+
+    @Override
+    public void onApplicationStateChange(int newState) {
+        if (newState == ApplicationState.HAS_RUNNING_ACTIVITIES) {
+            if(timer != null) {
+                startIfNeeded();
+            }
+        } else if (newState == ApplicationState.HAS_PAUSED_ACTIVITIES) {
+            if(timer != null) {
+                cancel();
+            }
+        }
     }
 
 

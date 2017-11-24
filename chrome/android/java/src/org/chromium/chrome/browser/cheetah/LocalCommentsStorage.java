@@ -137,6 +137,7 @@ public class LocalCommentsStorage {
                 comment.localCommentUUID = UUID.randomUUID();
                 comments.put(comment.localCommentUUID, comment);
             }
+            cursor.close();
             return comments;
         }, comments -> callback.onPostExecute(comments));
     }
@@ -144,14 +145,17 @@ public class LocalCommentsStorage {
     public void getOneUnsentAsync(AsyncResult<Comment> callback) {
         runAsync(() -> {
             final SQLiteDatabase db = mDBHelper.getReadableDatabase();
+            Comment comment;
             Cursor cursor = db.rawQuery(
                     "select * from comments where state=? limit 1", new String[]{Integer.toString(UNSENT)});
-            if (cursor != null && cursor.getCount() > 0) {
+            if (cursor.getCount() > 0) {
                 cursor.moveToNext();
-                return fromCursor(cursor);
+                comment = fromCursor(cursor);
             } else {
-                return null;
+                comment = null;
             }
+            cursor.close();
+            return comment;
         }, comment -> callback.onPostExecute(comment));
     }
 
@@ -174,16 +178,16 @@ public class LocalCommentsStorage {
         runAsync(()-> {
             String dbUri = simplifyUri(uri);
             final SQLiteDatabase db = mDBHelper.getReadableDatabase();
+            Comment comment = null;
             Cursor cursor = db.rawQuery(
                     "select * from comments where (state=? AND url=?) limit 1",
-                    new String[] {Integer.toString(DRAFT), dbUri});
-            if(cursor != null && cursor.getCount() > 0) {
+                    new String[]{Integer.toString(DRAFT), dbUri});
+            if (cursor.getCount() > 0) {
                 cursor.moveToNext();
-                return fromCursor(cursor);
+                comment = fromCursor(cursor);
             }
-            else {
-                return null;
-            }
+            cursor.close();
+            return comment;
         }, comment -> callback.onPostExecute(comment));
     }
 
