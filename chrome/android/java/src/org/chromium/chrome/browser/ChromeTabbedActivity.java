@@ -157,6 +157,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class ChromeTabbedActivity
         extends ChromeActivity implements OverviewModeObserver, ScreenshotMonitorDelegate {
+
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({
         BACK_PRESSED_NOTHING_HAPPENED,

@@ -12,7 +12,6 @@ import org.chromium.chrome.browser.ntp.cards.SuggestionsCategoryInfo;
 import org.chromium.chrome.browser.ntp.snippets.CategoryInt;
 import org.chromium.chrome.browser.ntp.snippets.CategoryStatus;
 import org.chromium.chrome.browser.ntp.snippets.ContentSuggestionsCardLayout;
-import org.chromium.chrome.browser.ntp.snippets.KnownCategories;
 import org.chromium.chrome.browser.ntp.snippets.SnippetArticle;
 import org.chromium.chrome.browser.ntp.snippets.SuggestionsSource;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -77,12 +76,33 @@ public class CommentsSource implements SuggestionsSource, UnsentCommentsManager.
     @CategoryStatus
     public int getCategoryStatus(int category) {
         if(category == 10001) {
-            if (fetched)
+            if (fetched || tryGetPreloadedComments())
                 return CategoryStatus.AVAILABLE;
-            else
+            else {
                 return CategoryStatus.AVAILABLE_LOADING; //IK!!! use loading
+            }
         }
         return CategoryStatus.NOT_PROVIDED;
+    }
+
+    private boolean tryGetPreloadedComments() {
+        try {
+            if(activeTab != null) {
+                URI uri = new URI(activeTab.getUrl());
+                CommentsPreloader.Comments comments = null;
+                CommentsPreloader preloader = activeTab.getActivity().mCommentsPreloder;
+                if (preloader != null) {
+                    comments = preloader.getComments(uri);
+                }
+                if (comments != null) {
+                    remoteComments = comments.remote;
+                    onCommentsChangedInt(comments.unsent, false);
+                }
+                return comments != null;
+            }
+        } catch (URISyntaxException e) {
+        }
+        return false;
     }
 
     @Override
@@ -144,10 +164,14 @@ public class CommentsSource implements SuggestionsSource, UnsentCommentsManager.
     @Override
     public void onCommentsChanged(URI uri) {
         LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-        localCommentsStorage.getUnsentAndZombiesAsync(uri, this::onCommentsChangedInt);
+        localCommentsStorage.getUnsentAndZombiesAsync(uri,
+                (HashMap<UUID, Comment> comments) -> {
+                    onCommentsChangedInt(comments, true);
+                });
     }
 
-    private void onCommentsChangedInt(HashMap<UUID, Comment> comments) {
+
+    private void onCommentsChangedInt(HashMap<UUID, Comment> comments, boolean refresh) {
         comments.putAll(remoteComments);
 
         List<Comment> list = new ArrayList<>(comments.values());
@@ -169,8 +193,10 @@ public class CommentsSource implements SuggestionsSource, UnsentCommentsManager.
             articles.add(article);
         }
         fetched = true;
-        for (Observer observer : mObserverList) {
-            observer.onFullRefreshRequired();
+        if(refresh) {
+            for (Observer observer : mObserverList) {
+                observer.onFullRefreshRequired();
+            }
         }
     }
 

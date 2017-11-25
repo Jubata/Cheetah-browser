@@ -91,6 +91,8 @@ public class UnsentCommentsManager implements ApplicationStatus.ApplicationState
                         listener.onCommentsChanged(comment.uri);
                     }
                 });
+
+        CommentsSync.getSync().onLocalChanged();
     }
 
     @Override

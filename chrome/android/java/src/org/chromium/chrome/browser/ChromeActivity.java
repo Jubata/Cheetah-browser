@@ -59,6 +59,7 @@ import org.chromium.chrome.browser.appmenu.AppMenuObserver;
 import org.chromium.chrome.browser.appmenu.AppMenuPropertiesDelegate;
 import org.chromium.chrome.browser.bookmarks.BookmarkModel;
 import org.chromium.chrome.browser.bookmarks.BookmarkUtils;
+import org.chromium.chrome.browser.cheetah.CommentsPreloader;
 import org.chromium.chrome.browser.compositor.CompositorViewHolder;
 import org.chromium.chrome.browser.compositor.bottombar.OverlayPanel.StateChangeReason;
 import org.chromium.chrome.browser.compositor.layouts.Layout;
@@ -211,6 +212,7 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
     private TabContentManager mTabContentManager;
     private UmaSessionStats mUmaSessionStats;
     private ContextReporter mContextReporter;
+    public CommentsPreloader mCommentsPreloder;
 
     private boolean mPartnerBrowserRefreshNeeded;
 
@@ -1032,6 +1034,10 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
         }
         super.onStart();
         if (mContextReporter != null) mContextReporter.enable();
+
+        if (mCommentsPreloder==null) {
+            mCommentsPreloder = new CommentsPreloader(this);
+        }
 
         if (mPartnerBrowserRefreshNeeded) {
             mPartnerBrowserRefreshNeeded = false;
