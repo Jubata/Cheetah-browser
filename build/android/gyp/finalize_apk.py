@@ -26,7 +26,7 @@ def JarSigner(key_path, key_name, key_passwd, unsigned_path, signed_path):
   shutil.copy(unsigned_path, signed_path)
   sign_cmd = [
       'jarsigner',
-      '-sigalg', 'MD5withRSA',
+      '-sigalg', 'SHA1withRSA',
       '-digestalg', 'SHA1',
       '-keystore', key_path,
       '-storepass', key_passwd,
