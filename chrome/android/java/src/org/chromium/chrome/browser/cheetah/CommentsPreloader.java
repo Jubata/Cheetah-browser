@@ -91,8 +91,10 @@ public class CommentsPreloader implements CommentsSync.Listener {
         }
 
         mTab = tab;
-        mTab.addObserver(mTabObserver);
-        mTabObserver.onContentChanged(mTab);
+        if(mTab!=null) {
+            mTab.addObserver(mTabObserver);
+            mTabObserver.onContentChanged(mTab);
+        }
     }
 
     private class TabObserver extends EmptyTabObserver {
