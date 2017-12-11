@@ -54,31 +54,33 @@ public class CommentsReceiver {
                     HashMap<UUID, Comment> comments = new HashMap<>();
                     JSONArray array = null;
                     try {
-                        array = result.getJSONArray("comments");
-                        for (int i = 0; i < array.length(); i++) {
-                            JSONObject jsonObject = array.getJSONObject(i);
+                        array = result.optJSONArray("comments");
+                        if(array!=null) {
+                            for (int i = 0; i < array.length(); i++) {
+                                JSONObject jsonObject = array.getJSONObject(i);
 
-                            UUID url = UUID.fromString(jsonObject.getString("url"));
-                            UUID comment_id = UUID.fromString(jsonObject.getString("comment_id"));
-                            UUID user_id = UUID.fromString(jsonObject.getString("user_id"));
-                            String user = jsonObject.getString("user");
-                            String language = jsonObject.getString("language");
-                            String text = jsonObject.getString("text");
-                            UUID localUUID = UUID.fromString(jsonObject.getString("local_comment_id"));
+                                UUID url = UUID.fromString(jsonObject.getString("url"));
+                                UUID comment_id = UUID.fromString(jsonObject.getString("comment_id"));
+                                UUID user_id = UUID.fromString(jsonObject.getString("user_id"));
+                                String user = jsonObject.getString("user");
+                                String language = jsonObject.getString("language");
+                                String text = jsonObject.getString("text");
+                                UUID localUUID = UUID.fromString(jsonObject.getString("local_comment_id"));
 
-                            DateFormat format = new SimpleDateFormat(
-                                    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
-                            format.setTimeZone(TimeZone.getTimeZone("UTC"));
-                            Date timestamp = null;
-                            timestamp = format.parse(
-                                    jsonObject.getString("timestamp"));
+                                DateFormat format = new SimpleDateFormat(
+                                        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
+                                format.setTimeZone(TimeZone.getTimeZone("UTC"));
+                                Date timestamp = null;
+                                timestamp = format.parse(
+                                        jsonObject.getString("timestamp"));
 
-                            if(comments.containsKey(localUUID)) {
-                                localUUID = UUID.randomUUID();
+                                if (comments.containsKey(localUUID)) {
+                                    localUUID = UUID.randomUUID();
+                                }
+                                comments.put(localUUID,
+                                        new Comment(url, comment_id, user_id, user, language,
+                                                text, timestamp));
                             }
-                            comments.put(localUUID,
-                                    new Comment(url, comment_id, user_id, user, language,
-                                            text, timestamp));
                         }
                     } catch (JSONException e) {
                         e.printStackTrace();
