@@ -253,11 +253,8 @@ public class SigninManager implements AccountTrackerService.OnSystemAccountsSeed
      *         Google Play Services installed.
      */
     public boolean isSigninSupported() {
-        return false;
-/*
         return !ApiCompatibilityUtils.isDemoUser(mContext)
                 && !ExternalAuthUtils.getInstance().isGooglePlayServicesMissing(mContext);
-*/
     }
 
     /**

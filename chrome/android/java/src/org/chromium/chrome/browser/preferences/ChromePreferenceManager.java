@@ -345,10 +345,7 @@ public class ChromePreferenceManager {
 
     /** Checks if the user dismissed the generic sign in promo from the new tab page. */
     public boolean getNewTabPageGenericSigninPromoDismissed() {
-        return true;
-        /*
         return mSharedPreferences.getBoolean(NTP_GENERIC_SIGNIN_PROMO_DISMISSED, false);
-        */
     }
 
     /** Set whether the user dismissed the generic sign in promo from the new tab page. */
@@ -358,10 +355,7 @@ public class ChromePreferenceManager {
 
     /** Checks if the user dismissed the personalized sign in promo from the new tab page. */
     public boolean getNewTabPagePersonalizedSigninPromoDismissed() {
-        return true;
-        /*
         return mSharedPreferences.getBoolean(NTP_PERSONALIZED_SIGNIN_PROMO_DISMISSED, false);
-        */
     }
 
     /** Set whether the user dismissed the personalized sign in promo from the new tab page. */
