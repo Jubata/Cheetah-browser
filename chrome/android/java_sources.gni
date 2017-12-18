@@ -1971,6 +1971,8 @@ if (enable_offline_pages_harness) {
 }
 
 chrome_java_sources += [
+    "java/src/org/chromium/chrome/browser/cheetah/CheetahAccountManagerDelegate.java",
+    "java/src/org/chromium/chrome/browser/cheetah/CheetahSigninActivity.java",
     "java/src/org/chromium/chrome/browser/cheetah/Comment.java",
     "java/src/org/chromium/chrome/browser/cheetah/CommentsBottomSheetContent.java",
     "java/src/org/chromium/chrome/browser/cheetah/CommentsPreloader.java",

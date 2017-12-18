@@ -145,35 +145,35 @@ public class SigninHelper {
         }
 
         // Always check for account deleted.
-        if (!accountExists(mContext, syncAccount)) {
-            // It is possible that Chrome got to this point without account
-            // rename notification. Let us signout before doing a rename.
-            // updateAccountRenameData(mContext, new SystemAccountChangeEventChecker());
-            AsyncTask<Void, Void, Void> task = new AsyncTask<Void, Void, Void>() {
-                @Override
-                protected Void doInBackground(Void... params) {
-                    updateAccountRenameData(mContext, new SystemAccountChangeEventChecker());
-                    return null;
-                }
-
-                @Override
-                protected void onPostExecute(Void result) {
-                    String renamedAccount = getNewSignedInAccountName(mContext);
-                    if (renamedAccount == null) {
-                        // SigninManager.signOut() uses the same code path as a user-triggered
-                        // signout, which can be prohibited in some cases (e.g. child accounts).
-                        // Here we have to sign out though to ensure account consistency,
-                        // so override the flag.
-                        mSigninManager.prohibitSignout(false);
-                        mSigninManager.signOut();
-                    } else {
-                        validateAccountSettings(true);
-                    }
-                }
-            };
-            task.execute();
-            return;
-        }
+//        if (!accountExists(mContext, syncAccount)) {
+//            // It is possible that Chrome got to this point without account
+//            // rename notification. Let us signout before doing a rename.
+//            // updateAccountRenameData(mContext, new SystemAccountChangeEventChecker());
+//            AsyncTask<Void, Void, Void> task = new AsyncTask<Void, Void, Void>() {
+//                @Override
+//                protected Void doInBackground(Void... params) {
+//                    updateAccountRenameData(mContext, new SystemAccountChangeEventChecker());
+//                    return null;
+//                }
+//
+//                @Override
+//                protected void onPostExecute(Void result) {
+//                    String renamedAccount = getNewSignedInAccountName(mContext);
+//                    if (renamedAccount == null) {
+//                        // SigninManager.signOut() uses the same code path as a user-triggered
+//                        // signout, which can be prohibited in some cases (e.g. child accounts).
+//                        // Here we have to sign out though to ensure account consistency,
+//                        // so override the flag.
+//                        mSigninManager.prohibitSignout(false);
+//                        mSigninManager.signOut();
+//                    } else {
+//                        validateAccountSettings(true);
+//                    }
+//                }
+//            };
+//            task.execute();
+//            return;
+//        }
 
         if (accountsChanged) {
             // Account details have changed so inform the token service that credentials

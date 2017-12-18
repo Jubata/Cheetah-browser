@@ -17,6 +17,7 @@ import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.cheetah.CheetahSigninActivity;
 import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
 import org.chromium.chrome.browser.preferences.ManagedPreferencesUtils;
 import org.chromium.chrome.browser.preferences.PreferencesLauncher;
@@ -123,7 +124,7 @@ public class AccountSigninActivity extends AppCompatActivity
      */
     public static Intent createIntentForAddAccountSigninFlow(
             Context context, @AccessPoint int accessPoint, boolean isFromPersonalizedPromo) {
-        Intent intent = new Intent(context, AccountSigninActivity.class);
+        Intent intent = new Intent(context, CheetahSigninActivity.class);
         intent.putExtra(INTENT_SIGNIN_ACCESS_POINT, accessPoint);
         intent.putExtra(INTENT_SIGNIN_FLOW_TYPE, SIGNIN_FLOW_ADD_NEW_ACCOUNT);
         intent.putExtra(INTENT_IS_FROM_PERSONALIZED_PROMO, isFromPersonalizedPromo);

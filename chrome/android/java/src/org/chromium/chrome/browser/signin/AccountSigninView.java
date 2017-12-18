@@ -291,7 +291,7 @@ public class AccountSigninView extends FrameLayout {
         AccountManagerFacade.get().getGoogleAccountNames(this::updateAccounts);
     }
 
-    private void updateAccounts(AccountManagerResult<List<String>> result) {
+    public void updateAccounts(AccountManagerResult<List<String>> result) {
         if (!ViewCompat.isAttachedToWindow(AccountSigninView.this)) {
             // This callback is invoked after AccountSigninView is detached from window
             // (e.g., Chrome is minimized). Updating view now is redundant and dangerous

@@ -16,6 +16,7 @@ import org.chromium.base.ContextUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.chrome.browser.banners.AppDetailsDelegate;
+import org.chromium.chrome.browser.cheetah.CheetahAccountManagerDelegate;
 import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
 import org.chromium.chrome.browser.datausage.ExternalDataUseObserver;
 import org.chromium.chrome.browser.externalauth.ExternalAuthUtils;
@@ -60,6 +61,7 @@ import java.util.List;
  */
 public abstract class AppHooks {
     private static AppHooksImpl sInstance;
+    private CheetahAccountManagerDelegate cheetahAccountManagerDelegate;
 
     /**
      * Sets a mocked instance for testing.
@@ -90,7 +92,12 @@ public abstract class AppHooks {
      * @return the created {@link AccountManagerDelegate}.
      */
     public AccountManagerDelegate createAccountManagerDelegate() {
-        return new SystemAccountManagerDelegate();
+        cheetahAccountManagerDelegate = new CheetahAccountManagerDelegate();
+        return cheetahAccountManagerDelegate;
+    }
+
+    public AccountManagerDelegate getAccountManagerDelegate() {
+        return cheetahAccountManagerDelegate;
     }
 
     /**

@@ -26,6 +26,7 @@ import android.os.SystemClock;
 import com.google.android.gms.auth.GoogleAuthException;
 import com.google.android.gms.auth.GoogleAuthUtil;
 import com.google.android.gms.auth.GooglePlayServicesAvailabilityException;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 
@@ -247,4 +248,7 @@ public class SystemAccountManagerDelegate implements AccountManagerDelegate {
             observer.onAccountsChanged();
         }
     }
+
+    @Override
+    public void setAccount(GoogleSignInAccount account) {}
 }

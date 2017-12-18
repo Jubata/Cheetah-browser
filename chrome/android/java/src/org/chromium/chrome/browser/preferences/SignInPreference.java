@@ -15,6 +15,7 @@ import android.view.View;
 
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.cheetah.CheetahSigninActivity;
 import org.chromium.chrome.browser.firstrun.FirstRunSignInProcessor;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.signin.AccountManagementFragment;
@@ -59,8 +60,11 @@ public class SignInPreference
         int imageSize = context.getResources().getDimensionPixelSize(R.dimen.user_picture_size);
         mProfileDataCache = new ProfileDataCache(context, Profile.getLastUsedProfile(), imageSize);
 
+//        setOnPreferenceClickListener(preference
+//                -> AccountSigninActivity.startIfAllowed(getContext(), SigninAccessPoint.SETTINGS));
+
         setOnPreferenceClickListener(preference
-                -> AccountSigninActivity.startIfAllowed(getContext(), SigninAccessPoint.SETTINGS));
+                -> CheetahSigninActivity.startIfAllowed(getContext(), SigninAccessPoint.SETTINGS));
     }
 
     /**

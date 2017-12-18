@@ -12,6 +12,8 @@ import android.support.annotation.MainThread;
 import android.support.annotation.Nullable;
 import android.support.annotation.WorkerThread;
 
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+
 import org.chromium.base.Callback;
 
 /**
@@ -99,4 +101,6 @@ public interface AccountManagerDelegate {
     default ProfileDataSource getProfileDataSource() {
         return null;
     }
+
+    void setAccount(GoogleSignInAccount account);
 }
