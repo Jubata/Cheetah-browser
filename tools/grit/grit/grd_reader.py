@@ -18,6 +18,8 @@ from grit.node import base
 from grit.node import mapping
 from grit.node import misc
 
+def Identity(i):
+  return i
 
 class StopParsingException(Exception):
   '''An exception used to stop parsing.'''
@@ -146,7 +148,7 @@ class GrdPartContentHandler(xml.sax.handler.ContentHandler):
 
 def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
           debug=False, defines=None, tags_to_ignore=None, target_platform=None,
-          predetermined_ids_file=None, brand_replacer=None):
+          predetermined_ids_file=None, brand_replacer=Identity):
   '''Parses a GRD file into a tree of nodes (from grit.node).
 
   If filename_or_stream is a stream, 'dir' should point to the directory
