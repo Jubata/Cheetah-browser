@@ -267,6 +267,12 @@ android_library("chrome_java") {
     "//url/mojo:url_mojom_gurl_java",
   ]
 
+  deps += [
+    "$google_play_services_package:google_play_services_auth_java",
+    "$google_play_services_package:google_play_services_auth_base_java",
+    "//third_party/android_glide:glide_java",
+  ]
+
   srcjar_deps = [
     ":chrome_android_java_enums_srcjar",
     ":chrome_android_java_google_api_keys_srcjar",

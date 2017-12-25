@@ -69,6 +69,9 @@ def GetAPIKey():
   """Returns the simple API key."""
   return _GetToken('GOOGLE_API_KEY')
 
+def GetAPIKeyByName(name):
+  """Returns API key by name"""
+  return _GetToken('GOOGLE_API_KEY_%s' % name)
 
 def GetAPIKeyPhysicalWebTest():
   """Returns the API key to test Physical Web service."""

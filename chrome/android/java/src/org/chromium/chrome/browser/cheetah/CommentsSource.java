@@ -4,9 +4,11 @@
 
 package org.chromium.chrome.browser.cheetah;
 
+import android.app.Activity;
 import android.graphics.Bitmap;
 
 import org.chromium.base.Callback;
+import org.chromium.base.ContextUtils;
 import org.chromium.base.ObserverList;
 import org.chromium.chrome.browser.ntp.cards.SuggestionsCategoryInfo;
 import org.chromium.chrome.browser.ntp.snippets.CategoryInt;
@@ -17,6 +19,10 @@ import org.chromium.chrome.browser.ntp.snippets.SuggestionsSource;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.suggestions.ContentSuggestionsAdditionalAction;
 import org.chromium.chrome.browser.tab.Tab;
+
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.request.target.SimpleTarget;
+import com.bumptech.glide.request.transition.Transition;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -182,8 +188,8 @@ public class CommentsSource implements SuggestionsSource, UnsentCommentsManager.
             SnippetArticle article = new SnippetArticle(10001,
                     "0",
                     comment.text,
-                    comment.user,
-                    "http://yandex.ru",
+                    comment.userName,
+                    comment.userPic,
                     comment.timestamp.getTime(),
                     0,
                     System.currentTimeMillis(),
@@ -209,8 +215,17 @@ public class CommentsSource implements SuggestionsSource, UnsentCommentsManager.
     @Override
     public void fetchSuggestionFavicon(SnippetArticle suggestion, int minimumSizePx,
             int desiredSizePx, Callback<Bitmap> callback) {
-        //IK interesting
-        callback.onResult(Bitmap.createBitmap(1,1, Bitmap.Config.ARGB_8888));
+        String url = suggestion.getUrl();
+        if(!url.isEmpty()) {
+            Glide.with(ContextUtils.getApplicationContext()).asBitmap().load(suggestion.getUrl()).into(new SimpleTarget<Bitmap>() {
+                @Override
+                public void onResourceReady(Bitmap resource, Transition<? super Bitmap> transition) {
+                    callback.onResult(resource);
+                }
+            });
+        } else {
+            callback.onResult(Bitmap.createBitmap(1,1, Bitmap.Config.ARGB_8888));
+        }
     }
 
     @Override

@@ -1,7 +1,15 @@
 package org.chromium.chrome.browser.cheetah;
 
+import android.annotation.SuppressLint;
+import android.os.AsyncTask;
+
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.ApplicationState;
+import org.chromium.base.ContextUtils;
+import org.chromium.chrome.browser.cheetah_signin.CheetahSignInManager;
+import org.chromium.chrome.browser.cheetah_signin.GoogleSignin;
 import org.chromium.components.sync.AndroidSyncSettings;
 
 import java.net.HttpURLConnection;
@@ -14,12 +22,14 @@ import java.util.TimerTask;
  * Created by ivan2kh on 11/18/17.
  */
 
-public class UnsentCommentsManager implements ApplicationStatus.ApplicationStateListener {
+public class UnsentCommentsManager implements
+        ApplicationStatus.ApplicationStateListener,
+        CheetahSignInManager.SignInListener {
     private  Timer timer;
     private static UnsentCommentsManager unsentCommentsManager;
     PostCommentCallback postCommentCallback = new PostCommentCallback();
-    private final int LONG_DELAY = 5000;
-    private final int SHORT_DELAY = 1000;
+    private final int LONG_DELAY = 30000;
+    private final int SHORT_DELAY = 5000;
     private static final Object sLock = new Object();
     private HashSet<CommentsListener> mListeners = new HashSet<>();
 
@@ -54,6 +64,9 @@ public class UnsentCommentsManager implements ApplicationStatus.ApplicationState
     }
 
     private void reschedule(int delay) {
+        if (timer == null) {
+            return; //in case application paused
+        }
         timer.schedule(new TimerTask() {
             @Override
             public void run() {
@@ -71,20 +84,50 @@ public class UnsentCommentsManager implements ApplicationStatus.ApplicationState
         }
     }
 
+    //Post unsent comments to server
+    @SuppressLint("StaticFieldLeak")
     private void PostUnsent() {
         LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
         localCommentsStorage.getOneUnsentAsync((Comment comment) -> {
             if (comment == null) {
                 cancel();
             } else {
-                CommentsReceiver.PostComment(true, comment, postCommentCallback);
+                new AsyncTask<Void, Void, GoogleSignInAccount>() {
+                    @Override
+                    protected GoogleSignInAccount doInBackground(Void... params) {
+                        return GoogleSignin.silentSignin(ContextUtils.getApplicationContext());
+
+                    }
+
+                    @Override
+                    protected void onPostExecute(GoogleSignInAccount account) {
+                        super.onPostExecute(account);
+
+                        if(account == null) {
+                            CheetahSignInManager.get().addListener(UnsentCommentsManager.this);
+                            return;
+                        }
+                        CommentsReceiver.PostComment(true, comment, account.getIdToken(), postCommentCallback);
+                    }
+                }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, (Void)null);
             }
         });
     }
 
+
+    @Override
+    public void onSignedIn() {
+        CheetahSignInManager.get().removeListener(this);
+        PostUnsent();
+    }
+
+    @Override
+    public void onSignedOut() {
+    }
+
     public void onNewUnsent(Comment comment) {
         LocalCommentsStorage localCommentsStorage = LocalCommentsStorage.get();
-        localCommentsStorage.insertAsync(comment.text, comment.uri, LocalCommentsStorage.UNSENT,
+        localCommentsStorage.insertAsync(comment, LocalCommentsStorage.UNSENT,
                 (Void v) -> {
                     scheduleNew();
                     for(CommentsListener listener : mListeners) {
@@ -107,7 +150,6 @@ public class UnsentCommentsManager implements ApplicationStatus.ApplicationState
             }
         }
     }
-
 
     private class PostCommentCallback implements CommentsReceiver.PostCallback {
         @Override

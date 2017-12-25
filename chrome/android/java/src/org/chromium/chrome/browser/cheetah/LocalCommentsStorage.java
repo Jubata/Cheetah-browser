@@ -51,7 +51,7 @@ public class LocalCommentsStorage {
 
     private static final class DatabaseHelper extends SQLiteOpenHelper {
         private static final String DATABASE_FILENAME = "localComments.db";
-        private static final int DATABASE_VERSION = 1;
+        private static final int DATABASE_VERSION = 2;
 
         public DatabaseHelper(Context context) {
             super(context, DATABASE_FILENAME, null, DATABASE_VERSION);
@@ -61,8 +61,8 @@ public class LocalCommentsStorage {
             db.execSQL("CREATE TABLE comments ("
                     + "id TEXT NOT NULL PRIMARY KEY, "
                     + "text TEXT, "
-                    + "user_id TEXT, "
-                    + "user TEXT, "
+                    + "user_name TEXT, "
+                    + "user_pic TEXT, "
                     + "timestamp INTEGER, "
                     + "url TEXT, "
                     + "state INTEGER);" +
@@ -82,9 +82,9 @@ public class LocalCommentsStorage {
         }
 
         @Override
-        public void onUpgrade(SQLiteDatabase sqLiteDatabase, int i, int i1) {
-            dropTable(sqLiteDatabase);
-            onCreate(sqLiteDatabase);
+        public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+            dropTable(db);
+            onCreate(db);
         }
     }
 
@@ -106,21 +106,19 @@ public class LocalCommentsStorage {
     }
 
     private static Comment fromCursor(Cursor cursor) {
-        String user = cursor.getString(cursor.getColumnIndex("user"));
-        String text = cursor.getString(cursor.getColumnIndex("text"));
-        Date date = createDate( cursor.getLong(cursor.getColumnIndex("timestamp")) );
-        UUID id = UUID.fromString(
+        Comment comment = new Comment();
+        comment.text = cursor.getString(cursor.getColumnIndex("text"));
+        comment.timestamp = createDate( cursor.getLong(cursor.getColumnIndex("timestamp")) );
+        comment.localCommentUUID = UUID.fromString(
                         cursor.getString(cursor.getColumnIndex("id")) );
-        URI uri = null;
         try {
-            uri = new URI(cursor.getString(cursor.getColumnIndex("url")));
+            comment.uri = new URI(cursor.getString(cursor.getColumnIndex("url")));
         } catch (URISyntaxException e) {
             e.printStackTrace();//todo: handle properly
         }
-        Comment comment = new Comment(null, null, null, user,
-                "", text, date);
-        comment.localCommentUUID = id;
-        comment.uri = uri;
+        comment.userName = cursor.getString(cursor.getColumnIndex("user_name"));
+        comment.userPic = cursor.getString(cursor.getColumnIndex("user_pic"));
+
         return comment;
     }
 
@@ -134,7 +132,6 @@ public class LocalCommentsStorage {
             HashMap<UUID, Comment> comments = new HashMap<>();
             while (cursor.moveToNext()) {
                 Comment comment = fromCursor(cursor);
-                comment.localCommentUUID = UUID.randomUUID();
                 comments.put(comment.localCommentUUID, comment);
             }
             cursor.close();
@@ -159,12 +156,14 @@ public class LocalCommentsStorage {
         }, comment -> callback.onPostExecute(comment));
     }
 
-    public void insertAsync(String text, URI uri, int state, AsyncResult<Void> callback) {
+    public void insertAsync(Comment comment, int state, AsyncResult<Void> callback) {
         runAsync(() -> {
             ContentValues insertValues = new ContentValues();
             insertValues.put("id", UUID.randomUUID().toString());
-            insertValues.put("url", simplifyUri(uri));
-            insertValues.put("text", text);
+            insertValues.put("url", simplifyUri(comment.uri));
+            insertValues.put("text", comment.text);
+            insertValues.put("user_name", comment.userName);
+            insertValues.put("user_pic", comment.userPic);
             insertValues.put("state", state);
             insertValues.put("timestamp", System.currentTimeMillis());
             final SQLiteDatabase db = mDBHelper.getWritableDatabase();

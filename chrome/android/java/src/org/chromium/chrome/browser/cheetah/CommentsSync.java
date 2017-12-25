@@ -1,5 +1,10 @@
 package org.chromium.chrome.browser.cheetah;
 
+
+import android.support.annotation.UiThread;
+
+import org.chromium.base.ThreadUtils;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 
@@ -35,7 +40,10 @@ public class CommentsSync{
         }
     }
 
+    @UiThread
     public void onLocalChanged() {
+        assert ThreadUtils.runningOnUiThread();
+
         for(Listener l:listeners) {
             l.onLocalChanged();
         }

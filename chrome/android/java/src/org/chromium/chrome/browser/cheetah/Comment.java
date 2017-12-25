@@ -1,5 +1,7 @@
 package org.chromium.chrome.browser.cheetah;
 
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+
 import java.net.URI;
 import java.util.Comparator;
 import java.util.Date;
@@ -10,48 +12,23 @@ import java.util.UUID;
  */
 
 public class Comment {
-    private final UUID urlUUID;
-    private final UUID commentId;
-    public UUID localCommentUUID;
-    private final UUID userId;
-    public final  String user;
-    private final String language;
-    public String text;
-    public final Date timestamp;
-    public URI uri;
+    public UUID commentId = null;
+    public UUID localCommentUUID = null;
+    public UUID userId = null;
+    public  String user = "";
+    public String language = "";
+    public String text = "";
+    public Date timestamp = null;
+    public URI uri = null;
+    public String userName = "";
+    public String userPic = "";
 
-    public Comment() {
-        commentId = null;
-        urlUUID=null;
-        userId = null;
-        language="";
-        text="";
-        timestamp=null;
-        user="";
-    }
+    public void setAccount(GoogleSignInAccount account) {
 
-    public Comment(UUID commentId) {
-        this.commentId = commentId;
-        urlUUID=null;
-        userId = null;
-        language="";
-        text="";
-        timestamp=null;
-        user="";
-    }
-
-    public Comment(UUID url, UUID commentId, UUID userId, String user, String language,
-                   String text, Date timestamp) {
-        this.urlUUID = url;
-        this.commentId = commentId;
-        this.userId = userId;
-        this.user = user;
-        this.language = language;
-        this.text = text;
-        this.timestamp = timestamp;
     }
 
     public static class DateComparator implements Comparator<Comment> {
+        @Override
         public int compare(Comment o1, Comment o2) {
             return o2.timestamp.compareTo(o1.timestamp);
         }

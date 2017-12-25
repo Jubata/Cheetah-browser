@@ -6,4 +6,7 @@
     <message name="IDS_ADD_YOUR_MESSAGE" desc="Hint in add message form.">
         Please add your message here.
     </message>
+    <message name="IDS_SIGNIN_ACCOUNT_CHOICE_DESCRIPTION_CHEETAH" desc="Hint to choose sign in provider">
+        Sign in with your Sign In Provider to write new comments.
+    </message>
 </grit-part>

@@ -31,7 +31,8 @@ public class CommentsReceiver {
     private static String userAgent = "";
     private static final String httpServer = "http://client.cheetah-browser.com:8542/comments/";
     //private static final String httpsServer = "http://192.168.43.35:8542/comments/";
-    private static final String httpsServer = "https://client.cheetah-browser.com/comments/";
+    private static final String httpsServer = "http://192.168.0.12:8542/comments/";
+    //private static final String httpsServer = "https://client.cheetah-browser.com/comments/";
     private static final int connectionTimeout=2000;
 
     public interface CommentsCallback {
@@ -43,7 +44,8 @@ public class CommentsReceiver {
             boolean useHttps, final URI comment_uri, final CommentsCallback callback) {
         String url = useHttps ? httpsServer : httpServer;
         url = url +"get?url=" + Uri.encode(comment_uri.toString()) +
-            "&api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
+            "&api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_API_KEY_CHEETAH) +
+            "&version=" + "1";
 
         JsonObjectHttpRequest.RequestCallback requestCallback =
             new JsonObjectHttpRequest.RequestCallback() {
@@ -54,35 +56,43 @@ public class CommentsReceiver {
                     HashMap<UUID, Comment> comments = new HashMap<>();
                     JSONArray array = null;
                     try {
-                        array = result.getJSONArray("comments");
-                        for (int i = 0; i < array.length(); i++) {
-                            JSONObject jsonObject = array.getJSONObject(i);
+                        array = result.optJSONArray("comments");
+                        if(array!=null) {
+                            for (int i = 0; i < array.length(); i++) {
+                                Comment comment = new Comment();
 
-                            UUID url = UUID.fromString(jsonObject.getString("url"));
-                            UUID comment_id = UUID.fromString(jsonObject.getString("comment_id"));
-                            UUID user_id = UUID.fromString(jsonObject.getString("user_id"));
-                            String user = jsonObject.getString("user");
-                            String language = jsonObject.getString("language");
-                            String text = jsonObject.getString("text");
-                            UUID localUUID = UUID.fromString(jsonObject.getString("local_comment_id"));
+                                JSONObject jsonObject = array.getJSONObject(i);
 
-                            DateFormat format = new SimpleDateFormat(
-                                    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
-                            format.setTimeZone(TimeZone.getTimeZone("UTC"));
-                            Date timestamp = null;
-                            timestamp = format.parse(
-                                    jsonObject.getString("timestamp"));
+                                comment.commentId = UUID.fromString(jsonObject.getString("comment_id"));
+                                comment.language = jsonObject.getString("language");
+                                comment.text = jsonObject.getString("text");
+                                comment.localCommentUUID = UUID.fromString(jsonObject.getString("local_comment_id"));
 
-                            if(comments.containsKey(localUUID)) {
-                                localUUID = UUID.randomUUID();
+                                JSONObject user = jsonObject.optJSONObject("user");
+
+                                if(user != null) {
+                                    comment.userName = user.optString("name");
+                                    comment.userPic = user.optString("pic_url");
+                                }
+
+                                DateFormat format = new SimpleDateFormat(
+                                        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
+                                format.setTimeZone(TimeZone.getTimeZone("UTC"));
+                                comment.timestamp = format.parse(
+                                        jsonObject.getString("timestamp"));
+
+                                if (comments.containsKey(comment.localCommentUUID)) {
+                                    comment.localCommentUUID = UUID.randomUUID();
+                                }
+
+                                comments.put(comment.localCommentUUID, comment);
                             }
-                            comments.put(localUUID,
-                                    new Comment(url, comment_id, user_id, user, language,
-                                            text, timestamp));
                         }
                     } catch (JSONException e) {
                         e.printStackTrace();
                     } catch (ParseException e) {
+                        e.printStackTrace();
+                    } catch (IllegalArgumentException e) {
                         e.printStackTrace();
                     }
 
@@ -116,9 +126,9 @@ public class CommentsReceiver {
     }
 
     public static void PostComment(
-            boolean useHttps, final Comment comment, final PostCallback callback) {
+            boolean useHttps, final Comment comment, final String idToken, final PostCallback callback) {
         String url = useHttps ? httpsServer : httpServer;
-        url = url +"new?api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_CLIENT_ID_CHEETAH);
+        url = url +"new?api_key=" + Uri.encode(GoogleAPIKeys.GOOGLE_API_KEY_CHEETAH);
 
         JsonObjectHttpRequest.RequestCallback requestCallback =
                 new JsonObjectHttpRequest.RequestCallback() {
@@ -142,10 +152,12 @@ public class CommentsReceiver {
         try {
             JSONObject payload = new JSONObject();
             try {
+                payload.put("version",1);
                 payload.put("text", comment.text);
                 payload.put("url", comment.uri);
-                payload.put("user_id", new UUID(0,0).toString());
                 payload.put("local_comment_id", comment.localCommentUUID);
+                payload.put("id_token", idToken);
+                payload.put("auth_type", "google_id_token");
             } catch (JSONException e) {
                 e.printStackTrace();
             }

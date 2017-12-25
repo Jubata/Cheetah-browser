@@ -358,6 +358,11 @@ deps = {
       'condition': 'checkout_linux',
   },
 
+  'src/third_party/android_glide/releases': {
+      'url': 'https://github.com/Jubata/glide_releases.git' + '@' + '444317dbe33ca896892912bb34d77c48c596d745',
+      'condition': 'checkout_android',
+  },
+
   'src/third_party/glslang/src':
     Var('chromium_git') + '/external/github.com/google/glslang.git' + '@' + '210c6bf4d8119dc5f8ac21da2d4c87184f7015e0',
 

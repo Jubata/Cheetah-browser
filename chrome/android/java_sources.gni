@@ -1983,4 +1983,8 @@ chrome_java_sources += [
     "java/src/org/chromium/chrome/browser/cheetah/LocalCommentsStorage.java",
     "java/src/org/chromium/chrome/browser/cheetah/NewComment.java",
     "java/src/org/chromium/chrome/browser/cheetah/UnsentCommentsManager.java",
+    "java/src/org/chromium/chrome/browser/cheetah_signin/ActivityIntentProvider.java",
+    "java/src/org/chromium/chrome/browser/cheetah_signin/CheetahSigninActivity.java",
+    "java/src/org/chromium/chrome/browser/cheetah_signin/CheetahSignInManager.java",
+    "java/src/org/chromium/chrome/browser/cheetah_signin/GoogleSignin.java",
 ]

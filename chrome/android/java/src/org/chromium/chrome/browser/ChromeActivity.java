@@ -60,6 +60,7 @@ import org.chromium.chrome.browser.appmenu.AppMenuPropertiesDelegate;
 import org.chromium.chrome.browser.bookmarks.BookmarkModel;
 import org.chromium.chrome.browser.bookmarks.BookmarkUtils;
 import org.chromium.chrome.browser.cheetah.CommentsPreloader;
+import org.chromium.chrome.browser.cheetah_signin.CheetahSignInManager;
 import org.chromium.chrome.browser.compositor.CompositorViewHolder;
 import org.chromium.chrome.browser.compositor.bottombar.OverlayPanel.StateChangeReason;
 import org.chromium.chrome.browser.compositor.layouts.Layout;
@@ -1038,6 +1039,8 @@ public abstract class ChromeActivity extends AsyncInitializationActivity
         if (mCommentsPreloder==null) {
             mCommentsPreloder = new CommentsPreloader(this);
         }
+
+        CheetahSignInManager.get().initializeAsync();
 
         if (mPartnerBrowserRefreshNeeded) {
             mPartnerBrowserRefreshNeeded = false;
