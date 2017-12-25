@@ -5,7 +5,6 @@
 package org.chromium.chrome.browser.signin;
 
 import android.content.Context;
-import android.support.v7.content.res.AppCompatResources;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -73,7 +72,7 @@ public class AccountSigninChooseView extends FirstRunChooserView {
             String accountName = accounts.get(i);
             ((ImageView) view.findViewById(R.id.account_image))
                     .setImageDrawable(
-                            AppCompatResources.getDrawable(getContext(), R.drawable.chrome_sync_logo));
+                            profileDataCache.getProfileDataOrDefault(accountName).getImage());
             ((TextView) view.findViewById(R.id.account_name)).setText(accountName);
 
             view.setOnClickListener((View v) -> {

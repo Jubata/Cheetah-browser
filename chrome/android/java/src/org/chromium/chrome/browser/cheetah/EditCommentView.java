@@ -125,18 +125,15 @@ public class EditCommentView extends LinearLayout implements View.OnClickListene
 
     @SuppressLint("StaticFieldLeak")
     private void postComment() {
-        String editText = mEditText.getText().toString().trim();
-        if(tab == null || editText.isEmpty()) {
+        String trimmedText = mEditText.getText().toString().trim();
+        if(tab == null || trimmedText.isEmpty()) {
             return;
         }
 
         Comment comment = new Comment();
+        comment.text = trimmedText;
         try {
-
-            comment.text = mEditText.getText().toString();
             comment.uri = new URI(tab.getUrl());
-
-
         } catch (URISyntaxException e) {
             e.printStackTrace();
         }
@@ -180,8 +177,6 @@ public class EditCommentView extends LinearLayout implements View.OnClickListene
 
     @Override
     public void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-
         CheetahSignInManager.get().removeListener(this);
 
         String editText = mEditText.getText().toString().trim();
@@ -200,6 +195,8 @@ public class EditCommentView extends LinearLayout implements View.OnClickListene
                 e.printStackTrace();
             }
         }
+
+        super.onDetachedFromWindow();
     }
 
     public void setTab(Tab tab) {
