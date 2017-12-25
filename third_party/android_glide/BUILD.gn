@@ -7,7 +7,7 @@ import("//build/config/android/rules.gni")
 assert(is_android)
 
 android_java_prebuilt("glide_java") {
-    jar_path = "src/glide-full-4.4.0.jar"
+    jar_path = "releases/glide-full-4.4.0.jar"
     deps = [
       "//third_party/android_tools:android_support_v4_java",
     ]
